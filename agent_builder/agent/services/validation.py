@@ -163,19 +163,19 @@ class ValidationService:
             valid.append(p)
         return valid, errors
 
-    # ------------------ Advanced Validation ------------------
-    def validate_cross_field_logic(self, doc: dict):
-        errors = []
-        if doc.get("doctype") == "DocType":
-            for f in doc.get("fields", []):
-                if f.get("fieldtype") == "Check" and f.get("default") not in ("0", "1", None):
-                    errors.append(
-                        ValidationError(
-                            f"Field '{f['fieldname']}' is a Check but has invalid default '{f.get('default')}'.",
-                            suggestion="Use '0' or '1' for default."
-                        )
-                    )
-        return errors
+    # # ------------------ Advanced Validation ------------------
+    # def validate_cross_field_logic(self, doc: dict):
+    #     errors = []
+    #     if doc.get("doctype") == "DocType":
+    #         for f in doc.get("fields", []):
+    #             if f.get("fieldtype") == "Check" and f.get("default") not in ("0", "1", None):
+    #                 errors.append(
+    #                     ValidationError(
+    #                         f"Field '{f['fieldname']}' is a Check but has invalid default '{f.get('default')}'.",
+    #                         suggestion="Use '0' or '1' for default."
+    #                     )
+    #                 )
+    #     return errors
 
     def validate_cross_entity_logic(self, doc: dict):
         errors = []
@@ -218,7 +218,6 @@ class ValidationService:
                 errors.extend(perm_errors)
 
         # run advanced checks
-        errors.extend(self.validate_cross_field_logic(sanitized))
         errors.extend(self.validate_cross_entity_logic(sanitized))
 
         return sanitized, errors
