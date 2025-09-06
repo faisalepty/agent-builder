@@ -6,7 +6,7 @@ import time
 import os
 
 # --- OpenRouter Configuration ---
-OPENROUTER_API_KEY = "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"  # set in env in prod
+OPENROUTER_API_KEY = ""  # set in env in prod
 MODEL = "deepseek/deepseek-chat-v3.1:free"  # free/open model
 
 # --- Prompt Templates (kept simple to avoid format brace conflicts) ---
