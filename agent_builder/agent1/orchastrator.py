@@ -1,7 +1,13 @@
-from .chains import generate_doctype_payload_agent, create_doctype_agent, validate_doctype_payload_agent
+from .chains import (
+    generate_doctype_payload_agent,
+    create_doctype_agent,
+    validate_doctype_payload_agent,
+    execute_tool_calls,
+    route_tool_call,
+)
 from typing import TypedDict, List
 import json
-from ..agent_.tools import tool_agent_create
+from ..agent_.tools import tool_agent_create, tool_validate_payload
 from ..agent_.tools_plugin import agent_tools as tool_schema
 
 
@@ -11,76 +17,62 @@ class State(TypedDict):
 
 
 tool_map = {
-    "create_doctype": tool_agent_create
+    "tool_agent_create": tool_agent_create,
+    "tool_validate_payload": tool_validate_payload
 }
 
 
 class Orch:
-    def __init__(self, tool_map=tool_map, tool_schema=tool_schema, state=State, max_retries=8):
+    def __init__(self, tool_map=tool_map, tool_schema=tool_schema, max_retries=8):
         self.tool_map = tool_map
         self.tools = tool_schema
-        self.state = state
+
+        # FIX: Initialize an instance, not the TypedDict class
+        self.state = {
+            "system_message": "",
+            "messages": []
+        }
+
         self.max_retries = max_retries
 
     def create(self, prompt):
-        self.state.messages.insert(0, {"role": "user", "content": prompt})
+        # FIX: Correct key name
+        self.state["messages"].append({"role": "user", "content": prompt})
+
+        # Call first agent
         response = generate_doctype_payload_agent(self.state, self.tools)
-        message = response.choices.messages[0]
-        
-        
-        for i in range(self.max_retries):
-            last_response = self.state.messages[-1]
-            if last_response.get("tool_calls", None):
-                is_error, results = self.execute_tool_calls(last_response)
-                if is_error:
-                    response = validate_doctype_payload_agent(self.state, self.tools)
-                    self.state.message.append(response)
-                else:
-                    for result in results:
-                        self.state.message.append(result)
-                    response = create_doctype_agent(self.state)
-                    self.state.message.append(response)
+        self.state["messages"].append(response)
+        print("Initial response appended: ", response.get("content"), "\n \n TOOLS: \n", response.get("tool_calls"))
+
+        for _ in range(self.max_retries):
+            print(f"Orch iteration {_ + 1}")
+            last_response = self.state["messages"][-1]
+            # If LLM made tool calls
+            if last_response.get("tool_calls"):
+                print("Executing tool calls...")
+                is_error, tool_messages = execute_tool_calls(last_response)
+                print(f"Tool execution completed. is_error={is_error}, messages={tool_messages}")
+                # Append tool responses
+                # for msg in tool_messages:
+                self.state["messages"].append(tool_messages)
+                route = route_tool_call(self.state, is_error)
+                response = route(self.state, self.tools)
+
+                # if is_error:
+                #     # Retry using validator agent
+                #     print("Tool execution had errors, invoking validator agent...")
+                #     response = validate_doctype_payload_agent(self.state, self.tools)
+                #     print("Validator agent response: ", response.get("content"), "\n", response.get("tool_calls"))
+                #     self.state["messages"].append(response)
+                # else:
+                #     # Tools succeeded → Create doctype
+                #     print("Tool execution successful, invoking create agent...")
+                #     response = create_doctype_agent(self.state)
+                #     print("Create agent response: ", response.get("content"))
+                #     self.state["messages"].append(response)
             else:
-                return self.state.message[-1]
-                
+                return last_response  # Finished
 
-    def execute_tool_calls(self, message):
-        tool_calls = message.get("tool_calls", None) or []
-        tool_messages = []
-        is_error = False
-        for tool in tool_calls:
-            name = tool.function.name
-            args = tool.function.arguments or "{}"
+        return self.state["messages"][-1]  # Return whatever we have
 
-            try:
-                parsed_arg = json.loads(args)
-            except Exception as e:
-                is_error = True
-                tool_message = str(e)
-                tool_messages.append({
-                "role": "function",
-                "tool_call_id": tool.id,
-                "name": name,
-                "content": tool_message,
-                })
-            
-            tool_function = tool_map.get(name)
-
-            if not tool_function:
-                is_error = True
-                tool_message = f"Tool '{name}' not found in tool map."
-                tool_messages.append({
-                "role": "function",
-                "tool_call_id": tool.id,
-                "name": name,
-                "content": tool_message,
-                })
-            else:
-                result = tool_function(**args)
-                tool_messages.append({
-                "role": "function",
-                "tool_call_id": tool.id,
-                "name": name,
-                "content": tool_message,
-                })
-        return is_error, tool_messages
+    

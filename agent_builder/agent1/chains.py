@@ -1,12 +1,13 @@
 from .ai_client import client
 from .utils import clean_state
+import json
 
 
 
 
 def generate_doctype_payload_agent(state, tools=None):
     
-    messages = state.messages
+    messages = state["messages"]
 
     generate_payload_system_prompt = (
             "You are an expert Frappe/ERPNext developer. Generate STRICT JSON only (no prose). "
@@ -26,7 +27,7 @@ def generate_doctype_payload_agent(state, tools=None):
 
 def validate_doctype_payload_agent(state, tools=None):
     
-    messages = state.messages
+    messages = state["messages"]
     ### UPDATE SYTEM PROMPT TO MIRROR AGENT
     generate_payload_system_prompt = (
             "You are an expert Frappe/ERPNext developer. Generate STRICT JSON only (no prose). "
@@ -46,7 +47,7 @@ def validate_doctype_payload_agent(state, tools=None):
 
 def create_doctype_agent(state, tools=None):
     
-    messages = state.messages
+    messages = state["messages"]
 
     # create and validate, "mirror -> regenerate -> create" agent
     generate_doctype_system_prompt = (
@@ -64,5 +65,76 @@ def create_doctype_agent(state, tools=None):
     )
 
     return response
+
+def execute_tool_calls(self, message):
+        tool_calls = message.get("tool_calls") or []
+        tool_messages = []
+        is_error = False
+
+        for tool in tool_calls:
+            name = tool.function.name
+            args_json = tool.function.arguments or "{}"
+
+            print(f"Executing tool: {name} with args: {args_json}")
+
+            # Parse arguments
+            try:
+                parsed_args = json.loads(args_json)
+            except Exception as e:
+                is_error = True
+                tool_messages.append({
+                    "role": "function",
+                    "tool_call_id": tool.id,
+                    "name": name,
+                    "content": f"JSON parse error: {str(e)}",
+                })
+                continue
+
+            tool_function = self.tool_map.get(name)
+
+            if not tool_function:
+                is_error = True
+                tool_messages.append({
+                    "role": "function",
+                    "tool_call_id": tool.id,
+                    "name": name,
+                    "content": f"Tool '{name}' not found.",
+                })
+                continue
+
+            # Execute tool
+            
+            try:
+                result = tool_function(**parsed_args)
+                tool_messages.append({
+                    "role": "function",
+                    "tool_call_id": tool.id,
+                    "name": name,
+                    "content": result if isinstance(result, dict) else json.loads(result), ####should be JSON.DUMPS
+                })
+            except Exception as e:
+                is_error = True
+                tool_messages.append({
+                    "role": "function",
+                    "tool_call_id": tool.id,
+                    "name": name,
+                    "content": f"Tool execution error: {str(e)}",
+                })
+
+        return is_error, tool_messages
+
+
+# def route_validate(state):
+#     if state["messages"][-1].get("tool_calls"):
+#         return "execute_tool_calls"
+#     else:
+        return "create_doctype_agent"
+    
+def route_tool_call(state, is_error):
+    if is_error:
+        return validate_doctype_payload_agent
+    else:
+        return create_doctype_agent
+    
 
     
