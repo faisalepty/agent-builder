@@ -2,7 +2,12 @@ from .ai_client import client
 from .utils import clean_state
 import json
 
+from ..agent_.tools import tool_agent_create, tool_validate_payload
 
+tool_map = {
+    "tool_agent_create": tool_agent_create,
+    "tool_validate_payload": tool_validate_payload
+}
 
 
 def generate_doctype_payload_agent(state, tools=None):
@@ -13,8 +18,8 @@ def generate_doctype_payload_agent(state, tools=None):
             "You are an expert Frappe/ERPNext developer. Generate STRICT JSON only (no prose). "
             "The JSON should be a valid DocType payload with keys: doctype='DocType', name, module, custom, fields, permissions, autoname (if needed)."
             " If you cannot produce valid JSON, return an error object as JSON: {\"status\":\"error\",\"message\":\"...\"}."
-            " you have access to the validate function to check the validity of the generated JSON."
-            " You must use the validate function to ensure the generated JSON is valid before returning it."
+            " you have access to the tool_validate_payload function to check the validity of the generated JSON."
+            " You must use the tool_validate_payload function to ensure the generated JSON is valid before returning it."
 )
     
     messages.insert(0, {"role": "system", "content": generate_payload_system_prompt})
@@ -31,10 +36,13 @@ def validate_doctype_payload_agent(state, tools=None):
     ### UPDATE SYTEM PROMPT TO MIRROR AGENT
     generate_payload_system_prompt = (
             "You are an expert Frappe/ERPNext developer. Generate STRICT JSON only (no prose). "
-            "The JSON should be a valid DocType payload with keys: doctype='DocType', name, module, custom, fields, permissions, autoname (if needed)."
-            " If you cannot produce valid JSON, return an error object as JSON: {\"status\":\"error\",\"message\":\"...\"}."
-            " you have access to the validate function to check the validity of the generated JSON."
-            " You must use the validate function to ensure the generated JSON is valid before returning it."
+             "You are the Validator Agent.\n"
+            "The previous tool execution FAILED.\n"
+            "Here is what happened:\n"
+            f"{json.dumps(state['tool_messages'][-1], indent=2)}\n\n"
+            "Your job is to FIX the payload and revalidate it."
+            " you have access to the tool_validate_payload function to check the validity of the generated JSON."
+            " You must use the tool_validate_payload function to ensure the generated JSON is valid before returning it."
 )
     
     messages.insert(0, {"role": "system", "content": generate_payload_system_prompt})
@@ -56,7 +64,11 @@ def create_doctype_agent(state, tools=None):
          "If creation fails, return {\"status\":\"error\",\"message\":\"...\",\"errors\":[...]}."
 
     )
-    messages.insert(0, generate_doctype_system_prompt)
+    messages.insert(0, {
+    "role": "system",
+    "content": generate_doctype_system_prompt
+})
+
 
 
     response = client(
@@ -66,7 +78,7 @@ def create_doctype_agent(state, tools=None):
 
     return response
 
-def execute_tool_calls(self, message):
+def execute_tool_calls(message):
         tool_calls = message.get("tool_calls") or []
         tool_messages = []
         is_error = False
@@ -90,7 +102,7 @@ def execute_tool_calls(self, message):
                 })
                 continue
 
-            tool_function = self.tool_map.get(name)
+            tool_function = tool_map.get(name)
 
             if not tool_function:
                 is_error = True
@@ -106,6 +118,8 @@ def execute_tool_calls(self, message):
             
             try:
                 result = tool_function(**parsed_args)
+                if result.get("status") == "error":
+                    is_error = True
                 tool_messages.append({
                     "role": "function",
                     "tool_call_id": tool.id,
@@ -131,7 +145,8 @@ def execute_tool_calls(self, message):
         return "create_doctype_agent"
     
 def route_tool_call(state, is_error):
-    if is_error:
+    status = state["messages"][-1].get("status")
+    if is_error or status == "error":
         return validate_doctype_payload_agent
     else:
         return create_doctype_agent

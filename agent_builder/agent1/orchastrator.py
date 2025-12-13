@@ -30,7 +30,8 @@ class Orch:
         # FIX: Initialize an instance, not the TypedDict class
         self.state = {
             "system_message": "",
-            "messages": []
+            "messages": [],
+            "tool_messages": []
         }
 
         self.max_retries = max_retries
@@ -42,21 +43,28 @@ class Orch:
         # Call first agent
         response = generate_doctype_payload_agent(self.state, self.tools)
         self.state["messages"].append(response)
-        print("Initial response appended: ", response.get("content"), "\n \n TOOLS: \n", response.get("tool_calls"))
+        print("Initial response appended: ", response.get("content"), "\n \n TOOLS: \n", response.get("tool_calls"), "\n \n ######################################## \n")
 
         for _ in range(self.max_retries):
-            print(f"Orch iteration {_ + 1}")
+            print(f"{self.state['messages']}, ", "\n \n ######################################## \n")
+            print(f"Orch iteration {_ + 1}", "\n \n ######################################## \n")
             last_response = self.state["messages"][-1]
             # If LLM made tool calls
             if last_response.get("tool_calls"):
                 print("Executing tool calls...")
                 is_error, tool_messages = execute_tool_calls(last_response)
-                print(f"Tool execution completed. is_error={is_error}, messages={tool_messages}")
+                print(f"Tool execution completed. is_error={is_error}, messages={tool_messages}", "\n \n ######################################## \n")
                 # Append tool responses
-                # for msg in tool_messages:
-                self.state["messages"].append(tool_messages)
+                for msg in tool_messages:
+                    self.state["tool_messages"].append(msg)
+
+                print(f"{self.state['messages']}, ", "\n \n ######################################## \n")
                 route = route_tool_call(self.state, is_error)
+                print("Routing to: ", route)
                 response = route(self.state, self.tools)
+                self.state["messages"].append(response)
+                print("Route agent response appended: ", response.get("content"), "\n \n TOOLS: \n", response.get("tool_calls"), "\n \n ######################################## \n")
+                
 
                 # if is_error:
                 #     # Retry using validator agent
