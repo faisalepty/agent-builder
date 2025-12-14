@@ -31,7 +31,8 @@ class Orch:
         self.state = {
             "system_message": "",
             "messages": [],
-            "tool_messages": []
+            "tool_messages": [],
+            "payload": {}
         }
 
         self.max_retries = max_retries
@@ -46,24 +47,30 @@ class Orch:
         print("Initial response appended: ", response.get("content"), "\n \n TOOLS: \n", response.get("tool_calls"), "\n \n ######################################## \n")
 
         for _ in range(self.max_retries):
-            print(f"{self.state['messages']}, ", "\n \n ######################################## \n")
+            print(f"{[msg for msg in self.state['messages']]}, ", "\n \n ######################################## \n")
             print(f"Orch iteration {_ + 1}", "\n \n ######################################## \n")
             last_response = self.state["messages"][-1]
             # If LLM made tool calls
             if last_response.get("tool_calls"):
                 print("Executing tool calls...")
-                is_error, tool_messages = execute_tool_calls(last_response)
+                updated_state, is_error, tool_messages = execute_tool_calls(self.state, last_response,)
+                self.state = updated_state
                 print(f"Tool execution completed. is_error={is_error}, messages={tool_messages}", "\n \n ######################################## \n")
                 # Append tool responses
                 for msg in tool_messages:
                     self.state["tool_messages"].append(msg)
 
-                print(f"{self.state['messages']}, ", "\n \n ######################################## \n")
-                route = route_tool_call(self.state, is_error)
+               
+                updated_state, route = route_tool_call(self.state, is_error=is_error)
+                self.state = updated_state
+                if route == "END":
+                    print(f"{last_response}")
+                    return 
                 print("Routing to: ", route)
                 response = route(self.state, self.tools)
                 self.state["messages"].append(response)
                 print("Route agent response appended: ", response.get("content"), "\n \n TOOLS: \n", response.get("tool_calls"), "\n \n ######################################## \n")
+
                 
 
                 # if is_error:

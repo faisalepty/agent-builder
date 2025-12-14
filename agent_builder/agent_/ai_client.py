@@ -8,10 +8,10 @@ api = os.getenv("MY_SECRET_KEY")
 
 Client = OpenAI(
   base_url="https://openrouter.ai/api/v1",
-  api_key="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",
+  api_key="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",
 )
 
-def client(tools=None, messages=None, model="nex-agi/deepseek-v3.1-nex-n1:free"):
+def client(tools=None, messages=None, model="openai/gpt-oss-20b:free"):
     response = Client.chat.completions.create(
       model=model,
       messages=messages,
@@ -19,13 +19,4 @@ def client(tools=None, messages=None, model="nex-agi/deepseek-v3.1-nex-n1:free")
       tool_choice="auto" if tools else None,
       tools=tools
     )
-
-    choice = response.choices[0]
-    msg = choice.message
-
-    return {
-        "role": msg.role,
-        "content": msg.content,
-        "tool_calls": msg.tool_calls or []
-    }
-
+    return response

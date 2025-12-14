@@ -9,6 +9,21 @@ tool_map = {
     "tool_validate_payload": tool_validate_payload
 }
 
+# def supervisor_agent(state, agents):
+#     """This is the main controller agents, controls flow of information to and from other agents"""
+
+#     messages = state["messages"]
+#     supervisor_agent_system_prompt = (
+#         def supervisor_agent(state, agents):
+#     """This is the main controller agents, controls flow of information to and from other agents"""
+
+#     messages = state["messages"]
+#     supervisor_agent_system_prompt = (
+
+#             )
+#     messages.insert(0, {"role": "system", "content": supervisor_agent_system_prompt})
+#     )
+
 
 def generate_doctype_payload_agent(state, tools=None):
     
@@ -39,6 +54,7 @@ def validate_doctype_payload_agent(state, tools=None):
              "You are the Validator Agent.\n"
             "The previous tool execution FAILED.\n"
             "Here is what happened:\n"
+            f"this is the pyload that was genereated: {json.dumps(state['tool_messages'][-1], indent=2)}\n\n "
             f"{json.dumps(state['tool_messages'][-1], indent=2)}\n\n"
             "Your job is to FIX the payload and revalidate it."
             " you have access to the tool_validate_payload function to check the validity of the generated JSON."
@@ -56,10 +72,14 @@ def validate_doctype_payload_agent(state, tools=None):
 def create_doctype_agent(state, tools=None):
     
     messages = state["messages"]
+    payload = state.get("payload", {})
 
     # create and validate, "mirror -> regenerate -> create" agent
     generate_doctype_system_prompt = (
          "You are the Creator Agent. The input JSON is already validated. "
+         "you have access to the tool_agent_create function to create the DocType in Frappe/ERPNext."
+         f"this is the sanitized payload to create the DocType: {json.dumps(payload, indent=2)}.\n"
+         "you must use the tool_agent_create function to create the DocType."
          "Call tool_agent_create with the sanitized payload. If creation succeeds, return {\"status\":\"ok\",\"created\": [ ... ]}. "
          "If creation fails, return {\"status\":\"error\",\"message\":\"...\",\"errors\":[...]}."
 
@@ -78,7 +98,7 @@ def create_doctype_agent(state, tools=None):
 
     return response
 
-def execute_tool_calls(message):
+def execute_tool_calls(state, message):
         tool_calls = message.get("tool_calls") or []
         tool_messages = []
         is_error = False
@@ -86,6 +106,10 @@ def execute_tool_calls(message):
         for tool in tool_calls:
             name = tool.function.name
             args_json = tool.function.arguments or "{}"
+            state["payload"] = {
+                "name": name,
+                "args": json.loads(args_json)
+            }
 
             print(f"Executing tool: {name} with args: {args_json}")
 
@@ -135,21 +159,40 @@ def execute_tool_calls(message):
                     "content": f"Tool execution error: {str(e)}",
                 })
 
-        return is_error, tool_messages
+        return state, is_error, tool_messages
 
 
 # def route_validate(state):
 #     if state["messages"][-1].get("tool_calls"):
 #         return "execute_tool_calls"
 #     else:
-        return "create_doctype_agent"
-    
+#         return "create_doctype_agent"
+
 def route_tool_call(state, is_error):
-    status = state["messages"][-1].get("status")
+    last_msg = state["tool_messages"][-1]
+
+    content = last_msg.get("content") or {}
+    status = content.get("status")
+    status_agent_create = content.get("status_tool_agent_create")
+    print(f"{is_error, status, status_agent_create}")
+    print(f"{last_msg}")
+
     if is_error or status == "error":
-        return validate_doctype_payload_agent
-    else:
-        return create_doctype_agent
+        return state, validate_doctype_payload_agent
+
+    if not is_error and status == "ok":
+        return state, create_doctype_agent
+
+    if status_agent_create == "error":
+        return state, validate_doctype_payload_agent
+
+    if status_agent_create == "ok":
+        return state, "END"
+    
+    return state, validate_doctype_payload_agent
+
+    
+    
     
 
     

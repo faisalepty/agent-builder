@@ -6,45 +6,46 @@ import time
 import os
 
 # --- OpenRouter Configuration ---
-OPENROUTER_API_KEY = ""  # set in env in prod
-MODEL = "deepseek/deepseek-chat-v3.1:free"  # free/open model
+OPENROUTER_API_KEY = "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"  # set in env in prod
+MODEL = "openai/gpt-oss-20b:free"  # free/open model
 
 # --- Prompt Templates (kept simple to avoid format brace conflicts) ---
 PROMPT_TEMPLATES = {
-    "DocType": (
-        "You are an expert Frappe/ERPNext developer.\n"
-        "Generate a JSON payload for creating a valid Frappe DocType.\n\n"
-        "### Rules:\n"
-        "1. Output strictly valid JSON only (no markdown, no explanations).\n"
-        "2. JSON must include these top-level keys:\n"
-        "   - doctype = \"DocType\"\n"
-        "   - name = DocType name (Title Case)\n"
-        "   - module = Module name (Title Case)\n"
-        "   - custom = 1\n"
-        "   - autoname (e.g., \"field:<fieldname>\" or \"naming_series\")\n"
-        "   - naming_rule (if relevant)\n"
-        "   - fields = [array of field objects]\n"
-        "   - permissions = [array of role permissions]\n"
-        "3. Each field object must include:\n"
-        "   - fieldname, label, fieldtype\n"
-        "   - reqd (0 or 1)\n"
-        "   - in_list_view (0 or 1 if relevant)\n"
-        "   - in_standard_filter (0 or 1 if relevant)\n"
-        "   - default (if applicable)\n"
-        "   - options (required for Select, Link, Table, Data-with-validator)\n"
-        "   - precision/width/depends_on if applicable\n"
-        "4. Special fieldtype rules:\n"
-        "   - Link: must include 'options' with target DocType\n"
-        "   - Select: 'options' must be newline-separated values\n"
-        "   - Table: 'options' must be the child DocType name\n"
-        "   - Data: may use 'options' for validators like Email, Phone\n"
-        "5. If the DocType represents a transactional record (like invoices, orders, service records), include:\n"
-        "   - is_submittable = 1\n"
-        "   - permissions may include submit, cancel, amend.\n"
-        "6. Always include a 'permissions' list with System Manager having full rights (read, write, create, delete, submit, cancel, amend, report, import, export, email, print).\n"
-        "7. Do not add explanations, comments, or text outside the JSON.\n\n"
-        "User Description: {description}"
-    ),
+"DocType": (
+    "You are an expert Frappe/ERPNext developer.\n"
+    "Generate a JSON payload for creating a valid Frappe DocType.\n\n"
+    "### Rules:\n"
+    "1. Output strictly valid JSON only (no markdown, no explanations).\n"
+    "2. JSON must include these top-level keys:\n"
+    "   - doctype = \"DocType\"\n"
+    "   - name = DocType name (Title Case)\n"
+    "   - module = Module name (Title Case)\n"
+    "   - custom = 1\n"
+    "   - autoname: use 'field:<fieldname>' if the DocType has a unique name field, or 'naming_series' if it uses a series; ensure the field referenced exists in the fields array\n"
+    "   - naming_rule (if relevant)\n"
+    "   - fields = [array of field objects]\n"
+    "   - permissions = [array of role permissions]\n"
+    "3. Each field object must include:\n"
+    "   - fieldname, label, fieldtype\n"
+    "   - reqd (0 or 1)\n"
+    "   - in_list_view (0 or 1 if relevant)\n"
+    "   - in_standard_filter (0 or 1 if relevant)\n"
+    "   - default (if applicable)\n"
+    "   - options (required for Select, Link, Table, Data-with-validator)\n"
+    "   - precision/width/depends_on if applicable\n"
+    "4. Special fieldtype rules:\n"
+    "   - Link: must include 'options' with target DocType\n"
+    "   - Select: 'options' must be newline-separated values\n"
+    "   - Table: 'options' must be the child DocType name\n"
+    "   - Data: may use 'options' for validators like Email, Phone\n"
+    "5. If the DocType represents a transactional record (like invoices, orders, service records), include:\n"
+    "   - is_submittable = 1\n"
+    "   - permissions may include submit, cancel, amend.\n"
+    "6. Always include a 'permissions' list with System Manager having full rights (read, write, create, delete, submit, cancel, amend, report, import, export, email, print).\n"
+    "7. Do not add explanations, comments, or text outside the JSON.\n\n"
+    "User Description: {description}"
+),
+
     "Dashboard": (
         "You are an expert Frappe developer.\n"
         "Generate a JSON payload for a Frappe Dashboard.\n"
@@ -71,13 +72,14 @@ MISSING_DOCTYPE_PROMPT = (
     " - name = \"{missing_doctype}\"\n"
     " - module = same as parent (\"{module}\")\n"
     " - custom = 1\n"
-    " - autoname = \"field:name\" unless specified otherwise\n"
+    " - autoname: use 'field:name' if the Doctype has a unique identifying field, or 'naming_series' if it uses a series; ensure the field referenced exists in the fields array\n"
     " - fields must include at least one identifying field (e.g., name or title)\n"
     " - if any field is Link, include 'options' = target DocType\n"
     " - do not create additional references to unknown DocTypes\n"
     " - permissions: always include System Manager with full rights\n"
     "Return strictly valid JSON only (no extra text)."
 )
+
 
 
 # --- GPT Call using OpenRouter ---
