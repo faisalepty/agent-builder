@@ -47,7 +47,8 @@ class Orch:
         print("Initial response appended: ", response.get("content"), "\n \n TOOLS: \n", response.get("tool_calls"), "\n \n ######################################## \n")
 
         for _ in range(self.max_retries):
-            print(f"{[msg for msg in self.state['messages']]}, ", "\n \n ######################################## \n")
+            for msg in self.state["messages"]:
+                print(f"Message: {msg} ", "\n \n ######################################## \n")
             print(f"Orch iteration {_ + 1}", "\n \n ######################################## \n")
             last_response = self.state["messages"][-1]
             # If LLM made tool calls
@@ -69,9 +70,6 @@ class Orch:
                 print("Routing to: ", route)
                 response = route(self.state, self.tools)
                 self.state["messages"].append(response)
-                print("Route agent response appended: ", response.get("content"), "\n \n TOOLS: \n", response.get("tool_calls"), "\n \n ######################################## \n")
-
-                
 
                 # if is_error:
                 #     # Retry using validator agent

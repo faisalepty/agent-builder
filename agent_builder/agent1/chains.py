@@ -27,7 +27,7 @@ tool_map = {
 
 def generate_doctype_payload_agent(state, tools=None):
     
-    messages = state["messages"]
+    base_messages = state["messages"]
 
     generate_payload_system_prompt = (
             "You are an expert Frappe/ERPNext developer. Generate STRICT JSON only (no prose). "
@@ -36,8 +36,8 @@ def generate_doctype_payload_agent(state, tools=None):
             " you have access to the tool_validate_payload function to check the validity of the generated JSON."
             " You must use the tool_validate_payload function to ensure the generated JSON is valid before returning it."
 )
-    
-    messages.insert(0, {"role": "system", "content": generate_payload_system_prompt})
+
+    messages = [{"role": "system", "content": generate_payload_system_prompt}] + base_messages
     response = client(
         tools=tools,
         messages=messages
@@ -47,9 +47,9 @@ def generate_doctype_payload_agent(state, tools=None):
 
 def validate_doctype_payload_agent(state, tools=None):
     
-    messages = state["messages"]
+    base_messages = state["messages"]
     ### UPDATE SYTEM PROMPT TO MIRROR AGENT
-    generate_payload_system_prompt = (
+    validate_payload_system_prompt = (
             "You are an expert Frappe/ERPNext developer. Generate STRICT JSON only (no prose). "
              "You are the Validator Agent.\n"
             "The previous tool execution FAILED.\n"
@@ -60,8 +60,8 @@ def validate_doctype_payload_agent(state, tools=None):
             " you have access to the tool_validate_payload function to check the validity of the generated JSON."
             " You must use the tool_validate_payload function to ensure the generated JSON is valid before returning it."
 )
-    
-    messages.insert(0, {"role": "system", "content": generate_payload_system_prompt})
+
+    messages = [{"role": "system", "content": validate_payload_system_prompt}] + base_messages
     response = client(
         tools=tools,
         messages=messages
@@ -71,23 +71,21 @@ def validate_doctype_payload_agent(state, tools=None):
 
 def create_doctype_agent(state, tools=None):
     
-    messages = state["messages"]
+    base_messages = state["messages"]
     payload = state.get("payload", {})
 
     # create and validate, "mirror -> regenerate -> create" agent
     generate_doctype_system_prompt = (
          "You are the Creator Agent. The input JSON is already validated. "
          "you have access to the tool_agent_create function to create the DocType in Frappe/ERPNext."
+         "The payload has been validated and is correct.\n"
          f"this is the sanitized payload to create the DocType: {json.dumps(payload, indent=2)}.\n"
          "you must use the tool_agent_create function to create the DocType."
-         "Call tool_agent_create with the sanitized payload. If creation succeeds, return {\"status\":\"ok\",\"created\": [ ... ]}. "
-         "If creation fails, return {\"status\":\"error\",\"message\":\"...\",\"errors\":[...]}."
-
     )
-    messages.insert(0, {
+    messages = [{
     "role": "system",
     "content": generate_doctype_system_prompt
-})
+}] + base_messages
 
 
 
