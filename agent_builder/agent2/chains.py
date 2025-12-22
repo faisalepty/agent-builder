@@ -25,8 +25,7 @@ def supervisor_agent(state):
     - Decides next agent
     - Outputs STRICT JSON: {"next_agent": "..."}
     """
-    last_tool = state.get("last_tool_result") or {}
-    has_error = state.get("has_error")
+
 
     state_summary = {
         "messages": state.get("messages"),
@@ -34,7 +33,7 @@ def supervisor_agent(state):
         "last_tool_called": state.get("last_tool_called"),
         "payload": state.get("payload"),
         "payload_is_validated": state.get("validated_payload") is not None,
-        "has_error": has_error,
+        "has_error": state.get("has_error"),
         "last_error": state.get("last_error"),
         "error_source": state.get("error_source"),
     }
@@ -66,7 +65,7 @@ Routing Logic:
 3. Creation Check:
    - If validation succeeds (status: ok) AND not yet created -> Send to create_doctype_agent.
    - If creation fails (status: error) -> Send to regenerate_validate_doctype_payload_agent.
-   - If creation succeeds (status: ok) -> END.
+   - If creation succeeds (status: ok) -> next_agent = "END".
 
 
 Constraints:
@@ -94,26 +93,72 @@ CORRECT FORMAT:
 def generate_doctype_payload_agent(state, tools=None):
     state["entity_type"] = "doctype"
 
-    system_prompt ="""
-You are an expert Frappe/ERPNext developer.
+    system_prompt = """
+You are an Expert Frappe Framework Architect. Generate a VALID JSON schema for a NEW DocType.
 
-Generate STRICT JSON only.
+PERMISSION GOVERNANCE (CRITICAL):
+- Default: "is_submittable": 0.
+- If is_submittable = 0 or omitted:
+  - DO NOT include submit, cancel, or amend in permissions.
+- ONLY if user mentions Submit, Approve, or Workflow:
+  - Set "is_submittable": 1
+  - Then allow submit, cancel, amend = 1.
+- Never violate this rule.
 
-Keys:
-- doctype: "DocType"
-- name
-- module
-- custom
-- fields
-- permissions
-- autoname (optional)
+SCHEMA CONSTRAINTS:
+- doctype: DocType.
+- Fieldnames: lowercase_with_underscores.
+- Use ONLY fields that exist in DocType metadata.
+- Mandatory field: "module".
+- Child tables: fields, permissions, actions, links, states (arrays only).
 
-You MUST call tool_validate_payload before returning.
-You are NOT ALLOWED to call any other tool apart from tool_validate payload
-You MUST ONLY generate Payloads for doctype creation and call validation tool, do not call any other tool
+ALLOWED FIELDTYPES:
+Autocomplete, Attach, Attach Image, Barcode, Button, Check, Code, Color,
+Currency, Data, Date, Datetime, Duration, Dynamic Link, Float, Geolocation,
+Heading, HTML, HTML Editor, Icon, Image, Int, JSON, Link, Long Text,
+Markdown Editor, Password, Percent, Phone, Read Only, Rating, Select,
+Signature, Small Text, Table, Table MultiSelect, Text, Text Editor, Time.
 
-If you cannot produce valid JSON:
-{"status":"error","message":"..."}
+FIELD ATTRIBUTE MAPPING:
+- Mandatory → reqd: 1
+- Unique → unique: 1
+- Searchable → in_global_search: 1
+- Show in List → in_list_view: 1
+- Link → options: "TargetDocType" DO NOT GUESS fall back to Data if no information about target is provided
+- Select → options: "A\\nB\\nC"
+
+NAMING:
+- naming_rule and autoname are separate.
+- Set BOTH only if user specifies naming.
+- Otherwise omit both.
+
+CORE DOCTYPE:
+{
+  "doctype": "DocType",
+  "name": "SingularCamelCase",
+  "module": "Agent Builder",
+  "custom": 1,
+  "is_submittable": 0,
+  "track_changes": 1,
+  "fields": [],
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1, "write": 1, "create": 1, "delete": 1,
+      "select": 1, "export": 1, "print": 1, "report": 1,
+      "submit": 0, "cancel": 0, "amend": 0
+    }
+  ]
+}
+
+MODULE:
+- If user specifies module → use it.
+- Else → use "Agent Builder".
+
+EXECUTION:
+- Output STRICT JSON only.
+- Call tool_validate_payload as FINAL and ONLY action.
+
 """
 
     messages = [
@@ -178,6 +223,49 @@ Do NOT guess field names. Use the provided METADATA to ensure the fields exist.
     return client(messages=messages, tools=tools)
 
 
+def generate_number_card_payload_agent(state, tools=None):
+    state["entity_type"] = "number_card"
+
+    # Fetch metadata if available to help the LLM pick the right fields
+    metadata_context = json.dumps(state.get('metadata', {}), indent=2)
+
+    system_prompt = f"""You are a Frappe Framework Expert. Your task is to generate a 'Number Card' DocType payload.
+Do NOT guess field names. Use the provided METADATA to ensure the fields exist.
+
+
+### CORE LOGIC RULES:
+1. IF METADATA IS EMPTY: Call 'tool_get_doctype_metadata' for the source DocType first.
+2. AGGREGATE TYPE: 
+   - Set 'type' to "Document Type" for standard DocType aggregation.
+   - Set 'function' to ["Count", "Sum", "Average", "Minimum", "Maximum"].
+
+### SCHEMA DEFINITION (Number Card):
+- doctype: Always "Number Card"
+- label: The display title of the card.
+- document_type: The source DocType (e.g., "Sales Invoice").
+- function: The calculation type (e.g., "Sum").
+- aggregate_function_based_on: The numeric field to calculate (Required unless function is "Count").
+- is_public: 1
+- show_full_number: 1 (to show 1,234,567) or 0 (to show 1.2M).
+- show_percentage_stats: 1 (to show trend) or 0.
+- stats_time_interval: ["Daily", "Weekly", "Monthly", "Yearly"] (Required if show_percentage_stats is 1).
+- filters_json: MUST be stringified JSON list of lists: "[[\"field\", \"op\", \"val\"]]" or "[]".
+- module: "Agent Builder" (default).
+
+### INSTRUCTIONS:
+- Generate the JSON.
+- You MUST call 'tool_validate_number_card_payload' with {{"payload": <json>}}.
+- Output ONLY the tool call. No prose.
+"""
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        *state["messages"],
+    ]
+
+    return client(messages=messages, tools=tools)
+
+
 # --------------------------------
 # VALIDATION AGENT (GENERIC)
 # --------------------------------
@@ -191,6 +279,9 @@ def regenerate_validate_doctype_payload_agent(state, tools=None):
     system_prompt = (
         "You are the Validator Agent.\n"
         "Previous validation or creation FAILED.\n"
+        "without changing the structure, correct the payload.\n"
+        "Do NOT alter the intent or fields specified by the user.\n"
+        "unless there is an error attached to the value or key you want to change, do not change anything.\n"
         "Fix the payload and revalidate.\n"
         "You MUST always call the validate tool after fixing the payload"
         "State summary:\n"

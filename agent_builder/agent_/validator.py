@@ -3,7 +3,11 @@ import frappe
 from typing import Tuple, List, Dict
 
 RESERVED = {"name","owner","creation","modified","modified_by","parent","parentfield","parenttype","idx","docstatus"}
-FALLBACK_TYPES = ["Data","Text","Int","Float","Link","Select","Date","Datetime","Table", "Time" ]
+FALLBACK_TYPES = ["Autocomplete", "Attach", "Attach Image", "Barcode", "Button", "Check", "Code", "Color",
+"Currency", "Data", "Date", "Datetime", "Duration", "Dynamic Link", "Float", "Geolocation",
+"Heading", "HTML", "HTML Editor", "Icon", "Image", "Int", "JSON", "Link", "Long Text",
+"Markdown Editor", "Password", "Percent", "Phone", "Read Only", "Rating", "Select",
+"Signature", "Small Text", "Table", "Table MultiSelect", "Text", "Text Editor", "Time"]
 
 class ValidationError:
     def __init__(self, message, field=None, suggestion=None):

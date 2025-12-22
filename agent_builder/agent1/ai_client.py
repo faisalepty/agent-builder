@@ -4,16 +4,12 @@ import json
 from dotenv import load_dotenv
 load_dotenv()
 
-api = os.getenv("MY_SECRET_KEY")
+api = os.getenv("OPENAI_API_KEY")
 
 
 Client = OpenAI(
   base_url="https://openrouter.ai/api/v1",
-  # api_key="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",
-  # api_key="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"
-  # api_key="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"
-  # api_key="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"
-  api_key="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"
+  api_key=api
 )
 
 
