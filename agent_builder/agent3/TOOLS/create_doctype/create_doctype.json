@@ -1,0 +1,14 @@
+{
+    "type": "function",
+    "function": {
+        "name": "tool_create_doctype",
+        "description": "Create a Frappe document (DocType, Dashboard, Chart, Workspace, etc.)",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "payload": {"type": "object"}
+            },
+            "required": ["payload"]
+        }
+    }
+}
