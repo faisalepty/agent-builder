@@ -7,11 +7,11 @@ class LLM:
         self.base_url = "https://openrouter.ai/api/v1"
         self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
 
-    def generate(self, messages, tools=None, model="openai/gpt-oss-120b:free", temperature=0.7):
+    def generate(self, messages, tools=None, model="baidu/cobuddy:free"):
         response = self.client.chat.completions.create(
             model=model,
             messages=messages,
             tools=tools,
-            temperature=temperature
+            extra_body={"reasoning": {"enabled": True}}
         )
         return response.choices[0].message

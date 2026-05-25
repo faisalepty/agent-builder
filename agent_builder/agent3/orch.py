@@ -72,54 +72,57 @@ class Orch:
         ]
 
 
+    import json
+
     def execute(self, prompt, agent_name="delegation", depth=10):
         agent_metadata = self.get_agent(agent_name)
         tools = self.get_tool_schema(agent_metadata)
         formatted_prompt = self.format_message(agent_metadata, prompt)
-        # invoke react agent with formatted prompt
+        
         for step in range(depth):
-            print(f"Step {step+1}/{depth}")
-            print("Prompt to agent:")
             response = self.llm.generate(messages=formatted_prompt, tools=tools)
-            print("Agent response:")
             print(response)
+            break
+            # 1. Handle Final Content (The JSON Plan)
             if not response.tool_calls:
-                print(response.content)
-                self.state["messages"].append({
-                    "role": "agent",
-                    "content": response.content,
-                    "tool_calls": response.tool_calls
-                })
-                return response.content
+                content = response.content
+                
+                # Check if this is the Planner returning a JSON plan
+                try:
+                    plan = json.loads(content)
+                    if "tasks" in plan:
+                        results = []
+                        print(f"Plan received: {plan.get('summary')}")
+                        
+                        # Loop through assignments and delegate to workers
+                        for task in plan["tasks"]:
+                            worker = task["agent"]
+                            requirement = task["user_requirement"]
+                            
+                            print(f"Executing Task: {worker} -> {requirement}")
+                            res = self.execute(requirement, agent_name=worker, depth=depth-1)
+                            results.append({"agent": worker, "result": res})
+                        
+                        return json.dumps(results) # Return all worker results
+                except:
+                    # Not JSON or not a plan, just return plain text
+                    return content
             
+            # 2. Handle Tool Calls (Delegation/Tools)
             for tool_call in response.tool_calls:
                 tool_name = tool_call.function.name
-                if tool_name == "delegation":
-                    # handle delegation separately
-                    delegate_agent_name = tool_call.function.arguments.get("agent_name")
-                    delegate_prompt = tool_call.function.arguments.get("prompt")
-                    print(f"Delegating to agent {delegate_agent_name} with prompt: {delegate_prompt}")
-                    delegate_response = self.execute(delegate_prompt, agent_name=delegate_agent_name, depth=depth-1)
-                    print(f"Response from delegated agent {delegate_agent_name}: {delegate_response}")
-                    self.state["messages"].append({
-                        "role": "agent",
-                        "content": response.content,
-                        "tool_calls": response.tool_calls,
-                        "tool_results": delegate_response
-                    })
-                    continue
-                tool_args = tool_call.function.arguments
-                print(f"Tool call: {tool_name} with args {tool_args}")
-                tool_call_result = self.execute_tool(tool_name, tool_args)
-                print(f"Tool call result: {tool_call_result}")
-                self.state["messages"].append({
-                    "role": "agent",
-                    "content": response.content,
-                    "tool_calls": response.tool_calls,
-                    "tool_results": tool_call_result
-                })
+                args = json.loads(tool_call.function.arguments) if isinstance(tool_call.function.arguments, str) else tool_call.function.arguments
 
-        print("Max steps reached without a final answer.")
+                if tool_name == "delegation":
+                    delegate_name = args.get("agent_name")
+                    delegate_prompt = args.get("prompt")
+                    return self.execute(delegate_prompt, agent_name=delegate_name, depth=depth-1)
+                
+                # Standard Tool Execution
+                return self.execute_tool(tool_name, args)
+
+        return "Max steps reached."
+
 
     def execute_tool(self, tool_name, tool_args):
         # run tool using cli python method and return result
