@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 import frappe
 import threading
 
@@ -8,30 +7,21 @@ from run_agent import AIAgent
 
 
 # Point Hermes at the app's hermes directory — works on any machine
-# _APP_DIR = os.path.dirname(os.path.abspath(__file__))
-# os.environ.setdefault("HERMES_HOME", os.path.join(_APP_DIR, "../", "hermes"))
-# os.environ.setdefault("OPENROUTER_API_KEY", "your-key-here")
+_APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.environ.setdefault("HERMES_HOME", os.path.join(_APP_DIR, "hermes"))
+os.environ.setdefault("OPENROUTER_API_KEY", "your-key-here")
 
-
-_APP_DIR = Path(__file__).resolve().parent
-HERMES_HOME = (_APP_DIR.parent.parent / ".hermes").resolve()
-
-os.environ.setdefault("HERMES_HOME", str(HERMES_HOME))
-os.environ.setdefault("OPENROUTER_API_KEY", "")
-
-
-os.environ.setdefault("HERMES_ENABLE_PROJECT_PLUGINS", "true")
 
 @frappe.whitelist()
 def chat(message, session_id=None):
     user = frappe.session.user
     site = frappe.local.site
     room = get_user_room(user)
-    # import sys
-    # print(f"APP_DIR: {_APP_DIR}", file=sys.stderr)
-    # print(f"HERMES_HOME: {os.environ.get('HERMES_HOME')}", file=sys.stderr)
-    # print(f"_APP_DIR: {_APP_DIR}", file=sys.stderr)
-    # sys.exit(0)
+    import sys
+    print(f"APP_DIR: {_APP_DIR}", file=sys.stderr)
+    print(f"HERMES_HOME: {os.environ.get('HERMES_HOME')}", file=sys.stderr)
+    print(f"_APP_DIR: {_APP_DIR}", file=sys.stderr)
+    sys.exit(0)
 
     def publish(event, data):
         emit_via_redis(event, data, room)
