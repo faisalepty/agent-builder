@@ -238,4 +238,12 @@ app_license = "mit"
 # }
 
 app_include_js = "/assets/agent_builder/js/Chat_ui.js"
-app_include_css = "/assets/agent_builder/css/Chat_Ui.css"
+app_include_css = "/assets/agent_builder/css/Chat_ui.css"
+
+
+import os
+from pathlib import Path
+
+os.environ["HERMES_HOME"] = str(Path(__file__).resolve().parent.parent / ".hermes")
+os.environ["HERMES_ENABLE_PROJECT_PLUGINS"] = "true"
+os.environ.setdefault("OPENROUTER_API_KEY", "")

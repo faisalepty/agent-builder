@@ -1,0 +1,4 @@
+plugins:
+  enabled:
+  - frappe_tools
+  disabled: []

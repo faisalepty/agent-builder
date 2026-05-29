@@ -1,5 +1,4 @@
-import os
-from pathlib import Path
+# agent_builder/agent_builder/api/agent.py
 import frappe
 import threading
 
@@ -7,31 +6,11 @@ from frappe.realtime import emit_via_redis, get_user_room
 from run_agent import AIAgent
 
 
-# Point Hermes at the app's hermes directory — works on any machine
-# _APP_DIR = os.path.dirname(os.path.abspath(__file__))
-# os.environ.setdefault("HERMES_HOME", os.path.join(_APP_DIR, "../", "hermes"))
-# os.environ.setdefault("OPENROUTER_API_KEY", "your-key-here")
-
-
-_APP_DIR = Path(__file__).resolve().parent
-HERMES_HOME = (_APP_DIR.parent.parent / ".hermes").resolve()
-
-os.environ.setdefault("HERMES_HOME", str(HERMES_HOME))
-os.environ.setdefault("OPENROUTER_API_KEY", "")
-
-
-os.environ.setdefault("HERMES_ENABLE_PROJECT_PLUGINS", "true")
-
 @frappe.whitelist()
 def chat(message, session_id=None):
     user = frappe.session.user
     site = frappe.local.site
     room = get_user_room(user)
-    # import sys
-    # print(f"APP_DIR: {_APP_DIR}", file=sys.stderr)
-    # print(f"HERMES_HOME: {os.environ.get('HERMES_HOME')}", file=sys.stderr)
-    # print(f"_APP_DIR: {_APP_DIR}", file=sys.stderr)
-    # sys.exit(0)
 
     def publish(event, data):
         emit_via_redis(event, data, room)
@@ -50,19 +29,20 @@ def chat(message, session_id=None):
 
     def run():
         frappe.init(site=site)
+        frappe.connect()
         try:
             agent = AIAgent(
                 model="openai/gpt-oss-120b:free",
                 quiet_mode=False,
-                disabled_toolsets=["terminal"],
-                enabled_toolsets=["frappe"],
+                platform="frappe",
+                enabled_toolsets=["frappe_tools"],   # platform default + your plugin
+                # disabled_toolsets=["terminal"],
                 stream_delta_callback=on_token,
                 tool_start_callback=on_tool_start,
                 tool_complete_callback=on_tool_done,
                 tool_progress_callback=on_tool_status,
             )
             result = agent.run_conversation(user_message=message)
-            print("Agent final response:", result["final_response"])
             publish("agent_done", {"response": result["final_response"]})
         except Exception as e:
             publish("agent_done", {"response": f"Error: {str(e)}"})

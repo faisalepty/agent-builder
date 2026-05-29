@@ -1,4 +1,4 @@
-# agent_builder/hermes/plugins/frappe_tools/schemas.py
+# agent_builder/.hermes/plugins/frappe_tools/schemas.py
 
 FRAPPE_GET_DOC = {
     "name": "frappe_get_doc",

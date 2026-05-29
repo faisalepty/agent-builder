@@ -1,9 +1,6 @@
-# agent_builder/hermes/plugins/frappe_tools/plugin.yaml
 name: frappe_tools
-toolset: frappe_tools
 version: 1.0.0
-description: Native Frappe CRUD tools — get, list, save, and delete documents
-author: agent_builder
+description: Native Frappe CRUD tools for the agent
 provides_tools:
   - frappe_get_doc
   - frappe_get_list

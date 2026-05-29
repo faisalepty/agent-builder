@@ -1,4 +1,4 @@
-# agent_builder/hermes/plugins/frappe_tools/tools.py
+# agent_builder/.hermes/plugins/frappe_tools/tools.py
 
 import json
 import frappe
@@ -24,7 +24,12 @@ def frappe_get_list(args: dict, **kwargs) -> str:
             fields=args.get("fields", ["name"]),
             limit=args.get("limit", 20),
         )
-        return json.dumps(result, default=str)
+        # Remove None values to keep response clean
+        cleaned = [
+            {k: v for k, v in row.items() if v is not None}
+            for row in result
+        ]
+        return json.dumps(cleaned, default=str)
     except frappe.PermissionError:
         return json.dumps({"error": f"No permission to read {args['doctype']}"})
     except Exception as e:
