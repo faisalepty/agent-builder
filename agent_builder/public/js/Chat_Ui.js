@@ -199,16 +199,17 @@ $(document).ready(function () {
     });
 
     // ── Realtime: streaming token ──────────────────────────────
-    frappe.realtime.on('agent_token', (data) => {
-        if (!streamBubbleId) createAgentBubble();
-        streamBuffer += data.delta;
-        $(`#${streamBubbleId}`).html(
-            renderMd(streamBuffer) +
-            `<span class="ab-cursor"></span>` +
-            `<button class="ab-copy-btn" data-bubble="${streamBubbleId}">${ICONS.copy} Copy</button>`
-        );
-        scrollDown();
-    });
+  frappe.realtime.on('agent_token', (data) => {
+    if (!data.delta) return;   // ← guard against null delta
+    if (!streamBubbleId) createAgentBubble();
+    streamBuffer += data.delta;
+    $(`#${streamBubbleId}`).html(
+        renderMd(streamBuffer) +
+        `<span class="ab-cursor"></span>` +
+        `<button class="ab-copy-btn" data-bubble="${streamBubbleId}">${ICONS.copy} Copy</button>`
+    );
+    scrollDown();
+});
 
     // ── Realtime: tool events ──────────────────────────────────
     frappe.realtime.on('agent_event', (data) => {
@@ -248,26 +249,20 @@ $(document).ready(function () {
 
     // ── Realtime: done ─────────────────────────────────────────
     frappe.realtime.on('agent_done', (data) => {
-        hideTyping();
-
-        if (!streamBubbleId) createAgentBubble();
-
-        // Set final markdown-rendered response
-        $(`#${streamBubbleId}`).html(
-            renderMd(data.response) +
-            `<button class="ab-copy-btn" data-bubble="${streamBubbleId}">${ICONS.copy} Copy</button>`
-        );
-
-        // Reset state
-        streamBubbleId = null;
-        streamBuffer   = '';
-        toolBlockId    = null;
-        activeToolId   = null;
-
-        setInputState(false);
-        setStatus('Ready', false);
-        $('#ab-input').focus();
-        scrollDown();
-    });
+    hideTyping();
+    if (!streamBubbleId) createAgentBubble();
+    $(`#${streamBubbleId}`).html(
+        renderMd(data.response || '')  +  // ← guard against null response
+        `<button class="ab-copy-btn" data-bubble="${streamBubbleId}">${ICONS.copy} Copy</button>`
+    );
+    streamBubbleId = null;
+    streamBuffer   = '';
+    toolBlockId    = null;
+    activeToolId   = null;
+    setInputState(false);
+    setStatus('Ready', false);
+    $('#ab-input').focus();
+    scrollDown();
+});
 
 });

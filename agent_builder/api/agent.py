@@ -36,6 +36,12 @@ def chat(message, session_id=None):
                 quiet_mode=False,
                 platform="frappe",
                 enabled_toolsets=["frappe_tools"],   # platform default + your plugin
+                ephemeral_system_prompt=(
+                    "You are a Frappe/ERPNext assistant with access to Frappe CRUD tools. "
+                    "Before calling any frappe_ tool, always load and follow the frappe-tools skill: "
+                    "use skill_view('frappe_tools:frappe-tools'). "
+                    "Never deviate from the exact tool names and parameters defined in that skill."
+                ),
                 # disabled_toolsets=["terminal"],
                 stream_delta_callback=on_token,
                 tool_start_callback=on_tool_start,

@@ -237,7 +237,7 @@ app_license = "mit"
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
-app_include_js = "/assets/agent_builder/js/Chat_ui.js"
+app_include_js = "/assets/agent_builder/js/Chat_Ui.js"
 app_include_css = "/assets/agent_builder/css/Chat_ui.css"
 
 

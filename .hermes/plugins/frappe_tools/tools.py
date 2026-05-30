@@ -37,14 +37,22 @@ def frappe_get_list(args: dict, **kwargs) -> str:
 
 
 def frappe_save_doc(args: dict, **kwargs) -> str:
+    import frappe
     try:
         data = args["doc"]
-        if "name" in data and frappe.db.exists(data["doctype"], data["name"]):
-            doc = frappe.get_doc(data["doctype"], data["name"])
+        doctype = data.get("doctype")
+        name = data.get("name")
+
+        if name and frappe.db.exists(doctype, name):
+            # Update existing
+            doc = frappe.get_doc(doctype, name)
             doc.update(data)
+            doc.save()
         else:
+            # Create new
             doc = frappe.get_doc(data)
-        doc.save()
+            doc.insert(ignore_permissions=False)
+
         frappe.db.commit()
         return json.dumps({"name": doc.name, "doctype": doc.doctype, "status": "saved"})
     except frappe.PermissionError:
@@ -53,7 +61,6 @@ def frappe_save_doc(args: dict, **kwargs) -> str:
         return json.dumps({"error": f"Validation failed: {str(e)}"})
     except Exception as e:
         return json.dumps({"error": str(e)})
-
 
 def frappe_delete_doc(args: dict, **kwargs) -> str:
     try:
