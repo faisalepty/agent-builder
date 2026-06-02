@@ -200,6 +200,7 @@ $(document).ready(function () {
 
     // ── Realtime: streaming token ──────────────────────────────
   frappe.realtime.on('agent_token', (data) => {
+    // console.log('Agent token received:', data);
     if (!data.delta) return;   // ← guard against null delta
     if (!streamBubbleId) createAgentBubble();
     streamBuffer += data.delta;
@@ -213,6 +214,7 @@ $(document).ready(function () {
 
     // ── Realtime: tool events ──────────────────────────────────
     frappe.realtime.on('agent_event', (data) => {
+        // console.log('Agent event received:', data);
         ensureToolBlock();
 
         if (data.type === 'tool_start') {
@@ -249,6 +251,7 @@ $(document).ready(function () {
 
     // ── Realtime: done ─────────────────────────────────────────
     frappe.realtime.on('agent_done', (data) => {
+        // console.log('Agent done event received:', data);
     hideTyping();
     if (!streamBubbleId) createAgentBubble();
     $(`#${streamBubbleId}`).html(
