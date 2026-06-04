@@ -7,12 +7,12 @@ from run_agent import AIAgent
 
 
 @frappe.whitelist()
-def new_chat(title=None):
+def new_chat(title=None, message=None):
     """Create a new Agent Chat and return its name."""
     user = frappe.session.user
     doc = frappe.get_doc({
         "doctype": "Agent Chat",
-        "title": title or f"Chat {now_datetime().strftime('%d %b %Y %H:%M')}",
+        "title": title or message[:50] if message else "New Chat",
         "user": user,
         "status": "Active",
         "last_active": now_datetime(),
@@ -65,7 +65,7 @@ def chat(message, chat_id=None):
 
     # Create a new chat inline if none provided
     if not chat_id:
-        result = new_chat()
+        result = new_chat(message=message)
         chat_id = result["chat_id"]
 
     # Verify ownership before doing anything

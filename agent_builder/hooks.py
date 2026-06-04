@@ -236,9 +236,13 @@ app_license = "mit"
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
-
-app_include_js = "/assets/agent_builder/js/Chat_Ui.js"
-app_include_css = "/assets/agent_builder/css/Chat_ui.css"
+app_include_js = [
+    "/assets/agent_builder/js/chat_list.js",
+    "/assets/agent_builder/js/chat_messages.js",
+    "/assets/agent_builder/js/chat_realtime.js",
+    "/assets/agent_builder/js/Chat_Ui.js",
+]
+app_include_css = ["/assets/agent_builder/css/Chat_Ui.css"]
 
 
 import os
