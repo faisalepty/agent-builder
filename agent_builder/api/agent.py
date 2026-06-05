@@ -126,7 +126,7 @@ def chat(message, chat_id=None):
 
             # 2 — Run agent with compressed context
             agent = AIAgent(
-                model="openai/gpt-oss-120b:free",
+                model="openrouter/owl-alpha",
                 quiet_mode=False,
                 platform="frappe",
                 enabled_toolsets=["frappe_tools"],

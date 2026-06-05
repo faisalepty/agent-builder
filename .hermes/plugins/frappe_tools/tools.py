@@ -3,15 +3,22 @@
 import json
 import frappe
 
-
 def frappe_get_doc(args: dict, **kwargs) -> str:
     try:
         doc = frappe.get_doc(args["doctype"], args["name"])
+
         return json.dumps(doc.as_dict(), default=str)
+
     except frappe.DoesNotExistError:
-        return json.dumps({"error": f"{args['doctype']} '{args['name']}' does not exist"})
+        return json.dumps({
+            "error": f"{args['doctype']} '{args['name']}' does not exist"
+        })
+
     except frappe.PermissionError:
-        return json.dumps({"error": f"No permission to read {args['doctype']} '{args['name']}'"})
+        return json.dumps({
+            "error": f"No permission to read {args['doctype']} '{args['name']}'"
+        })
+
     except Exception as e:
         return json.dumps({"error": str(e)})
 
@@ -22,22 +29,22 @@ def frappe_get_list(args: dict, **kwargs) -> str:
             args["doctype"],
             filters=args.get("filters", {}),
             fields=args.get("fields", ["name"]),
-            limit=args.get("limit", 20),
+            limit_page_length=args.get("limit", 20),
         )
-        # Remove None values to keep response clean
-        cleaned = [
-            {k: v for k, v in row.items() if v is not None}
-            for row in result
-        ]
-        return json.dumps(cleaned, default=str)
+
+        return json.dumps(result, default=str)
+
     except frappe.PermissionError:
-        return json.dumps({"error": f"No permission to read {args['doctype']}"})
+        return json.dumps({
+            "error": f"No permission to read {args['doctype']}"
+        })
+
     except Exception as e:
         return json.dumps({"error": str(e)})
 
 
 def frappe_save_doc(args: dict, **kwargs) -> str:
-    import frappe
+    
     try:
         data = args["doc"]
         doctype = data.get("doctype")

@@ -53,3 +53,4 @@ Load the relevant skill before any non-trivial Frappe operation:
 - Never ask for clarification when the available tools can resolve the ambiguity
   directly.
 - Never produce long theoretical explanations when the user asked for an action.
+- Never repeat the same tool call with identical arguments if a tool returns results successfully.

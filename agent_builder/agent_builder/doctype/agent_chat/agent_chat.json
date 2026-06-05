@@ -8,11 +8,14 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "section_chat_details",
   "title",
   "user",
   "status",
   "last_active",
+  "col_break",
   "message_count",
+  "advanced_section",
   "agent_context"
  ],
  "fields": [
@@ -58,15 +61,29 @@
   {
    "fieldname": "agent_context",
    "fieldtype": "Long Text",
-   "hidden": 1,
    "label": "Agent Context",
    "read_only": 1
+  },
+  {
+   "fieldname": "section_chat_details",
+   "fieldtype": "Section Break",
+   "label": "Chat Details"
+  },
+  {
+   "fieldname": "col_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "advanced_section",
+   "fieldtype": "Section Break",
+   "label": "Advanced"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-02 15:48:58.551980",
+ "modified": "2026-06-04 12:52:29.055649",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Agent Chat",
