@@ -25,7 +25,6 @@ $(document).ready(function () {
         <div id="ab-window">
             <div id="ab-header">
                 <button id="ab-back">${ICONS.back}</button>
-                <button id="ab-back">${ICONS.back}</button>
                 <div id="ab-header-avatar">${ICONS.bot}</div>
                 <div id="ab-header-info">
                     <div id="ab-header-name">Agent Builder</div>
@@ -41,13 +40,6 @@ $(document).ready(function () {
             <div id="ab-views">
                 <div id="ab-list-view">
                     <div id="ab-list-items"></div>
-                </div>
-                <div id="ab-conv-view">
-                    <div id="ab-messages"></div>
-                    <div id="ab-input-area">
-                        <textarea id="ab-input" rows="1" placeholder="Ask anything…"></textarea>
-                        <button id="ab-send">${ICONS.send}</button>
-                    </div>
                 </div>
                 <div id="ab-conv-view">
                     <div id="ab-messages"></div>
@@ -202,7 +194,6 @@ $(document).ready(function () {
     });
 
     // ── Status ─────────────────────────────────────────────────
-    // ── Status ─────────────────────────────────────────────────
     function setStatus(text, thinking = false) {
         $('#ab-status-text').text(text);
         $('#ab-status-dot').toggleClass('thinking', thinking);
@@ -218,7 +209,6 @@ $(document).ready(function () {
         const msg = $('#ab-input').val().trim();
         if (!msg || isThinking) return;
         $('#ab-input').val('').css('height', 'auto');
-        ChatMessages.appendUserMsg(msg);
         ChatMessages.appendUserMsg(msg);
         setInputState(true);
         setStatus('Thinking…', true);
@@ -248,9 +238,7 @@ $(document).ready(function () {
         navigator.clipboard.writeText(text).then(() => {
             $(this).html(ICONS.check + ' Copied!');
             setTimeout(() => $(this).html(ICONS.copy + ' Copy'), 1500);
-            setTimeout(() => $(this).html(ICONS.copy + ' Copy'), 1500);
         });
-    });
     });
 
 });

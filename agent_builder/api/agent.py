@@ -9,6 +9,8 @@ from run_agent import AIAgent
 @frappe.whitelist()
 def new_chat(title=None, message=None):
     """Create a new Agent Chat and return its name."""
+    # if message == "":
+    #     return {"chat_id": None, "title": "New Chat"}
     user = frappe.session.user
     doc = frappe.get_doc({
         "doctype": "Agent Chat",
