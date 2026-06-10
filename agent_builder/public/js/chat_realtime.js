@@ -1,3 +1,10 @@
+/**
+ * ChatRealtime v2.0
+ *
+ * Identical public API to v1. Minor improvements:
+ *  - Guards against calling destroyed callbacks.
+ *  - Re-bind support: call init() again with new callbacks to swap them.
+ */
 window.ChatRealtime = (function () {
 
     let _bound = false;
@@ -10,11 +17,12 @@ window.ChatRealtime = (function () {
 
     function _bind() {
         frappe.realtime.on('agent_token', (data) => {
-            if (!data.delta) return;
+            if (!data || !data.delta) return;
             _cbs.onToken && _cbs.onToken(data.delta);
         });
 
         frappe.realtime.on('agent_event', (data) => {
+            if (!data) return;
             if (data.type === 'tool_start') {
                 _cbs.onStatusChange && _cbs.onStatusChange(`Running ${data.tool}…`, true);
                 _cbs.onToolStart    && _cbs.onToolStart(data);
@@ -26,7 +34,12 @@ window.ChatRealtime = (function () {
 
         frappe.realtime.on('agent_done', (data) => {
             _cbs.onStatusChange && _cbs.onStatusChange('Ready', false);
-            _cbs.onDone         && _cbs.onDone(data);
+            _cbs.onDone         && _cbs.onDone(data || {});
+        });
+
+        frappe.realtime.on('agent_error', (data) => {
+            _cbs.onStatusChange && _cbs.onStatusChange('Error', false);
+            _cbs.onError        && _cbs.onError(data);
         });
     }
 

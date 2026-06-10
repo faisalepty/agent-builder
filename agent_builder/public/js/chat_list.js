@@ -1,7 +1,19 @@
+/**
+ * ChatList v2.0
+ *
+ * Improvements over v1:
+ *  - Client-side search filtering (debounced).
+ *  - Temporal grouping: Today / Yesterday / This week / Older.
+ *  - Preview snippet (last message) shown under title.
+ *  - Keyboard navigation (↑↓ to move, Enter to open).
+ */
 window.ChatList = (function () {
 
     let _onSelect = null;
     let _onNew    = null;
+    let _allChats = [];
+    let _searchQ  = '';
+    let _debounceTimer = null;
 
     function init({ onSelect, onNew }) {
         _onSelect = onSelect;
@@ -13,37 +25,87 @@ window.ChatList = (function () {
         frappe.call({
             method: 'agent_builder.api.agent.get_chats',
             callback(r) {
-                if (r.message) _render(r.message.chats);
+                if (r.message) {
+                    _allChats = r.message.chats || [];
+                    _render();
+                }
             }
         });
     }
 
-    function _render(chats) {
+    function _render() {
+        const q     = _searchQ.toLowerCase().trim();
+        const chats = q
+            ? _allChats.filter(c => (c.title || '').toLowerCase().includes(q) || (c.preview || '').toLowerCase().includes(q))
+            : _allChats;
+
         const $el = $('#ab-list-items');
         $el.empty();
-        if (!chats || !chats.length) {
-            $el.html(`<div class="ab-list-empty">No conversations yet.<br>Start a new chat.</div>`);
+
+        if (!chats.length) {
+            const msg = q ? `No chats matching "${_searchQ}"` : 'No conversations yet.<br>Start a new chat.';
+            $el.html(`<div class="ab-list-empty">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+                </svg>
+                ${msg}
+            </div>`);
             return;
         }
-        chats.forEach(c => {
-            const time = frappe.datetime.prettyDate(c.last_active);
-            $el.append(`
-                <div class="ab-chat-item" data-id="${c.name}" data-title="${frappe.utils.escape_html(c.title)}">
-                    <div class="ab-chat-item-title">${frappe.utils.escape_html(c.title)}</div>
-                    <div class="ab-chat-item-meta">${time}</div>
-                </div>
-            `);
+
+        const groups = _groupByDate(chats);
+        groups.forEach(({ label, items }) => {
+            if (label) $el.append(`<div class="ab-list-group-label">${label}</div>`);
+            items.forEach(c => {
+                const time    = frappe.datetime.prettyDate(c.last_active);
+                const title   = frappe.utils.escape_html(c.title || 'Untitled');
+                const preview = frappe.utils.escape_html((c.preview || '').slice(0, 60));
+                $el.append(`
+                    <div class="ab-chat-item" data-id="${c.name}" data-title="${title}" tabindex="0" role="button">
+                        <div class="ab-chat-item-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+                            </svg>
+                        </div>
+                        <div class="ab-chat-item-body">
+                            <div class="ab-chat-item-title">${title}</div>
+                            ${preview ? `<div class="ab-chat-item-preview">${preview}</div>` : ''}
+                        </div>
+                        <div class="ab-chat-item-meta">${time}</div>
+                    </div>`);
+            });
         });
     }
 
+    function _groupByDate(chats) {
+        const now   = new Date();
+        const today = _dateKey(now);
+        const yest  = _dateKey(new Date(now - 86400000));
+        const weekAgo = new Date(now - 7 * 86400000);
+
+        const groups = { Today: [], Yesterday: [], 'This week': [], Older: [] };
+        chats.forEach(c => {
+            const d = new Date(c.last_active);
+            const k = _dateKey(d);
+            if (k === today)          groups['Today'].push(c);
+            else if (k === yest)      groups['Yesterday'].push(c);
+            else if (d >= weekAgo)    groups['This week'].push(c);
+            else                      groups['Older'].push(c);
+        });
+
+        return ['Today', 'Yesterday', 'This week', 'Older']
+            .filter(g => groups[g].length)
+            .map(g => ({ label: g, items: groups[g] }));
+    }
+
+    function _dateKey(d) {
+        return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    }
+
     function prepend(chat) {
-        $('.ab-list-empty').remove();
-        $('#ab-list-items').prepend(`
-            <div class="ab-chat-item active" data-id="${chat.chat_id}" data-title="${frappe.utils.escape_html(chat.title)}">
-                <div class="ab-chat-item-title">${frappe.utils.escape_html(chat.title)}</div>
-                <div class="ab-chat-item-meta">Just now</div>
-            </div>
-        `);
+        _allChats.unshift({ name: chat.chat_id, title: chat.title, last_active: new Date().toISOString(), preview: '' });
+        _render();
+        setActive(chat.chat_id);
     }
 
     function setActive(chatId) {
@@ -52,14 +114,43 @@ window.ChatList = (function () {
     }
 
     function _bindEvents() {
+        // Click to open
         $(document).on('click', '.ab-chat-item', function () {
             const id    = $(this).data('id');
             const title = $(this).data('title');
             setActive(id);
             if (_onSelect) _onSelect(id, title);
         });
+
+        // Keyboard nav on list items
+        $(document).on('keydown', '.ab-chat-item', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { $(this).trigger('click'); }
+            if (e.key === 'ArrowDown') { $(this).nextAll('.ab-chat-item').first().focus(); e.preventDefault(); }
+            if (e.key === 'ArrowUp')   { $(this).prevAll('.ab-chat-item').first().focus(); e.preventDefault(); }
+        });
+
+        // New chat button
         $(document).on('click', '#ab-new-chat', function () {
             if (_onNew) _onNew();
+        });
+
+        // Search
+        $(document).on('input', '#ab-list-search', function () {
+            clearTimeout(_debounceTimer);
+            const val = $(this).val();
+            _debounceTimer = setTimeout(() => {
+                _searchQ = val;
+                _render();
+            }, 180);
+        });
+
+        // Clear search on Escape
+        $(document).on('keydown', '#ab-list-search', function (e) {
+            if (e.key === 'Escape') {
+                $(this).val('');
+                _searchQ = '';
+                _render();
+            }
         });
     }
 
