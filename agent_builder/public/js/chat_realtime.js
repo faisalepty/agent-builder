@@ -1,9 +1,5 @@
 /**
- * ChatRealtime v2.0
- *
- * Identical public API to v1. Minor improvements:
- *  - Guards against calling destroyed callbacks.
- *  - Re-bind support: call init() again with new callbacks to swap them.
+ * ChatRealtime v4.0
  */
 window.ChatRealtime = (function () {
 
@@ -44,5 +40,4 @@ window.ChatRealtime = (function () {
     }
 
     return { init };
-
 })();

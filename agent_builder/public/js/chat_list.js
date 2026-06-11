@@ -1,11 +1,5 @@
 /**
- * ChatList v2.0
- *
- * Improvements over v1:
- *  - Client-side search filtering (debounced).
- *  - Temporal grouping: Today / Yesterday / This week / Older.
- *  - Preview snippet (last message) shown under title.
- *  - Keyboard navigation (↑↓ to move, Enter to open).
+ * ChatList v4.0
  */
 window.ChatList = (function () {
 
@@ -44,12 +38,7 @@ window.ChatList = (function () {
 
         if (!chats.length) {
             const msg = q ? `No chats matching "${_searchQ}"` : 'No conversations yet.<br>Start a new chat.';
-            $el.html(`<div class="ab-list-empty">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
-                </svg>
-                ${msg}
-            </div>`);
+            $el.html(`<div style="padding:48px 20px;text-align:center;color:var(--text-muted);font-size:13px;line-height:1.6;">${msg}</div>`);
             return;
         }
 
@@ -63,7 +52,7 @@ window.ChatList = (function () {
                 $el.append(`
                     <div class="ab-chat-item" data-id="${c.name}" data-title="${title}" tabindex="0" role="button">
                         <div class="ab-chat-item-icon">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                                 <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
                             </svg>
                         </div>
@@ -71,36 +60,26 @@ window.ChatList = (function () {
                             <div class="ab-chat-item-title">${title}</div>
                             ${preview ? `<div class="ab-chat-item-preview">${preview}</div>` : ''}
                         </div>
-                        <div class="ab-chat-item-meta">${time}</div>
+                        <div style="font-size:11px;color:var(--text-muted);">${time}</div>
                     </div>`);
             });
         });
     }
 
     function _groupByDate(chats) {
-        const now   = new Date();
-        const today = _dateKey(now);
-        const yest  = _dateKey(new Date(now - 86400000));
-        const weekAgo = new Date(now - 7 * 86400000);
-
+        const now = new Date(), today = _dateKey(now), yest = _dateKey(new Date(now - 86400000)), weekAgo = new Date(now - 7 * 86400000);
         const groups = { Today: [], Yesterday: [], 'This week': [], Older: [] };
         chats.forEach(c => {
-            const d = new Date(c.last_active);
-            const k = _dateKey(d);
-            if (k === today)          groups['Today'].push(c);
-            else if (k === yest)      groups['Yesterday'].push(c);
-            else if (d >= weekAgo)    groups['This week'].push(c);
-            else                      groups['Older'].push(c);
+            const d = new Date(c.last_active), k = _dateKey(d);
+            if (k === today) groups['Today'].push(c);
+            else if (k === yest) groups['Yesterday'].push(c);
+            else if (d >= weekAgo) groups['This week'].push(c);
+            else groups['Older'].push(c);
         });
-
-        return ['Today', 'Yesterday', 'This week', 'Older']
-            .filter(g => groups[g].length)
-            .map(g => ({ label: g, items: groups[g] }));
+        return ['Today', 'Yesterday', 'This week', 'Older'].filter(g => groups[g].length).map(g => ({ label: g, items: groups[g] }));
     }
 
-    function _dateKey(d) {
-        return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    }
+    function _dateKey(d) { return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; }
 
     function prepend(chat) {
         _allChats.unshift({ name: chat.chat_id, title: chat.title, last_active: new Date().toISOString(), preview: '' });
@@ -114,46 +93,28 @@ window.ChatList = (function () {
     }
 
     function _bindEvents() {
-        // Click to open
         $(document).on('click', '.ab-chat-item', function () {
-            const id    = $(this).data('id');
-            const title = $(this).data('title');
-            setActive(id);
-            if (_onSelect) _onSelect(id, title);
+            setActive($(this).data('id'));
+            if (_onSelect) _onSelect($(this).data('id'), $(this).data('title'));
         });
 
-        // Keyboard nav on list items
         $(document).on('keydown', '.ab-chat-item', function (e) {
-            if (e.key === 'Enter' || e.key === ' ') { $(this).trigger('click'); }
+            if (e.key === 'Enter' || e.key === ' ') $(this).trigger('click');
             if (e.key === 'ArrowDown') { $(this).nextAll('.ab-chat-item').first().focus(); e.preventDefault(); }
             if (e.key === 'ArrowUp')   { $(this).prevAll('.ab-chat-item').first().focus(); e.preventDefault(); }
         });
 
-        // New chat button
-        $(document).on('click', '#ab-new-chat', function () {
-            if (_onNew) _onNew();
-        });
+        $(document).on('click', '#ab-new-chat', function () { if (_onNew) _onNew(); });
 
-        // Search
         $(document).on('input', '#ab-list-search', function () {
             clearTimeout(_debounceTimer);
-            const val = $(this).val();
-            _debounceTimer = setTimeout(() => {
-                _searchQ = val;
-                _render();
-            }, 180);
+            _debounceTimer = setTimeout(() => { _searchQ = $(this).val(); _render(); }, 180);
         });
 
-        // Clear search on Escape
         $(document).on('keydown', '#ab-list-search', function (e) {
-            if (e.key === 'Escape') {
-                $(this).val('');
-                _searchQ = '';
-                _render();
-            }
+            if (e.key === 'Escape') { $(this).val(''); _searchQ = ''; _render(); }
         });
     }
 
     return { init, load, prepend, setActive };
-
 })();
