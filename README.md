@@ -110,26 +110,6 @@ frappe.call({
 - Experimental multi-agent orchestration systems
 - Use for reference; current production uses Hermes API
 
-## Contributing
-
-This app uses `pre-commit` for code formatting and linting. Please [install pre-commit](https://pre-commit.com/#installation) and enable it:
-
-```bash
-cd apps/agent_builder
-pre-commit install
-```
-
-Pre-commit checks with:
-- **ruff** — Python linting and formatting
-- **eslint** — JavaScript linting
-- **prettier** — Code formatting
-- **pyupgrade** — Python syntax upgrades
-
-## Technology Stack
-
-- **Python 84.3%** — Frappe integration, agent orchestration
-- **JavaScript 9.4%** — Desk UI and real-time updates
-- **CSS 6.3%** — Chat interface styling
 
 ## License
 
