@@ -95,20 +95,46 @@ $(document).ready(function () {
         </div>
     `);
 
-    const $suggestions = SUGGESTIONS.map(s =>
-        `<button class="ab-suggestion-chip" data-text="${frappe.utils.escape_html(s.text)}">
-            <strong>${frappe.utils.escape_html(s.label)}</strong>
-            ${frappe.utils.escape_html(s.text)}
-        </button>`
-    ).join('');
-    $('#ab-messages').append(`
-        <div id="ab-welcome" style="display:none">
-            <div id="ab-welcome-icon">${ICONS.sparkle}</div>
-            <h3>How can I help you today?</h3>
-            <p>I can query records, create documents, or run reports for you.</p>
-            <div class="ab-suggestions">${$suggestions}</div>
-        </div>
-    `);
+    // Reusable function to render the welcome layout dynamically
+    function renderWelcomeScreen() {
+        // Defensive check to prevent scripts crashing if frappe utilities aren't fully ready
+        const escape = (txt) => (window.frappe && frappe.utils && frappe.utils.escape_html)
+            ? frappe.utils.escape_html(txt)
+            : txt.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+        const chipsHtml = SUGGESTIONS.map(s => `
+            <button class="ab-suggestion-chip" data-text="${escape(s.text)}">
+                <strong>${escape(s.label)}</strong>
+                ${escape(s.text)}
+            </button>
+        `).join('');
+
+        // Remove old instances if any exist, then append clean
+        $('#ab-welcome').remove();
+        $('#ab-messages').append(`
+            <div id="ab-welcome">
+                <div id="ab-welcome-icon">${ICONS.sparkle}</div>
+                <h3>How can I help you today?</h3>
+                <p>I can query records, create documents, or run reports for you.</p>
+                <div class="ab-suggestions">${chipsHtml}</div>
+            </div>
+        `);
+    }
+
+    // const $suggestions = SUGGESTIONS.map(s =>
+    //     `<button class="ab-suggestion-chip" data-text="${frappe.utils.escape_html(s.text)}">
+    //         <strong>${frappe.utils.escape_html(s.label)}</strong>
+    //         ${frappe.utils.escape_html(s.text)}
+    //     </button>`
+    // ).join('');
+    // $('#ab-messages').append(`
+    //     <div id="ab-welcome" style="display:none">
+    //         <div id="ab-welcome-icon">${ICONS.sparkle}</div>
+    //         <h3>How can I help you today?</h3>
+    //         <p>I can query records, create documents, or run reports for you.</p>
+    //         <div class="ab-suggestions">${$suggestions}</div>
+    //     </div>
+    // `);
 
     // State
     let isOpen = false, isThinking = false, currentChatId = null, currentView = 'list', isExpanded = false;
@@ -154,17 +180,13 @@ $(document).ready(function () {
     }
 
     function startNewChat() {
-        frappe.call({
-            method: 'agent_builder.api.agent.new_chat',
-            callback(r) {
-                if (!r.message) return;
-                currentChatId = r.message.chat_id;
-                ChatList.prepend(r.message);
-                ChatMessages.clear();
-                showConv(r.message.title);
-                $('#ab-welcome').show();
-            }
-        });
+        // Clear runtime tracking to signify an un-saved conversation state
+        currentChatId = null;
+        
+        // Prepare UI views instantly
+        ChatMessages.clear();
+        showConv('New Chat');
+        renderWelcomeScreen();
     }
 
     $(document).on('click', '#ab-launcher', () => isOpen ? _close() : _open());
@@ -235,16 +257,37 @@ $(document).ready(function () {
     function sendMessage() {
         const msg = $('#ab-input').val().trim();
         if (!msg || isThinking) return;
+        
+        // Check if this is the initial message of a deferred session
+        const isFirstMessage = (currentChatId === null);
+
+        // CLEAR WELCOME SCREEN: Remove the welcome element if this is the first message
+        if (isFirstMessage) {
+            $('#ab-welcome').remove();
+        }
+
         $('#ab-input').val('').css('height', 'auto');
         $('#ab-char-count').text('').removeClass('near-limit at-limit');
         ChatMessages.appendUserMsg(msg);
         setInputState(true);
         setStatus('Thinking…', true);
         ChatMessages.showTyping();
+        
         frappe.call({
             method: 'agent_builder.api.agent.chat',
             args: { message: msg, chat_id: currentChatId },
-            callback(r) { if (r.message && r.message.chat_id) currentChatId = r.message.chat_id; }
+            callback(r) { 
+                if (r.message && r.message.chat_id) {
+                    currentChatId = r.message.chat_id;
+                    
+                    // If this was a deferred chat initialization, update the sidebar UI registry now
+                    if (isFirstMessage) {
+                        ChatList.prepend(r.message);
+                        ChatList.setActive(currentChatId);
+                        $('#ab-header-name').text(r.message.title || 'Chat');
+                    }
+                } 
+            }
         });
     }
 

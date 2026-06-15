@@ -260,7 +260,7 @@
     line-height: 1.5;
     word-break: break-word;
 }
-.ab-row.user .ab-avatar { display: none; } /* Hide user avatar for cleaner look */
+.ab-row.user .ab-avatar { display: none; }
 
 /* Agent Message: No bubble, full width document style */
 .ab-row.agent { align-items: flex-start; justify-content: flex-start; }
@@ -310,9 +310,28 @@
 .ab-pre-copy:hover { background: rgba(255,255,255,0.2); }
 .ab-pre-copy svg { width: 12px; height: 12px; }
 
-/* Tables */
-.ab-bubble table { width: 100%; margin: 16px 0; border-collapse: separate; border-spacing: 0; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-color); }
-.ab-bubble th, .ab-bubble td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border-color); }
+/* ── SOTA Responsive Table System ── */
+.ab-table-wrapper {
+    width: 100%;
+    margin: 16px 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+.ab-bubble table {
+    width: 100%;
+    min-width: 500px;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+    background: var(--bg-color);
+}
+.ab-bubble th, .ab-bubble td { 
+    padding: 10px 14px; 
+    text-align: left; 
+    border-bottom: 1px solid var(--border-color);
+}
 .ab-bubble th { background: var(--control-bg); font-weight: 600; }
 .ab-bubble tr:last-child td { border-bottom: none; }
 
@@ -326,7 +345,7 @@
 /* Streaming Cursor */
 .ab-cursor { display: inline-block; width: 6px; height: 14px; background: var(--primary); margin-left: 4px; vertical-align: middle; animation: blink 1s step-start infinite; border-radius: 2px; }
 
-/* ── Inline Thinking Steps (SOTA Accorion) ────────────────────── */
+/* ── Inline Thinking Steps (SOTA Accordion) ────────────────────── */
 .ab-thinking-container { margin: 8px 0 16px; width: 100%; }
 .ab-thinking-pill {
     display: inline-flex; align-items: center; gap: 8px;
@@ -404,7 +423,7 @@
     width: 36px; height: 36px; border-radius: 12px; border: none;
     display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s;
 }
-#ab-send { background: var(--text-color); color: var(--bg-color); } /* Dark send button stands out elegantly */
+#ab-send { background: var(--text-color); color: var(--bg-color); }
 #ab-send:hover:not(:disabled) { transform: translateY(-2px); box-shadow: var(--ab-shadow-sm); }
 #ab-send:disabled { opacity: 0.4; cursor: not-allowed; }
 #ab-send svg { width: 16px; height: 16px; }

@@ -35,6 +35,15 @@ window.ChatMessages = (function () {
         _stopped = false;
     }
 
+    function _wrapTables(container) {
+    $(container).find('table').each(function() {
+        // Prevent double wrapping
+        if (!$(this).parent().hasClass('ab-table-wrapper')) {
+            $(this).wrap('<div class="ab-table-wrapper"></div>');
+        }
+    });
+}
+
     function _resetStreamState() { _streamBubbleId = null; _streamBuffer = ''; _streamFlushScheduled = false; _typingRowId = null; }
     function _resetThinkingState() { _currentThinkingRow = null; _currentThinkingSteps = []; _thinkStartTime = null; }
 
@@ -83,7 +92,12 @@ window.ChatMessages = (function () {
                 </div>
             </div>`
         );
-        document.getElementById(msgId + '-bubble').innerHTML = _renderContentWithArtifacts(content);
+        // document.getElementById(msgId + '-bubble').innerHTML = _renderContentWithArtifacts(content);
+        const bubbleEl = document.getElementById(msgId + '-bubble');
+        bubbleEl.innerHTML = _renderContentWithArtifacts(content);
+        
+        // NEW: Ensure any tables rendered in this bubble are wrapped for responsiveness
+        _wrapTables(bubbleEl);
     }
 
     // SOTA Structure for User message (no avatar, rounded bubble)
@@ -148,6 +162,7 @@ window.ChatMessages = (function () {
         const el = document.getElementById(_streamBubbleId);
         if (el) {
             el.innerHTML = _md(_streamBuffer) + '<span class="ab-cursor"></span>';
+            _wrapTables(el);
             _scrollDown(true);
         }
     }
@@ -222,6 +237,7 @@ window.ChatMessages = (function () {
             const el = document.getElementById(_streamBubbleId);
             if (el) {
                 el.innerHTML = _renderContentWithArtifacts(response || _streamBuffer || '');
+                _wrapTables(el);
                 setTimeout(() => { _mountAllArtifacts(); _addCodeCopyButtons(el); _scrollDown(); }, 0);
             }
         } else if (response) {
