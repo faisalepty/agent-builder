@@ -240,14 +240,8 @@ app_include_js = [
     "/assets/agent_builder/js/chat_list.js",
     "/assets/agent_builder/js/chat_messages.js",
     "/assets/agent_builder/js/chat_realtime.js",
-    "/assets/agent_builder/js/Chat_Ui.js",
+    "/assets/agent_builder/js/chat_ui.js",
 ]
 app_include_css = ["/assets/agent_builder/css/Chat_Ui.css"]
 
 
-import os
-from pathlib import Path
-
-os.environ["HERMES_HOME"] = str(Path(__file__).resolve().parent.parent / ".hermes")
-os.environ["HERMES_ENABLE_PROJECT_PLUGINS"] = "true"
-os.environ.setdefault("OPENROUTER_API_KEY", "")
