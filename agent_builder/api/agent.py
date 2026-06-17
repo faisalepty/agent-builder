@@ -26,7 +26,8 @@ def setup_environment():
         os.environ["OPENROUTER_API_KEY"] = openrouter_key
     else:
         frappe.throw("OpenRouter API key not set in Agent Setup", frappe.ValidationError)
-
+setup_environment()
+from run_agent import AIAgent
 
 @frappe.whitelist()
 def new_chat(title=None, message=None):
@@ -166,8 +167,7 @@ def chat(message, chat_id=None, attachments=None):
     user = frappe.session.user
     site = frappe.local.site
     room = get_user_room(user)
-    setup_environment()
-    from run_agent import AIAgent
+    
 
     if isinstance(attachments, str):
         try:
@@ -258,7 +258,7 @@ def chat(message, chat_id=None, attachments=None):
 
             # 2 — Run agent with compressed context
             agent = AIAgent(
-                model="openrouter/owl-alpha",
+                model="nex-agi/nex-n2-pro:free",
                 quiet_mode=False,
                 platform="frappe",
                 enabled_toolsets=["frappe_tools","clarify","delegetion", "skills", "memory", "todo", "search", "session-search"],

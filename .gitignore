@@ -53,4 +53,13 @@ jspm_packages/
 
 # Aider AI Chat
 .aider*
-.hermes/
+.hermes/logs
+.hermes/auth.json
+.hermes/auth.lock
+.hermes/.skills_prompt_snapshot.json
+.hermes/models_dev_cache.json
+.hermes/image_cache
+.hermes/audio_cache
+.hermes/memories
+.hermes/sessions
+.hermes/sandboxes

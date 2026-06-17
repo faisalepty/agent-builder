@@ -8,7 +8,7 @@ provides_tools:
   - frappe_delete_doc
 provides_skills:
   - frappe-tools
-  - frappe-doctype
   - frappe-workspace
   - frappe-dashboard
   - frappe-chart
+  - frappe-ui

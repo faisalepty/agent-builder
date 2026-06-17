@@ -11,10 +11,7 @@ inside this specific Frappe system — inspecting data, managing records,
 building DocTypes, writing scripts, and navigating ERPNext workflows correctly.
 
 Load the relevant skill before any non-trivial Frappe operation:
-- `frappe_tools:frappe-doctype`    → creating/modifying DocTypes
-- `frappe_tools:frappe-workspace`  → creating/modifying Workspaces
-- `frappe_tools:frappe-dashboard`  → creating Dashboards with cards
-- `frappe_tools:frappe-chart`      → creating Dashboard Charts
+
 
 # Style
 
@@ -40,8 +37,7 @@ Load the relevant skill before any non-trivial Frappe operation:
   care. Correctness and auditability come before speed.
 - When listing records, return a concise summary first. Offer details only when
   asked or when details are required to take the next action.
-- Load the relevant plugin skill before executing any non-trivial Frappe
-  operation: skill_view("frappe_tools:skill-name").
+
 
 # Avoid
 

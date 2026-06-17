@@ -1,6 +1,7 @@
 /**
- * chat_messages.js v4.0 — SOTA DOM structure update
+ * chat_messages.js v4.1 — SOTA DOM structure update
  * Generates cleaner HTML for bubbles to perfectly match the new CSS.
+ * v4.1 adds rendering of file attachment chips on user messages.
  */
 window.ChatMessages = (function () {
 
@@ -59,7 +60,7 @@ window.ChatMessages = (function () {
                 $('#ab-messages').empty();
                 if (!r.message || !r.message.messages.length) { $('#ab-welcome').show(); return; }
                 r.message.messages.forEach(msg => {
-                    if (msg.role === 'user') _appendUserMessage(msg.content);
+                    if (msg.role === 'user') _appendUserMessage(msg.content, _safeParseAttachments(msg.attachments));
                     else if (msg.role === 'assistant') _appendAgentMessage(msg.content);
                 });
                 _whenDomReady(() => { _mountAllArtifacts(); _addAllCodeCopyButtons(); _scrollDown(); });
@@ -101,20 +102,41 @@ window.ChatMessages = (function () {
     }
 
     // SOTA Structure for User message (no avatar, rounded bubble)
-    function _appendUserMessage(text) {
+    function _appendUserMessage(text, attachments) {
         const id = _nextId();
+        const hasText = !!(text && String(text).trim());
+        const attachmentsHtml = _renderAttachmentsHtml(attachments);
+        const bubbleHtml = hasText ? `
+            <div class="ab-bubble" id="${id}-bubble">${_escapeHtml(text)}</div>
+            <div class="ab-msg-actions" style="justify-content:flex-end;width:100%;">
+                <button class="ab-msg-action-btn ab-retry-btn" data-bubble="${id}-bubble">${_icons.retry} Edit</button>
+                <button class="ab-msg-action-btn ab-copy-btn" data-bubble="${id}-bubble">${_icons.copy}</button>
+            </div>` : '';
         $('#ab-messages').append(
             `<div class="ab-row user" id="${id}">
                 <div class="ab-bubble-wrap">
-                    <div class="ab-bubble" id="${id}-bubble">${_escapeHtml(text)}</div>
-                    <div class="ab-msg-actions" style="justify-content:flex-end;width:100%;">
-                        <button class="ab-msg-action-btn ab-retry-btn" data-bubble="${id}-bubble">${_icons.retry} Edit</button>
-                        <button class="ab-msg-action-btn ab-copy-btn" data-bubble="${id}-bubble">${_icons.copy}</button>
-                    </div>
+                    ${attachmentsHtml}
+                    ${bubbleHtml}
                 </div>
             </div>`
         );
         _scrollDown();
+    }
+
+    function _renderAttachmentsHtml(attachments) {
+        if (!attachments || !attachments.length) return '';
+        const chips = attachments.map(a => `
+            <a class="ab-msg-attachment" href="${_escapeHtml(a.file_url || '#')}" target="_blank" rel="noopener">
+                ${_icons.fileText || ''}<span>${_escapeHtml(a.file_name || 'file')}</span>
+            </a>
+        `).join('');
+        return `<div class="ab-msg-attachments">${chips}</div>`;
+    }
+
+    function _safeParseAttachments(raw) {
+        if (!raw) return null;
+        if (typeof raw !== 'string') return raw;
+        try { return JSON.parse(raw); } catch (_) { return null; }
     }
 
     function showTyping() {
