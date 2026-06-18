@@ -1,8 +1,17 @@
 /**
- * Hermes Chat UI v4.1 — SOTA Agent Interface
- * Features: Unified input, seamless agent text, dark-mode code blocks,
+ * Omnis Chat UI v4.3 — SOTA Agent Interface
+ * v4.3: bigger condensed/expanded window, redesigned launcher (60px,
+ * in-place icon crossfade, one-time entrance pop, .ab-fully-closed
+ * hardening), a true viewport-relative fullscreen artifact overlay +
+ * backdrop (artifact is now portaled to <body> in chat_messages.js, so it
+ * no longer renders inside #ab-window's transformed — and therefore
+ * size-constrained — containing block), and a fully reworked per-tool
+ * agent-actions list with a click-to-expand detail panel.
+ * v4.2 (prior): Unified input, seamless agent text, dark-mode code blocks,
  * spring animations, Frappe variable compliance, "+" file/skill menu,
- * "/" slash-command skill autocomplete, and a redesigned suggestions grid.
+ * "/" slash-command skill autocomplete, a redesigned suggestions grid,
+ * error-state styling, a shimmering thinking indicator, and icon-only
+ * message actions.
  */
 
 /* ── Custom Properties ── */
@@ -21,8 +30,8 @@
     bottom: 32px;
     right: 32px;
     z-index: 9999;
-    width: 56px;
-    height: 56px;
+    width: 60px;
+    height: 60px;
     border-radius: 50%;
     background: var(--primary);
     color: #fff;
@@ -31,20 +40,48 @@
     justify-content: center;
     cursor: pointer;
     box-shadow: 0 8px 24px color-mix(in srgb, var(--primary) 40%, transparent);
-    transition: transform 0.25s var(--ab-spring), box-shadow 0.2s, border-radius 0.2s;
+    transition: transform 0.25s var(--ab-spring), box-shadow 0.2s;
     border: none;
     outline: none;
+    /* One-time pop on mount. No fill-mode: the animation's own last frame
+       (scale(1)/opacity:1) already matches the un-animated resting state,
+       so once it ends control reverts cleanly to :hover below with no
+       jump and no lingering higher-priority transform from the animation
+       layer fighting the hover transform. */
+    animation: ab-launcher-pop 0.5s var(--ab-spring);
 }
 #ab-launcher:hover {
     transform: scale(1.05) translateY(-2px);
     box-shadow: 0 12px 32px color-mix(in srgb, var(--primary) 50%, transparent);
 }
-#ab-launcher svg { width: 24px; height: 24px; }
-#ab-launcher.is-open {
-    transform: scale(0.9) rotate(90deg);
-    opacity: 0;
-    pointer-events: none;
+@keyframes ab-launcher-pop {
+    0% { transform: scale(0); opacity: 0; }
+    60% { transform: scale(1.08); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
 }
+@media (prefers-reduced-motion: reduce) {
+    #ab-launcher { animation: none; }
+}
+
+/* Two icons stacked in the same spot and crossfaded/morphed in place,
+   rather than the old pattern of fading the whole button to opacity:0 on
+   open (which made the header's X the only way to close). The launcher
+   now stays visible and clickable in both states — same click handler
+   already toggles open/close either way. */
+#ab-launcher .ab-launcher-icon {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.2s ease, transform 0.25s var(--ab-spring);
+}
+#ab-launcher .ab-launcher-icon-chat svg { width: 25px; height: 25px; }
+#ab-launcher .ab-launcher-icon-close svg { width: 22px; height: 22px; }
+#ab-launcher .ab-launcher-icon-chat { opacity: 1; transform: scale(1) rotate(0deg); }
+#ab-launcher .ab-launcher-icon-close { opacity: 0; transform: scale(0.5) rotate(-90deg); }
+#ab-launcher.is-open .ab-launcher-icon-chat { opacity: 0; transform: scale(0.5) rotate(90deg); }
+#ab-launcher.is-open .ab-launcher-icon-close { opacity: 1; transform: scale(1) rotate(0deg); }
 
 #ab-badge {
     position: absolute;
@@ -56,6 +93,7 @@
     background: #ef4444;
     border: 2px solid var(--bg-color);
     display: none;
+    z-index: 1;
 }
 #ab-badge.visible { display: block; }
 
@@ -65,8 +103,8 @@
     bottom: 32px;
     right: 32px;
     z-index: 9998;
-    width: 440px;
-    height: 750px;
+    width: 500px;
+    height: 800px;
     max-width: calc(100vw - 40px);
     max-height: calc(100vh - 80px);
     background: var(--bg-color);
@@ -88,15 +126,24 @@
     pointer-events: all;
 }
 #ab-window.ab-expanded {
-    width: 85vw;
-    height: 85vh;
-    top: 7.5vh !important;
-    left: 7.5vw !important;
+    width: 95vw;
+    height: 94vh;
+    top: 3vh !important;
+    left: 2.5vw !important;
     right: auto !important;
     bottom: auto !important;
     border-radius: 20px;
     transition: all 0.3s var(--ab-spring);
 }
+/* Extra-robust closed state for #ab-window itself, on top of (not instead
+   of) the actual root-cause fixes for the leaked-overlay bug, which were
+   the iframe sandbox change in chat_messages.js and collapseAllFullscreen-
+   Artifacts() being called on close — opacity:0 + pointer-events:none
+   already keep #ab-window itself from intercepting clicks once closed,
+   but visibility:hidden removes it from hit-testing and the accessibility
+   tree entirely once the close transition finishes. Removed immediately
+   on next open so there's no flash-of-hidden-content. */
+#ab-window.ab-fully-closed { visibility: hidden; }
 
 /* ── Header ───────────────────────────────────────────────────── */
 #ab-header {
@@ -297,6 +344,7 @@
     flex-shrink: 0; display: flex; align-items: center; justify-content: center; margin-top: 2px;
 }
 .ab-row.agent .ab-avatar svg { width: 16px; height: 16px; }
+.ab-row.agent.is-error .ab-avatar { background: color-mix(in srgb, #ef4444 15%, var(--bg-color)); color: #ef4444; }
 .ab-row.agent .ab-bubble-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .ab-row.agent .ab-bubble {
     background: transparent;
@@ -305,6 +353,11 @@
     font-size: 14px;
     line-height: 1.6;
     word-break: break-word;
+}
+.ab-row.agent .ab-bubble.ab-bubble-error {
+    color: #ef4444; background: color-mix(in srgb, #ef4444 6%, transparent);
+    border: 1px solid color-mix(in srgb, #ef4444 25%, transparent);
+    border-radius: 12px; padding: 12px 14px; white-space: pre-wrap;
 }
 
 /* Markdown Styling inside Agent */
@@ -362,12 +415,18 @@
 .ab-bubble th { background: var(--control-bg); font-weight: 600; }
 .ab-bubble tr:last-child td { border-bottom: none; }
 
-/* Message Actions */
-.ab-msg-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; opacity: 0; transition: opacity 0.2s; }
+/* Message Actions — icon-only, consistent sizing so the row reads as one
+   cohesive toolbar instead of mismatched icon+label buttons */
+.ab-msg-actions { display: flex; align-items: center; gap: 4px; margin-top: 6px; opacity: 0; transition: opacity 0.2s; }
 .ab-row:hover .ab-msg-actions { opacity: 1; }
-.ab-msg-action-btn { background: transparent; border: none; padding: 4px 8px; border-radius: 6px; cursor: pointer; color: var(--text-muted); font-size: 11px; display: flex; align-items: center; gap: 6px; transition: all 0.2s; }
+.ab-msg-action-btn {
+    background: transparent; border: none; width: 28px; height: 28px; padding: 0;
+    border-radius: 8px; cursor: pointer; color: var(--text-muted);
+    display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0;
+}
 .ab-msg-action-btn:hover { background: var(--control-bg); color: var(--text-color); }
 .ab-msg-action-btn svg { width: 14px; height: 14px; }
+.ab-resend-btn:hover { color: #ef4444; background: color-mix(in srgb, #ef4444 10%, var(--control-bg)); }
 
 /* Streaming Cursor */
 .ab-cursor { display: inline-block; width: 6px; height: 14px; background: var(--primary); margin-left: 4px; vertical-align: middle; animation: blink 1s step-start infinite; border-radius: 2px; }
@@ -382,29 +441,82 @@
 }
 .ab-thinking-pill:hover { background: var(--control-bg); color: var(--text-color); }
 .ab-thinking-pill svg { width: 14px; height: 14px; color: var(--text-muted); }
-.ab-thinking-pill.done svg { color: #10b981; }
+.ab-thinking-status-icon { display: inline-flex; }
+.ab-thinking-pill.done .ab-thinking-status-icon svg { color: #10b981; }
+.ab-thinking-pill.errored { color: #ef4444; }
+.ab-thinking-pill.errored .ab-thinking-status-icon svg { color: #ef4444; }
 .ab-spinner { width: 14px; height: 14px; border: 2px solid var(--border-color); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
 .ab-thinking-time { font-family: var(--font-mono); font-size: 11px; opacity: 0.8; }
-.ab-chevron { transition: transform 0.2s; }
-.ab-thinking-pill.expanded .ab-chevron { transform: rotate(90deg); }
+.ab-chevron { display: inline-flex; transform: rotate(-90deg); transition: transform 0.2s; }
+.ab-chevron svg { width: 14px; height: 14px; }
+.ab-thinking-pill.expanded .ab-chevron { transform: rotate(0deg); }
 
 .ab-thinking-steps {
     margin: 8px 0 0 6px; padding-left: 18px;
     border-left: 2px solid var(--border-color); display: flex; flex-direction: column; gap: 10px;
 }
-.ab-thinking-step { display: flex; align-items: flex-start; gap: 12px; font-size: 12px; color: var(--text-muted); animation: ab-fade-up 0.2s ease; }
-.ab-step-icon { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; margin-top: 2px; }
+.ab-thinking-step {
+    display: flex; align-items: flex-start; gap: 12px; font-size: 12px; color: var(--text-muted);
+    animation: ab-fade-up 0.2s ease; cursor: pointer; border-radius: 8px; padding: 4px 6px; margin: -4px -6px;
+    transition: background 0.15s;
+}
+.ab-thinking-step:hover { background: var(--control-bg); }
+.ab-thinking-step.ab-step-is-error { color: #ef4444; }
+.ab-step-icon { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; margin-top: 2px; flex-shrink: 0; }
 .ab-step-icon svg { width: 14px; height: 14px; }
-.ab-step-icon.running svg { animation: spin 1s linear infinite; color: var(--primary); }
-.ab-step-icon.done svg { color: #10b981; }
-.ab-step-name { flex: 1; line-height: 1.5; }
-.ab-step-time { font-family: var(--font-mono); font-size: 11px; }
+.ab-step-icon.running { animation: pulse 1.4s ease-in-out infinite; color: var(--primary); }
+.ab-step-icon.errored svg { color: #ef4444; }
 
-/* Typing indicator */
-.ab-typing { display: flex; gap: 4px; padding: 12px 0; }
-.ab-typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--border-color); animation: typing-dot 1.4s infinite ease-in-out both; }
-.ab-typing span:nth-child(1) { animation-delay: -0.32s; }
-.ab-typing span:nth-child(2) { animation-delay: -0.16s; }
+.ab-step-main { flex: 1; min-width: 0; }
+.ab-step-headline { display: flex; align-items: center; gap: 8px; }
+.ab-step-name { flex: 1; line-height: 1.5; }
+.ab-step-name.done { color: var(--text-color); }
+.ab-step-name.errored { color: #ef4444; }
+/* Tense change (running → done) signals completion, not an icon swap —
+   the shimmer is what marks "still in progress" instead. */
+.ab-step-name.running {
+    background: linear-gradient(90deg, var(--text-muted) 0%, var(--text-color) 50%, var(--text-muted) 100%);
+    background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: ab-shimmer 1.6s linear infinite;
+}
+.ab-step-time { font-family: var(--font-mono); font-size: 11px; flex-shrink: 0; }
+.ab-step-chevron { display: inline-flex; flex-shrink: 0; transform: rotate(-90deg); transition: transform 0.2s; color: var(--text-muted); }
+.ab-step-chevron svg { width: 12px; height: 12px; }
+.ab-thinking-step.ab-step-expanded .ab-step-chevron { transform: rotate(0deg); }
+
+/* Per-step detail panel: raw tool name + pretty-printed args, plus a
+   result/error block if the backend payload included one. Collapsed by
+   default — click any step row to expand it. */
+.ab-step-detail {
+    display: none; margin-top: 8px; padding: 10px 12px;
+    background: var(--control-bg); border-radius: 8px; border: 1px solid var(--border-color);
+}
+.ab-thinking-step.ab-step-expanded .ab-step-detail { display: block; }
+.ab-step-detail-label {
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--text-muted); margin-bottom: 4px;
+}
+.ab-step-detail-label:not(:first-child) { margin-top: 10px; }
+.ab-step-detail-block {
+    font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+    background: var(--ab-code-bg); color: var(--ab-code-text); border-radius: 6px; padding: 8px 10px; margin: 0;
+    max-height: 220px; overflow-y: auto;
+}
+.ab-step-detail-block.is-error { background: color-mix(in srgb, #ef4444 12%, var(--ab-code-bg)); color: #ffb4b4; }
+
+/* Typing indicator — shimmering "Thinking" label + a small dot trio inside
+   a soft pill, instead of bare bouncing dots with no context */
+.ab-typing-pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 14px; background: var(--control-bg); margin-top: 2px; }
+.ab-typing-label {
+    font-size: 12.5px; font-weight: 500; background: linear-gradient(90deg, var(--text-muted) 0%, var(--text-color) 50%, var(--text-muted) 100%);
+    background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: ab-shimmer 1.6s linear infinite;
+}
+.ab-typing-dots { display: flex; gap: 4px; }
+.ab-typing-dots span { width: 5px; height: 5px; border-radius: 50%; background: var(--text-muted); animation: typing-dot 1.4s infinite ease-in-out both; }
+.ab-typing-dots span:nth-child(1) { animation-delay: -0.32s; }
+.ab-typing-dots span:nth-child(2) { animation-delay: -0.16s; }
+@keyframes ab-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
 /* ── HTML Artifacts ───────────────────────────────────────────── */
 .ab-artifact { margin: 16px 0; border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; background: var(--bg-color); box-shadow: var(--ab-shadow-sm); transition: box-shadow 0.2s; }
@@ -417,9 +529,46 @@
 .ab-artifact-bar-btn svg { width: 14px; height: 14px; }
 .ab-artifact-frame { width: 100%; min-height: 100px; background: #fff; }
 .ab-artifact-iframe { width: 100%; border: none; display: block; }
-.ab-artifact.ab-artifact-full { position: fixed; inset: 24px; z-index: 10000; border-radius: 20px; box-shadow: var(--ab-shadow-lg); }
-.ab-artifact.ab-artifact-full .ab-artifact-frame { height: calc(100% - 45px); }
+
+/* Portaled to a direct child of <body> by chat_messages.js when entering
+   fullscreen (see _expandArtifactEl), specifically so it escapes
+   #ab-window's transform — an element with any transform other than
+   "none" becomes a containing block for its position:fixed descendants,
+   which previously confined "fullscreen" to the small chat window's own
+   box. As a direct <body> child this is now relative to the real
+   viewport, and behaves identically whether the window itself is
+   condensed or expanded. z-index sits above both #ab-window (9998) and
+   #ab-launcher (9999). */
+.ab-artifact.ab-artifact-full {
+    position: fixed;
+    inset: 16px;
+    z-index: 10050;
+    display: flex;
+    flex-direction: column;
+    border-radius: 20px;
+    box-shadow: var(--ab-shadow-lg);
+    animation: ab-artifact-pop 0.2s var(--ab-spring);
+}
+.ab-artifact.ab-artifact-full .ab-artifact-frame { flex: 1; height: auto; }
 .ab-artifact.ab-artifact-full .ab-artifact-iframe { height: 100% !important; }
+@media (max-width: 768px) {
+    .ab-artifact.ab-artifact-full { inset: 0; border-radius: 0; }
+}
+
+.ab-artifact-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 10049;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(2px);
+    animation: ab-fade-in 0.2s ease;
+}
+/* Prevents the desk page behind the backdrop from scrolling while a
+   fullscreen artifact (rendered outside #ab-window) is open. */
+body.ab-artifact-fullscreen-active { overflow: hidden; }
+
+@keyframes ab-artifact-pop { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+@keyframes ab-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
 /* ── Input Area (SOTA Unified Box) ────────────────────────────── */
 #ab-input-area { padding: 0 20px 24px; background: var(--bg-color); flex-shrink: 0; }

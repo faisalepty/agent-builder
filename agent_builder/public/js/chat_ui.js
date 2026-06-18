@@ -1,7 +1,14 @@
 /**
- * Chat_Ui.js v4.1 — SOTA Hermes Orchestrator
- * v4.1 adds: "+" input menu (file upload + skill browser), "/" slash-command
- * skill autocomplete, and a redesigned welcome/suggestions screen.
+ * Chat_Ui.js v4.3 — SOTA Omnis Orchestrator
+ * v4.3: launcher redesigned (chat-bubble glyph, in-place open/close
+ * crossfade instead of fading the whole button away, a one-time entrance
+ * pop, 60px target size), bigger condensed/expanded window dimensions,
+ * two new per-tool icons (search/terminal) for the redesigned agent-
+ * actions list, and close() now collapses any fullscreen artifact plus a
+ * visibility:hidden fallback once the close transition finishes.
+ * v4.2: friendlier/more relatable icon set, Omnis branding, redesigned
+ * message-action row, working slash-flyout persistence, a bigger (but not
+ * fullscreen) expand mode, and robust error-state handling end to end.
  */
 $(document).ready(function () {
 
@@ -22,21 +29,36 @@ $(document).ready(function () {
         spin:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>`,
         copy:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>`,
         retry:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>`,
-        bot:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>`, // Spark / AI Logo
+        // Recognizable robot-head avatar instead of the previous abstract sun/ray glyph
+        bot:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="8" width="16" height="12" rx="3"/><circle cx="9" cy="14" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="14" r="1" fill="currentColor" stroke="none"/><path d="M12 8V5"/><circle cx="12" cy="3.5" r="1.3" fill="currentColor" stroke="none"/><path d="M2 13h2M20 13h2"/></svg>`,
         expand:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>`,
         compress: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="21" y2="3"/><line x1="3" y1="21" x2="14" y2="10"/></svg>`,
         reload:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>`,
         stop:     `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>`,
         down:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>`,
-        // ── New in v4.1 ──
+        // ── New in v4.1 / refined in v4.2 ──
         paperclip:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>`,
-        skillIcon:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="5"/><line x1="15" y1="7" x2="9" y2="17"/></svg>`,
+        // Wrench reads more clearly as "tools/skills" than an abstract slash glyph
+        skillIcon:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`,
         chevronRight:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="9 18 15 12 9 6"/></svg>`,
         fileText:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>`,
         listIcon:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>`,
-        plusCircle:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>`,
-        layers:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
+        // File-with-a-plus reads more literally as "create a doc" than a generic plus-circle
+        plusCircle:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="13" x2="12" y2="19"/><line x1="9" y1="16" x2="15" y2="16"/></svg>`,
+        // Shrinking lines suggest "condensing" text, closer to what "summarise" means than stacked layers
+        layers:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="16" y2="12"/><line x1="4" y1="18" x2="11" y2="18"/></svg>`,
         barChart:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>`,
+        // New in v4.2
+        edit:         `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 113 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
+        alertTriangle:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+        // New in v4.3 — per-tool glyphs for the redesigned agent-actions list
+        search:       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
+        terminal:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="6 9 10 12 6 15"/><line x1="12" y1="15" x2="16" y2="15"/></svg>`,
+        // New launcher glyph — a chat bubble (instantly reads as "open chat")
+        // with the same sparkle motif used elsewhere reused at small scale
+        // inside it, so the AI signifier and the chat affordance are both
+        // present rather than relying on the sparkle alone.
+        launcherChat: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><g transform="translate(7,6) scale(0.42)"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" fill="currentColor" stroke="none"/></g></svg>`,
     };
     ICONS.plus = ICONS.newchat; // same glyph, reused intentionally for the input's "+" button
 
@@ -56,8 +78,9 @@ $(document).ready(function () {
 
     // ── SOTA DOM Structure Injection ───────────────────────────
     $('body').append(`
-        <button id="ab-launcher" title="Hermes Chat">
-            ${ICONS.sparkle}
+        <button id="ab-launcher" title="Omnis Chat">
+            <span class="ab-launcher-icon ab-launcher-icon-chat">${ICONS.launcherChat}</span>
+            <span class="ab-launcher-icon ab-launcher-icon-close">${ICONS.close}</span>
             <span id="ab-badge"></span>
         </button>
 
@@ -66,7 +89,7 @@ $(document).ready(function () {
                 <button id="ab-back" class="ab-hbtn" title="Back">${ICONS.back}</button>
                 <div id="ab-header-avatar">${ICONS.bot}</div>
                 <div id="ab-header-info">
-                    <div id="ab-header-name">Hermes</div>
+                    <div id="ab-header-name">Omnis</div>
                     <div id="ab-header-status">
                         <div id="ab-status-dot"></div>
                         <span id="ab-status-text">Ready</span>
@@ -99,7 +122,7 @@ $(document).ready(function () {
                         <div id="ab-input-box">
                             <div id="ab-attachments-row"></div>
 
-                            <textarea id="ab-input" rows="1" placeholder="Ask Hermes anything…"></textarea>
+                            <textarea id="ab-input" rows="1" placeholder="Ask Omnis anything…"></textarea>
 
                             <button id="ab-plus-btn" class="ab-input-icon-btn" title="Add files or a skill" type="button">${ICONS.plus}</button>
 
@@ -188,13 +211,28 @@ $(document).ready(function () {
     ChatMessages.init(ICONS);
     ChatList.init({ onSelect: openConversation, onNew: startNewChat });
     ChatRealtime.init({
-        onToken: (delta) => ChatMessages.onToken(delta),
-        onToolStart: (data) => ChatMessages.onToolStart(data),
-        onToolDone: (data) => ChatMessages.onToolDone(data),
-        onStatusChange: setStatus,
+        onToken: (delta) => { resetThinkingWatchdog(); ChatMessages.onToken(delta); },
+        onToolStart: (data) => { resetThinkingWatchdog(); ChatMessages.onToolStart(data); },
+        onToolDone: (data) => { resetThinkingWatchdog(); ChatMessages.onToolDone(data); },
+        onStatusChange: (text, thinking) => { resetThinkingWatchdog(); setStatus(text, thinking); },
         onDone: (data) => {
-            ChatMessages.onDone(data.response);
+            // However ChatMessages renders the response, setInputState(false)
+            // below must always run — a rendering bug here should never be
+            // able to leave the stop button stuck and the send button gone.
+            clearThinkingWatchdog();
+            try { ChatMessages.onDone((data && data.response) || '', false); }
+            catch (err) { console.error('ChatMessages.onDone failed', err); }
             setInputState(false);
+            setStatus('Ready', false);
+            setTimeout(() => $('#ab-input').focus(), 50);
+        },
+        onError: (data) => {
+            clearThinkingWatchdog();
+            const resp = (data && data.response) || 'Sorry, something went wrong.';
+            try { ChatMessages.onDone(resp, true); }
+            catch (err) { console.error('ChatMessages.onDone failed', err); }
+            setInputState(false);
+            setStatus('Error', false, true);
             setTimeout(() => $('#ab-input').focus(), 50);
         },
     });
@@ -206,7 +244,7 @@ $(document).ready(function () {
         $('#ab-window').removeClass('view-conv');
         $('#ab-back').hide();
         $('#ab-new-chat').show();
-        $('#ab-header-name').text('Hermes');
+        $('#ab-header-name').text('Omnis');
         setStatus('Ready', false);
         ChatList.load();
     }
@@ -245,8 +283,12 @@ $(document).ready(function () {
     $(document).on('click', '#ab-close', _close);
     $(document).on('click', '#ab-back', showList);
 
+    let _closeVisibilityTimer = null;
+
     function _open() {
         isOpen = true;
+        clearTimeout(_closeVisibilityTimer);
+        $('#ab-window').removeClass('ab-fully-closed');
         $('#ab-launcher').addClass('is-open');
         $('#ab-window').addClass('open');
         if (currentView === 'list') ChatList.load();
@@ -258,13 +300,29 @@ $(document).ready(function () {
         $('#ab-window').removeClass('open');
         closePlusMenu();
         closeSlashMenu();
+        // Collapsing any fullscreen artifact here is real defense-in-depth:
+        // it's portaled to <body> while expanded, so it would otherwise be
+        // left floating outside #ab-window if the chat is closed mid-view.
+        // The visibility:hidden timer below is separate, lower-stakes
+        // hardening for #ab-window's own closed state (see Chat_Ui.css).
+        if (ChatMessages && ChatMessages.collapseAllFullscreenArtifacts) ChatMessages.collapseAllFullscreenArtifacts();
+        clearTimeout(_closeVisibilityTimer);
+        _closeVisibilityTimer = setTimeout(() => $('#ab-window').addClass('ab-fully-closed'), 420);
+    }
+
+    // Navigating elsewhere in the Frappe desk SPA while an artifact is
+    // fullscreen would otherwise leave it orphaned on an unrelated page.
+    if (window.frappe && frappe.router && frappe.router.on) {
+        frappe.router.on('change', () => {
+            if (ChatMessages && ChatMessages.collapseAllFullscreenArtifacts) ChatMessages.collapseAllFullscreenArtifacts();
+        });
     }
 
     $(document).on('click', '#ab-expand', function () {
         isExpanded = !isExpanded;
         $('#ab-window').toggleClass('ab-expanded', isExpanded);
-        $(this).html(isExpanded ? ICONS.compress : ICONS.expand);
-        if (isExpanded) $('#ab-window').css({ top: '', left: '', right: '32px', bottom: '32px' });
+        $(this).html(isExpanded ? ICONS.compress : ICONS.expand)
+               .attr('title', isExpanded ? 'Collapse' : 'Expand');
     });
 
     $(document).on('click', '.ab-artifact-reload', function() {
@@ -290,9 +348,31 @@ $(document).ready(function () {
         $('#ab-input').val($(this).data('text')).trigger('input').focus();
     });
 
-    function setStatus(text, thinking) {
+    function setStatus(text, thinking, isError) {
         $('#ab-status-text').text(text);
-        $('#ab-status-dot').toggleClass('thinking', !!thinking).toggleClass('error', false);
+        $('#ab-status-dot').toggleClass('thinking', !!thinking && !isError).toggleClass('error', !!isError);
+    }
+
+    // Safety net: if no realtime event arrives at all (dropped connection,
+    // Redis hiccup, a thread that died without ever publishing), this makes
+    // sure the input always recovers instead of staying stuck on "Thinking…"
+    // with the stop button showing forever.
+    const THINKING_TIMEOUT_MS = 175000;
+    let _thinkingWatchdog = null;
+    function resetThinkingWatchdog() {
+        clearThinkingWatchdog();
+        if (!isThinking) return;
+        _thinkingWatchdog = setTimeout(handleThinkingTimeout, THINKING_TIMEOUT_MS);
+    }
+    function clearThinkingWatchdog() {
+        if (_thinkingWatchdog) { clearTimeout(_thinkingWatchdog); _thinkingWatchdog = null; }
+    }
+    function handleThinkingTimeout() {
+        if (!isThinking) return;
+        try { ChatMessages.onDone('Omnis seems to have lost connection mid-response. Please try again.', true); }
+        catch (err) { console.error(err); }
+        setInputState(false);
+        setStatus('Timed out', false, true);
     }
 
     function setInputState(disabled) {
@@ -300,6 +380,7 @@ $(document).ready(function () {
         $('#ab-input').prop('disabled', disabled);
         $('#ab-send').toggle(!disabled);
         $('#ab-stop').toggleClass('visible', disabled);
+        if (disabled) resetThinkingWatchdog(); else clearThinkingWatchdog();
     }
 
     $(document).on('click', '#ab-stop', function () {
@@ -408,7 +489,18 @@ $(document).ready(function () {
         }
     }
 
+    let _skillFlyoutCloseTimer = null;
+    function scheduleCloseSkillFlyout() {
+        clearTimeout(_skillFlyoutCloseTimer);
+        _skillFlyoutCloseTimer = setTimeout(closeSkillFlyout, 350);
+    }
+    function cancelCloseSkillFlyout() {
+        clearTimeout(_skillFlyoutCloseTimer);
+        _skillFlyoutCloseTimer = null;
+    }
+
     function openSkillFlyout($trigger) {
+        cancelCloseSkillFlyout();
         const $panel = $('#ab-skill-panel');
         positionFlyout($trigger, $panel);
         $panel.addClass('open');
@@ -420,15 +512,28 @@ $(document).ready(function () {
         }
     }
     function closeSkillFlyout() {
+        cancelCloseSkillFlyout();
         $('#ab-skill-panel').removeClass('open');
         hideSkillTooltip();
     }
 
+    // The trigger row and the flyout panel sit a few px apart visually, so a
+    // plain mouseleave-on-trigger fires the instant the cursor crosses that
+    // gap — closing the list before it can ever be hovered. Both elements
+    // now share a single deferred close, cancelled the moment either is
+    // re-entered, so quick diagonal mouse movement into the panel works.
     $(document).on('mouseenter', '#ab-plus-menu .ab-has-flyout', function () {
+        cancelCloseSkillFlyout();
         if ($('#ab-plus-menu').hasClass('open')) openSkillFlyout($(this));
     });
     $(document).on('mouseleave', '#ab-plus-menu .ab-has-flyout', function () {
-        closeSkillFlyout();
+        scheduleCloseSkillFlyout();
+    });
+    $(document).on('mouseenter', '#ab-skill-panel', function () {
+        cancelCloseSkillFlyout();
+    });
+    $(document).on('mouseleave', '#ab-skill-panel', function () {
+        scheduleCloseSkillFlyout();
     });
     $(document).on('click', '#ab-plus-menu .ab-has-flyout', function (e) {
         e.stopPropagation();
@@ -596,6 +701,42 @@ $(document).ready(function () {
     // ───────────────────────────────────────────────────────────
     // Sending messages
     // ───────────────────────────────────────────────────────────
+    let _lastSentMessage = '', _lastSentAttachments = [];
+
+    function dispatchChatRequest(msg, attachments, isFirstMessage) {
+        _lastSentMessage = msg;
+        _lastSentAttachments = attachments || [];
+
+        ChatMessages.appendUserMsg(msg, attachments);
+        setStatus('Thinking…', true);
+        ChatMessages.showTyping();
+
+        frappe.call({
+            method: 'agent_builder.api.agent.chat',
+            args: { message: msg, chat_id: currentChatId, attachments: JSON.stringify(attachments || []) },
+            callback(r) {
+                if (r.message && r.message.chat_id) {
+                    currentChatId = r.message.chat_id;
+
+                    // If this was a deferred chat initialization, update the sidebar UI registry now
+                    if (isFirstMessage) {
+                        ChatList.prepend(r.message);
+                        ChatList.setActive(currentChatId);
+                        $('#ab-header-name').text(r.message.title || 'Chat');
+                    }
+                }
+            },
+            error() {
+                // The request never made it to the agent at all (permissions,
+                // validation, network) — surface that clearly instead of
+                // leaving the UI stuck on "Thinking…" forever.
+                setInputState(false);
+                setStatus('Error', false, true);
+                try { ChatMessages.onDone("Sorry, I couldn't send that. Please try again.", true); } catch (err) { console.error(err); }
+            }
+        });
+    }
+
     function sendMessage() {
         const msg = $('#ab-input').val().trim();
         if ((!msg && !_pendingFiles.length) || isThinking) return;
@@ -621,38 +762,23 @@ $(document).ready(function () {
         setStatus(filesToUpload.length ? 'Uploading…' : 'Thinking…', true);
 
         uploadFiles(filesToUpload).then((attachments) => {
-            ChatMessages.appendUserMsg(msg, attachments);
-            setStatus('Thinking…', true);
-            ChatMessages.showTyping();
-
-            frappe.call({
-                method: 'agent_builder.api.agent.chat',
-                args: { message: msg, chat_id: currentChatId, attachments: JSON.stringify(attachments) },
-                callback(r) {
-                    if (r.message && r.message.chat_id) {
-                        currentChatId = r.message.chat_id;
-
-                        // If this was a deferred chat initialization, update the sidebar UI registry now
-                        if (isFirstMessage) {
-                            ChatList.prepend(r.message);
-                            ChatList.setActive(currentChatId);
-                            $('#ab-header-name').text(r.message.title || 'Chat');
-                        }
-                    }
-                },
-                error() {
-                    setInputState(false);
-                    setStatus('Error', false);
-                }
-            });
+            dispatchChatRequest(msg, attachments, isFirstMessage);
         }).catch(() => {
             setInputState(false);
-            setStatus('Upload failed', false);
+            setStatus('Upload failed', false, true);
             $('#ab-input').val(msg).trigger('input').focus();
             _pendingFiles = filesToUpload;
             renderAttachmentChips();
         });
     }
+
+    function retryLastMessage() {
+        if (isThinking || (!_lastSentMessage && !_lastSentAttachments.length)) return;
+        setInputState(true);
+        setStatus('Thinking…', true);
+        dispatchChatRequest(_lastSentMessage, _lastSentAttachments, currentChatId === null);
+    }
+    $(document).on('click', '.ab-resend-btn', retryLastMessage);
 
     $(document).on('click', '#ab-send', sendMessage);
     $(document).on('keydown', '#ab-input', (e) => {
@@ -687,15 +813,22 @@ $(document).ready(function () {
     $(document).on('click', '.ab-copy-btn', function () {
         const id = $(this).data('bubble');
         const text = $('#' + id).text();
+        const $btn = $(this);
         navigator.clipboard.writeText(text).then(() => {
-            $(this).html(ICONS.check + ' Copied!');
-            setTimeout(() => $(this).html(ICONS.copy + ' Copy'), 1500);
+            $btn.html(ICONS.check);
+            setTimeout(() => $btn.html(ICONS.copy), 1200);
         });
     });
 
-    $(document).on('click', '.ab-retry-btn', function () {
-        const text = $('#' + $(this).data('bubble')).text().trim();
-        if (text && !isThinking) { $('#ab-input').val(text); sendMessage(); }
+    // "Edit" only loads the message back into the input for the person to
+    // change — it must NOT send anything on its own.
+    $(document).on('click', '.ab-edit-btn', function () {
+        if (isThinking) return;
+        const text = $('#' + $(this).data('bubble')).text();
+        const $input = $('#ab-input');
+        $input.val(text).trigger('input').focus();
+        const el = $input[0];
+        if (el) el.selectionStart = el.selectionEnd = el.value.length;
     });
 
     $('#ab-back').hide();

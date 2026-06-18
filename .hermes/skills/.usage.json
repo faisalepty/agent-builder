@@ -30,13 +30,13 @@
     "created_at": "2026-06-11T07:05:17.983437+00:00",
     "created_by": null,
     "last_patched_at": "2026-06-11T07:24:34.580524+00:00",
-    "last_used_at": "2026-06-11T07:23:59.489686+00:00",
-    "last_viewed_at": "2026-06-11T07:23:59.480583+00:00",
+    "last_used_at": "2026-06-18T12:04:18.573381+00:00",
+    "last_viewed_at": "2026-06-18T12:04:18.563655+00:00",
     "patch_count": 1,
     "pinned": false,
     "state": "active",
-    "use_count": 3,
-    "view_count": 3
+    "use_count": 4,
+    "view_count": 4
   },
   "frappe-doctype": {
     "archived_at": null,
@@ -50,6 +50,19 @@
     "state": "active",
     "use_count": 1,
     "view_count": 1
+  },
+  "frappe-native-ui": {
+    "archived_at": null,
+    "created_at": "2026-06-17T13:00:17.260312+00:00",
+    "created_by": null,
+    "last_patched_at": null,
+    "last_used_at": "2026-06-18T12:13:31.978331+00:00",
+    "last_viewed_at": "2026-06-18T12:13:31.968210+00:00",
+    "patch_count": 0,
+    "pinned": false,
+    "state": "active",
+    "use_count": 6,
+    "view_count": 6
   },
   "frappe-skills-setup": {
     "archived_at": null,
@@ -81,26 +94,26 @@
     "archived_at": null,
     "created_at": "2026-06-11T07:30:11.461273+00:00",
     "created_by": null,
-    "last_patched_at": null,
-    "last_used_at": "2026-06-17T11:42:06.212970+00:00",
-    "last_viewed_at": "2026-06-17T11:42:06.206197+00:00",
-    "patch_count": 0,
+    "last_patched_at": "2026-06-17T12:00:38.247599+00:00",
+    "last_used_at": "2026-06-17T13:00:41.609381+00:00",
+    "last_viewed_at": "2026-06-17T13:00:41.589434+00:00",
+    "patch_count": 2,
     "pinned": false,
     "state": "active",
-    "use_count": 8,
-    "view_count": 8
+    "use_count": 17,
+    "view_count": 17
   },
   "frappe-workspace": {
     "archived_at": null,
     "created_at": "2026-06-11T07:13:38.385706+00:00",
     "created_by": null,
     "last_patched_at": "2026-06-11T07:20:29.868149+00:00",
-    "last_used_at": "2026-06-11T07:24:48.339335+00:00",
-    "last_viewed_at": "2026-06-11T07:24:48.331894+00:00",
+    "last_used_at": "2026-06-18T12:12:48.023138+00:00",
+    "last_viewed_at": "2026-06-18T12:12:48.014011+00:00",
     "patch_count": 1,
     "pinned": false,
     "state": "active",
-    "use_count": 5,
-    "view_count": 5
+    "use_count": 7,
+    "view_count": 7
   }
 }
