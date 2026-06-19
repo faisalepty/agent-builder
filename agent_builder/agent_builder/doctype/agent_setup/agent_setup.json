@@ -6,20 +6,30 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "openrouter_api_key"
+  "api_key",
+  "provider"
  ],
  "fields": [
   {
-   "fieldname": "openrouter_api_key",
+   "fieldname": "api_key",
    "fieldtype": "Password",
-   "label": "OpenRouter Api Key"
+   "in_list_view": 1,
+   "label": "Api Key",
+   "reqd": 1
+  },
+  {
+   "fieldname": "provider",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Provider",
+   "reqd": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-16 15:23:29.461425",
+ "modified": "2026-06-19 08:02:08.220070",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Agent Setup",

@@ -1,0 +1,29 @@
+{
+ "app": "agent_builder",
+ "creation": "2026-06-19 09:47:39.127548",
+ "docstatus": 0,
+ "doctype": "Workspace Sidebar",
+ "header_icon": "brain",
+ "idx": 0,
+ "items": [
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "brain",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Omnis Agent",
+   "link_to": "Omnis Agent",
+   "link_type": "Workspace",
+   "open_in_new_tab": 1,
+   "show_arrow": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-06-19 09:47:39.127548",
+ "modified_by": "Administrator",
+ "name": "Omnis Agent",
+ "owner": "Administrator",
+ "standard": 1,
+ "title": "Omnis Agent"
+}
