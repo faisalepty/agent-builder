@@ -23,40 +23,16 @@ bench install-app agent_builder
 
 ## Configuration
 
-### Environment Variables
+Add credential in the "Agent Setup" doctype
 
-Set these in your site's `site_config.json`:
-
-```json
-{
-  "openrouter_api_key": "your-openrouter-key"
-}
-```
-
-Or export as environment variable:
-```bash
-export OPENROUTER_API_KEY="your-openrouter-key"
-```
+ie provider [OPEN_ROUTER, GEMINI, ANTHROPIC, GLM]
+and the API_KEY provided by your vendor
 
 ## API Usage
 
-### Start a New Chat
-
-```python
-frappe.call({
-  'method': 'agent_builder.api.agent.new_chat',
-  'args': {
-    'title': 'Create Sales Dashboard',
-    'message': 'Build me a dashboard showing monthly revenue'
-  },
-  'callback': function(r) {
-    console.log(r.message.chat_id);
-  }
-})
-```
 
 ### Send a Message
-
+ ## This can be triggerd by email, or in any doctype event
 ```python
 frappe.call({
   'method': 'agent_builder.api.agent.chat',
@@ -66,21 +42,6 @@ frappe.call({
   },
   'callback': function(r) {
     console.log(r.message);
-  }
-})
-```
-
-### Get Chat Messages
-
-```python
-frappe.call({
-  'method': 'agent_builder.api.agent.get_messages',
-  'args': {
-    'chat_id': 'your-chat-id',
-    'limit': 50
-  },
-  'callback': function(r) {
-    console.log(r.message.messages);
   }
 })
 ```
