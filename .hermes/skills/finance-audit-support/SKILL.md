@@ -1,5 +1,5 @@
 ---
-name: fin-audit-support
+name: finance-audit-support
 description: Support SOX 404 compliance with control testing methodology, sample selection, and documentation standards. Use when generating testing workpapers, selecting audit samples, classifying control deficiencies, or preparing for internal or external audits.
 user-invocable: false
 ---

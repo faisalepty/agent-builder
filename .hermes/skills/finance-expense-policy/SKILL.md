@@ -1,5 +1,5 @@
 ---
-name: finance_expense_policy
+name: finance-expense-policy
 version: 1.0.0
 description: >
   Address policy questions from employees with contextual answers, 

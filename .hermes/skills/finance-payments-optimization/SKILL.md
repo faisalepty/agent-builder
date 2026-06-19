@@ -1,5 +1,5 @@
 ---
-name: finance-spayments-optimization
+name: finance-payments-optimization
 version: 1.0.0
 description: >
   Helps finance optimize cash outflows and expand payment choices. The
