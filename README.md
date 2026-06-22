@@ -1,10 +1,10 @@
 # Agent Builder
 
-A Frappe/ERPNext co-pilot powered by **Hermes agent**. Build dynamic Dashboards, Workspaces, and DocTypes through intelligent conversation. Real-time chat interface with streaming AI responses and multi-tool orchestration.
+A Frappe/ERPNext co-pilot and autonomous agents system. Build dynamic Dashboards, Workspaces, and DocTypes through intelligent conversation. Real-time chat interface with streaming AI responses and multi-tool orchestration.
 
 ## Features
 
-- **Hermes Agent Integration** — Advanced AI agent framework with streaming responses and reasoning
+- **Autonomous Agent Integration** — Advanced AI agent framework with streaming responses and reasoning
 - **Frappe Tools Plugin** — Direct CRUD operations on Frappe documents (read, list, save, delete)
 - **Real-time Chat** — WebSocket-powered conversation with live token streaming
 - **Multi-agent Orchestration** — Supervisor agent routing to specialized workers
@@ -25,7 +25,7 @@ bench install-app agent_builder
 
 Add credential in the "Agent Setup" doctype
 
-ie provider [OPEN_ROUTER, GEMINI, ANTHROPIC, GLM]
+ie provider [OPENROUTER, GEMINI, ANTHROPIC, GLM]
 and the API_KEY provided by your vendor
 
 ## API Usage
@@ -53,7 +53,6 @@ frappe.call({
 - **`agent.py`** — Main chat endpoints using Hermes agent with Frappe tools
 - **`agent_test.py`** — Testing endpoint for quick agent invocation
 
-### Hermes Integration (`.hermes/`)
 
 - **Frappe Tools Plugin** — Registers and manages Frappe CRUD tools
   - `frappe_get_doc` — Fetch single documents
@@ -69,8 +68,6 @@ frappe.call({
 ### Legacy Agents (`agent_builder/agent2/`, `agent_builder/agent3/`)
 
 - Experimental multi-agent orchestration systems
-- Use for reference; current production uses Hermes API
-
 
 ## License
 
