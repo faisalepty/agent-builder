@@ -38,7 +38,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
+    cursor: grab;
     box-shadow: 0 8px 24px color-mix(in srgb, var(--primary) 40%, transparent);
     transition: transform 0.25s var(--ab-spring), box-shadow 0.2s;
     border: none;
@@ -63,25 +63,17 @@
     #ab-launcher { animation: none; }
 }
 
-/* Two icons stacked in the same spot and crossfaded/morphed in place,
-   rather than the old pattern of fading the whole button to opacity:0 on
-   open (which made the header's X the only way to close). The launcher
-   now stays visible and clickable in both states — same click handler
-   already toggles open/close either way. */
+/* Single chat-bubble icon — always visible, no crossfade.
+   Dragging the launcher repositions it; clicking opens/closes the window. */
 #ab-launcher .ab-launcher-icon {
     position: absolute;
     inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: opacity 0.2s ease, transform 0.25s var(--ab-spring);
 }
-#ab-launcher .ab-launcher-icon-chat svg { width: 25px; height: 25px; }
-#ab-launcher .ab-launcher-icon-close svg { width: 22px; height: 22px; }
-#ab-launcher .ab-launcher-icon-chat { opacity: 1; transform: scale(1) rotate(0deg); }
-#ab-launcher .ab-launcher-icon-close { opacity: 0; transform: scale(0.5) rotate(-90deg); }
-#ab-launcher.is-open .ab-launcher-icon-chat { opacity: 0; transform: scale(0.5) rotate(90deg); }
-#ab-launcher.is-open .ab-launcher-icon-close { opacity: 1; transform: scale(1) rotate(0deg); }
+#ab-launcher .ab-launcher-icon-chat svg { width: 26px; height: 26px; }
+#ab-launcher:active { cursor: grabbing; }
 
 #ab-badge {
     position: absolute;
@@ -390,30 +382,48 @@
 .ab-pre-copy:hover { background: rgba(255,255,255,0.2); }
 .ab-pre-copy svg { width: 12px; height: 12px; }
 
-/* ── SOTA Responsive Table System ── */
+/* ── Responsive Table System ──────────────────────────────────
+   The wrapper is the scroll container. max-width:100% + overflow-x:auto
+   means the table can be as wide as it needs (min-width drives this) and
+   the wrapper handles the scrollbar without squeezing any column.
+   display:block on the wrapper is essential — inside a flex bubble-wrap
+   a plain block div can still shrink below its child's min-width without
+   it. The table itself must never use width:100% when it has a min-width,
+   because that causes columns to be crammed into the parent's width even
+   when the wrapper is narrower. width:max-content makes the table take
+   exactly as much space as its content needs (subject to min-width floor).
+   ──────────────────────────────────────────────────────────── */
 .ab-table-wrapper {
+    display: block;
     width: 100%;
+    max-width: 100%;
     margin: 16px 0;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     border-radius: 8px;
     border: 1px solid var(--border-color);
+    /* Contain the table so it doesn't bleed outside the message column */
+    box-sizing: border-box;
 }
 .ab-bubble table {
-    width: 100%;
-    min-width: 500px;
+    width: max-content;
+    min-width: 420px;
     border-collapse: separate;
     border-spacing: 0;
     font-size: 13px;
     background: var(--bg-color);
 }
-.ab-bubble th, .ab-bubble td { 
-    padding: 10px 14px; 
-    text-align: left; 
+.ab-bubble th, .ab-bubble td {
+    padding: 9px 14px;
+    text-align: left;
     border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;   /* Never wrap cell content — scroll instead */
 }
 .ab-bubble th { background: var(--control-bg); font-weight: 600; }
 .ab-bubble tr:last-child td { border-bottom: none; }
+/* In expanded/fullscreen mode, let long cells wrap naturally again */
+#ab-window.ab-expanded .ab-bubble th,
+#ab-window.ab-expanded .ab-bubble td { white-space: normal; }
 
 /* Message Actions — icon-only, consistent sizing so the row reads as one
    cohesive toolbar instead of mismatched icon+label buttons */
@@ -431,78 +441,174 @@
 /* Streaming Cursor */
 .ab-cursor { display: inline-block; width: 6px; height: 14px; background: var(--primary); margin-left: 4px; vertical-align: middle; animation: blink 1s step-start infinite; border-radius: 2px; }
 
-/* ── Inline Thinking Steps (SOTA Accordion) ────────────────────── */
-.ab-thinking-container { margin: 8px 0 16px; width: 100%; }
+/* ── Thinking Pill (header toggle) ──────────────────────────────── */
+.ab-thinking-container { margin: 4px 0 12px; width: 100%; }
 .ab-thinking-pill {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 6px 12px; border-radius: 8px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 5px 10px 5px 8px; border-radius: 20px; cursor: pointer;
     font-size: 12px; color: var(--text-muted); font-weight: 500;
-    transition: all 0.2s; border: 1px solid transparent; user-select: none;
+    transition: background 0.15s, color 0.15s;
+    border: 1px solid var(--border-color); user-select: none; background: var(--bg-color);
 }
 .ab-thinking-pill:hover { background: var(--control-bg); color: var(--text-color); }
-.ab-thinking-pill svg { width: 14px; height: 14px; color: var(--text-muted); }
-.ab-thinking-status-icon { display: inline-flex; }
+.ab-thinking-pill svg { width: 14px; height: 14px; }
+.ab-thinking-status-icon { display: inline-flex; align-items: center; }
 .ab-thinking-pill.done .ab-thinking-status-icon svg { color: #10b981; }
-.ab-thinking-pill.errored { color: #ef4444; }
+.ab-thinking-pill.errored { color: #ef4444; border-color: color-mix(in srgb, #ef4444 30%, var(--border-color)); }
 .ab-thinking-pill.errored .ab-thinking-status-icon svg { color: #ef4444; }
-.ab-spinner { width: 14px; height: 14px; border: 2px solid var(--border-color); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
-.ab-thinking-time { font-family: var(--font-mono); font-size: 11px; opacity: 0.8; }
-.ab-chevron { display: inline-flex; transform: rotate(-90deg); transition: transform 0.2s; }
-.ab-chevron svg { width: 14px; height: 14px; }
+.ab-spinner { width: 13px; height: 13px; border: 2px solid var(--border-color); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+.ab-chevron { display: inline-flex; align-items: center; transform: rotate(-90deg); transition: transform 0.22s; margin-left: 2px; }
+.ab-chevron svg { width: 12px; height: 12px; }
 .ab-thinking-pill.expanded .ab-chevron { transform: rotate(0deg); }
 
+/* ── Timeline Steps ──────────────────────────────────────────────
+   Each step row = [icon-col] [step-main]
+   The icon-col holds a circle icon + a vertical connector line below it.
+   KEY: the icon-col uses align-self:stretch so it fills the FULL height
+   of the step (including the expanded detail panel), and the connector
+   uses flex:1 so it fills ALL space below the icon.
+   This means the line always reaches the next icon regardless of whether
+   the detail panel is open or closed.
+   ────────────────────────────────────────────────────────────── */
 .ab-thinking-steps {
-    margin: 8px 0 0 6px; padding-left: 18px;
-    border-left: 2px solid var(--border-color); display: flex; flex-direction: column; gap: 10px;
+    display: flex; flex-direction: column;
+    margin: 8px 0 4px 4px; padding: 0;
 }
 .ab-thinking-step {
-    display: flex; align-items: flex-start; gap: 12px; font-size: 12px; color: var(--text-muted);
-    animation: ab-fade-up 0.2s ease; cursor: pointer; border-radius: 8px; padding: 4px 6px; margin: -4px -6px;
-    transition: background 0.15s;
+    display: flex; align-items: stretch; /* stretch = icon-col fills full row height */
+    gap: 0; font-size: 12.5px; color: var(--text-muted);
+    animation: ab-fade-up 0.18s ease; position: relative;
+    cursor: pointer;
 }
-.ab-thinking-step:hover { background: var(--control-bg); }
 .ab-thinking-step.ab-step-is-error { color: #ef4444; }
-.ab-step-icon { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; margin-top: 2px; flex-shrink: 0; }
-.ab-step-icon svg { width: 14px; height: 14px; }
-.ab-step-icon.running { animation: pulse 1.4s ease-in-out infinite; color: var(--primary); }
-.ab-step-icon.errored svg { color: #ef4444; }
 
-.ab-step-main { flex: 1; min-width: 0; }
-.ab-step-headline { display: flex; align-items: center; gap: 8px; }
-.ab-step-name { flex: 1; line-height: 1.5; }
+/* Icon column: narrow fixed gutter, stretches to match row height.
+   Contains: circle icon (fixed size) + connector line (fills rest). */
+.ab-step-icon-col {
+    display: flex; flex-direction: column; align-items: center;
+    flex-shrink: 0; width: 32px;
+    /* No padding-top — the icon itself is vertically centred in the headline row height (28px) */
+}
+
+/* The circle icon badge */
+.ab-step-icon {
+    width: 22px; height: 22px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; border: 1.5px solid var(--border-color);
+    background: var(--bg-color); color: var(--text-muted);
+    margin-top: 3px; /* nudge down to align with the headline text baseline */
+    transition: border-color 0.2s, background 0.2s, color 0.2s;
+    position: relative; z-index: 1;
+}
+.ab-step-icon svg { width: 11px; height: 11px; display: block; }
+.ab-step-icon.running {
+    border-color: var(--primary); color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 10%, var(--bg-color));
+    animation: pulse 1.6s ease-in-out infinite;
+}
+.ab-step-icon.done { border-color: #10b981; color: #10b981; background: color-mix(in srgb, #10b981 10%, var(--bg-color)); }
+.ab-step-icon.errored { border-color: #ef4444; color: #ef4444; background: color-mix(in srgb, #ef4444 10%, var(--bg-color)); }
+
+/* Vertical connector line — stretches from below the icon to the bottom
+   of the step row (which may be tall if the detail panel is open).
+   Hidden on the LAST step (no next icon to connect to). */
+.ab-step-connector {
+    width: 1.5px; flex: 1; min-height: 8px;
+    background: var(--border-color); margin: 4px 0 0;
+    align-self: stretch;
+}
+.ab-thinking-step:last-child .ab-step-connector { visibility: hidden; }
+
+/* Step content: headline + expandable detail */
+.ab-step-main {
+    flex: 1; min-width: 0;
+    padding: 4px 4px 8px 10px;
+    /* bottom padding creates breathing room between this step's content
+       and the next icon, making the connector feel well-spaced */
+}
+.ab-thinking-step:last-child .ab-step-main { padding-bottom: 4px; }
+
+/* Headline row: name + elapsed time + chevron */
+.ab-step-headline {
+    display: flex; align-items: center; gap: 6px;
+    min-height: 22px; /* matches icon height for vertical rhythm */
+    padding: 0 2px;
+    border-radius: 6px; transition: background 0.15s;
+}
+.ab-thinking-step:hover .ab-step-headline { background: var(--control-bg); }
+
+.ab-step-name { flex: 1; line-height: 1.4; font-weight: 500; }
 .ab-step-name.done { color: var(--text-color); }
 .ab-step-name.errored { color: #ef4444; }
-/* Tense change (running → done) signals completion, not an icon swap —
-   the shimmer is what marks "still in progress" instead. */
 .ab-step-name.running {
-    background: linear-gradient(90deg, var(--text-muted) 0%, var(--text-color) 50%, var(--text-muted) 100%);
-    background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
-    animation: ab-shimmer 1.6s linear infinite;
+    background: linear-gradient(90deg, var(--text-muted) 0%, var(--text-color) 45%, var(--text-muted) 100%);
+    background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: ab-shimmer 1.8s linear infinite;
 }
-.ab-step-time { font-family: var(--font-mono); font-size: 11px; flex-shrink: 0; }
-.ab-step-chevron { display: inline-flex; flex-shrink: 0; transform: rotate(-90deg); transition: transform 0.2s; color: var(--text-muted); }
-.ab-step-chevron svg { width: 12px; height: 12px; }
-.ab-thinking-step.ab-step-expanded .ab-step-chevron { transform: rotate(0deg); }
+.ab-step-time {
+    font-size: 10.5px; font-family: var(--font-mono);
+    color: var(--text-muted); flex-shrink: 0; opacity: 0.75;
+}
+.ab-step-chevron {
+    display: inline-flex; align-items: center; flex-shrink: 0;
+    transform: rotate(-90deg); transition: transform 0.2s;
+    color: var(--text-muted); opacity: 0.6;
+}
+.ab-step-chevron svg { width: 11px; height: 11px; }
+.ab-thinking-step.ab-step-expanded .ab-step-chevron { transform: rotate(0deg); opacity: 1; }
 
-/* Per-step detail panel: raw tool name + pretty-printed args, plus a
-   result/error block if the backend payload included one. Collapsed by
-   default — click any step row to expand it. */
+/* ── Step Detail Panel ───────────────────────────────────────────
+   Linear-inspired: clean card below the headline, slides in, no raw
+   JSON dump — structured sections with readable labels.
+   ────────────────────────────────────────────────────────────── */
 .ab-step-detail {
-    display: none; margin-top: 8px; padding: 10px 12px;
-    background: var(--control-bg); border-radius: 8px; border: 1px solid var(--border-color);
+    display: none; margin-top: 6px;
+    border: 1px solid var(--border-color); border-radius: 10px;
+    overflow: hidden; background: var(--bg-color);
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    animation: ab-fade-up 0.15s ease;
 }
 .ab-thinking-step.ab-step-expanded .ab-step-detail { display: block; }
+
+/* Section header inside the detail card */
+.ab-step-detail-section {
+    padding: 8px 12px; border-bottom: 1px solid var(--border-color);
+}
+.ab-step-detail-section:last-child { border-bottom: none; }
 .ab-step-detail-label {
-    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
-    color: var(--text-muted); margin-bottom: 4px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--text-muted);
+    margin-bottom: 5px; display: flex; align-items: center; gap: 5px;
 }
-.ab-step-detail-label:not(:first-child) { margin-top: 10px; }
+.ab-step-detail-label svg { width: 10px; height: 10px; }
+
+/* Monospace block for args / result output */
 .ab-step-detail-block {
-    font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
-    background: var(--ab-code-bg); color: var(--ab-code-text); border-radius: 6px; padding: 8px 10px; margin: 0;
-    max-height: 220px; overflow-y: auto;
+    font-family: var(--font-mono); font-size: 11.5px; line-height: 1.55;
+    white-space: pre-wrap; word-break: break-all;
+    background: var(--ab-code-bg); color: var(--ab-code-text);
+    border-radius: 6px; padding: 8px 10px; margin: 0;
+    max-height: 200px; overflow-y: auto;
 }
-.ab-step-detail-block.is-error { background: color-mix(in srgb, #ef4444 12%, var(--ab-code-bg)); color: #ffb4b4; }
+.ab-step-detail-block.is-error {
+    background: color-mix(in srgb, #ef4444 10%, var(--ab-code-bg));
+    color: #fca5a5; border: 1px solid color-mix(in srgb, #ef4444 25%, transparent);
+}
+
+/* Status badge inside the detail card footer */
+.ab-step-detail-status {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10.5px; font-weight: 600; padding: 2px 8px;
+    border-radius: 20px; flex-shrink: 0;
+}
+.ab-step-detail-status.success { background: color-mix(in srgb, #10b981 12%, transparent); color: #10b981; }
+.ab-step-detail-status.error   { background: color-mix(in srgb, #ef4444 12%, transparent); color: #ef4444; }
+.ab-step-detail-status.running { background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); }
+.ab-step-detail-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 12px; background: var(--control-bg);
+    border-top: 1px solid var(--border-color); font-size: 11px; color: var(--text-muted);
+}
 
 /* Typing indicator — shimmering "Thinking" label + a small dot trio inside
    a soft pill, instead of bare bouncing dots with no context */
@@ -666,11 +772,12 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 .ab-flyout-caret { margin-left: auto; color: var(--text-muted); display: flex; }
 .ab-flyout-caret svg { width: 14px; height: 14px; }
 
-/* Side flyout: scrollable skill list with search */
+/* Side flyout: portaled to <body> by JS so it escapes overflow:hidden on
+   #ab-window. Positioned via JS with fixed coordinates. */
 .ab-flyout {
-    position: absolute; top: 0; left: 100%; margin-left: 8px; width: 240px;
+    position: fixed; width: 240px;
     background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 16px;
-    box-shadow: var(--ab-shadow-md); padding: 8px; z-index: 41;
+    box-shadow: var(--ab-shadow-md); padding: 8px; z-index: 10060;
     visibility: hidden; opacity: 0; pointer-events: none; transform: translateY(6px);
     transition: opacity 0.15s ease, transform 0.15s var(--ab-spring), visibility 0.15s;
     display: flex; flex-direction: column;
@@ -710,11 +817,12 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 .ab-skill-item-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ab-skill-empty { padding: 16px 10px; text-align: center; font-size: 12px; color: var(--text-muted); }
 
-/* Shared skill-description tooltip */
+/* Shared skill-description tooltip — portaled to <body> with fixed positioning
+   so it appears to the right of the hovered skill item without clipping. */
 #ab-skill-tooltip {
-    position: absolute; max-width: 220px; background: var(--text-color); color: var(--bg-color);
+    position: fixed; max-width: 220px; background: var(--text-color); color: var(--bg-color);
     font-size: 11.5px; line-height: 1.4; padding: 8px 10px; border-radius: 10px;
-    box-shadow: var(--ab-shadow-md); z-index: 50; display: none; pointer-events: none;
+    box-shadow: var(--ab-shadow-md); z-index: 10070; display: none; pointer-events: none;
 }
 
 /* Sub-input hints */

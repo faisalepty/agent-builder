@@ -28,6 +28,18 @@ def register(ctx):
         schema=schemas.FRAPPE_DELETE_DOC,
         handler=tools.frappe_delete_doc,
     )
+    ctx.register_tool(
+        name="view_skill",
+        toolset="frappe_tools",
+        schema=schemas.VIEW_SKILL,
+        handler=tools.view_skill,
+    )
+    ctx.register_tool(
+        name="list_skills",
+        toolset="frappe_tools",
+        schema=schemas.LIST_SKILLS,
+        handler=tools.list_skills,
+    )
 
     # Bundle the skill
     # skills_dir = Path(__file__).parent / "skills"

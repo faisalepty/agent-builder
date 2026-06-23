@@ -315,9 +315,14 @@ window.ChatMessages = (function () {
         const meta = _toolMeta(data.tool, data.args);
         _currentThinkingSteps.push({ id: stepId, startTime: Date.now(), status: 'running', doneLabel: meta.done });
 
+        const _stepArgsHtml = _prettyArgs(meta.args);
+        const _noArgs = _stepArgsHtml === _escapeHtml('No arguments') || !_stepArgsHtml;
         $(`#${_currentThinkingRow} .ab-thinking-steps`).append(
             `<div class="ab-thinking-step" id="${stepId}">
-                <div class="ab-step-icon running">${meta.icon}</div>
+                <div class="ab-step-icon-col">
+                    <div class="ab-step-icon running">${meta.icon}</div>
+                    <div class="ab-step-connector"></div>
+                </div>
                 <div class="ab-step-main">
                     <div class="ab-step-headline">
                         <span class="ab-step-name running">${_escapeHtml(meta.running)}</span>
@@ -325,8 +330,15 @@ window.ChatMessages = (function () {
                         <span class="ab-step-chevron">${_icons.down}</span>
                     </div>
                     <div class="ab-step-detail">
-                        <div class="ab-step-detail-label">${_escapeHtml(data.tool || '')}</div>
-                        <pre class="ab-step-detail-block">${_prettyArgs(meta.args)}</pre>
+                        <div class="ab-step-detail-section">
+                            <div class="ab-step-detail-label">Tool</div>
+                            <code style="font-size:11.5px;font-family:var(--font-mono);color:var(--text-color);">${_escapeHtml(data.tool || '')}</code>
+                        </div>
+                        ${!_noArgs ? '<div class=\"ab-step-detail-section\"><div class=\"ab-step-detail-label\">Input</div><pre class=\"ab-step-detail-block\">' + _stepArgsHtml + '</pre></div>' : ''}
+                        <div class="ab-step-detail-footer">
+                            <span class="ab-step-detail-status running" id="${stepId}-status">Running…</span>
+                            <span id="${stepId}-time-footer" style="font-family:var(--font-mono);font-size:10.5px;"></span>
+                        </div>
                     </div>
                 </div>
             </div>`
@@ -342,22 +354,31 @@ window.ChatMessages = (function () {
         const isError = !!(data && (data.error || data.success === false));
 
         const $step = $('#' + step.id);
-        $step.find('.ab-step-icon').removeClass('running');
+        // Update icon state
+        const $icon = $step.find('.ab-step-icon');
+        $icon.removeClass('running').addClass(isError ? 'errored' : 'done');
+        if (isError) $icon.html(_icons.alertTriangle || _icons.check);
+        // Update headline
         $step.find('.ab-step-name').removeClass('running').addClass(isError ? 'errored' : 'done').text(step.doneLabel || '');
         $step.find('.ab-step-time').text(elStr);
         $step.toggleClass('ab-step-is-error', isError);
-        if (isError) $step.find('.ab-step-icon').addClass('errored').html(_icons.alertTriangle || _icons.check);
+        // Update footer status badge
+        const $statusBadge = $('#' + step.id + '-status');
+        $statusBadge.removeClass('running')
+            .addClass(isError ? 'error' : 'success')
+            .text(isError ? 'Failed' : 'Done');
+        $('#' + step.id + '-time-footer').text(elStr);
 
-        // Backend payload shape for tool-done isn't fixed elsewhere in this
-        // app, so this checks the common field names defensively and simply
-        // shows nothing extra (just the args already rendered) if none are
-        // present — never throws either way.
+        // Append result/error section to the detail card if payload present
         const resultText = data && (data.error || data.result || data.output || data.response);
         if (resultText !== undefined && resultText !== null && resultText !== '') {
             const pretty = typeof resultText === 'string' ? resultText : JSON.stringify(resultText, null, 2);
-            $step.find('.ab-step-detail').append(
-                `<div class="ab-step-detail-label">${isError ? 'Error' : 'Result'}</div>
-                 <pre class="ab-step-detail-block${isError ? ' is-error' : ''}">${_escapeHtml(String(pretty).slice(0, 4000))}</pre>`
+            const $footer = $step.find('.ab-step-detail-footer');
+            $footer.before(
+                `<div class="ab-step-detail-section">
+                    <div class="ab-step-detail-label">${isError ? 'Error' : 'Output'}</div>
+                    <pre class="ab-step-detail-block${isError ? ' is-error' : ''}">${_escapeHtml(String(pretty).slice(0, 4000))}</pre>
+                 </div>`
             );
         }
 
@@ -608,12 +629,22 @@ window.ChatMessages = (function () {
             // Not every backend version persists a result/error payload per
             // step — show it if present, render nothing extra if not.
             const resultText = s.error || s.result || s.output || s.response;
-            const detailExtra = (resultText !== undefined && resultText !== null && resultText !== '')
-                ? `<div class="ab-step-detail-label">${stepError ? 'Error' : 'Result'}</div>
-                   <pre class="ab-step-detail-block${stepError ? ' is-error' : ''}">${_escapeHtml(String(typeof resultText === 'string' ? resultText : JSON.stringify(resultText, null, 2)).slice(0, 4000))}</pre>`
+            const _rPretty = resultText ? (typeof resultText === 'string' ? resultText : JSON.stringify(resultText, null, 2)) : '';
+            const detailExtra = _rPretty
+                ? `<div class="ab-step-detail-section">
+                       <div class="ab-step-detail-label">${stepError ? 'Error' : 'Output'}</div>
+                       <pre class="ab-step-detail-block${stepError ? ' is-error' : ''}">${_escapeHtml(String(_rPretty).slice(0, 4000))}</pre>
+                   </div>`
                 : '';
+            const _hArgsHtml = _prettyArgs(meta.args);
+            const _hNoArgs = !_hArgsHtml || _hArgsHtml === _escapeHtml('No arguments');
+            const _hStatus = stepError ? 'error' : 'success';
+            const _hStatusLabel = stepError ? 'Failed' : 'Done';
             return `<div class="ab-thinking-step${stepError ? ' ab-step-is-error' : ''}">
-                <div class="ab-step-icon${stepError ? ' errored' : ''}">${icon}</div>
+                <div class="ab-step-icon-col">
+                    <div class="ab-step-icon ${stepError ? 'errored' : 'done'}">${icon}</div>
+                    <div class="ab-step-connector"></div>
+                </div>
                 <div class="ab-step-main">
                     <div class="ab-step-headline">
                         <span class="ab-step-name ${stepError ? 'errored' : 'done'}">${_escapeHtml(meta.done)}</span>
@@ -621,9 +652,16 @@ window.ChatMessages = (function () {
                         <span class="ab-step-chevron">${_icons.down}</span>
                     </div>
                     <div class="ab-step-detail">
-                        <div class="ab-step-detail-label">${_escapeHtml(s.tool || '')}</div>
-                        <pre class="ab-step-detail-block">${_prettyArgs(meta.args)}</pre>
+                        <div class="ab-step-detail-section">
+                            <div class="ab-step-detail-label">Tool</div>
+                            <code style="font-size:11.5px;font-family:var(--font-mono);color:var(--text-color);">${_escapeHtml(s.tool || '')}</code>
+                        </div>
+                        ${!_hNoArgs ? '<div class=\"ab-step-detail-section\"><div class=\"ab-step-detail-label\">Input</div><pre class=\"ab-step-detail-block\">' + _hArgsHtml + '</pre></div>' : ''}
                         ${detailExtra}
+                        <div class="ab-step-detail-footer">
+                            <span class="ab-step-detail-status ${_hStatus}">${_hStatusLabel}</span>
+                            <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-muted);">${_escapeHtml(timeStr)}</span>
+                        </div>
                     </div>
                 </div>
             </div>`;
