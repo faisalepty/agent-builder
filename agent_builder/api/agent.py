@@ -237,7 +237,7 @@ def process_agent_chat(message, chat_id, attachments, user):
             model="openrouter/owl-alpha",
             quiet_mode=False,
             platform="frappe",
-            enabled_toolsets=["frappe_tools","clarify","delegetion", "skills", "memory", "todo", "search", "session-search"],
+            enabled_toolsets=["frappe-tools","clarify","delegetion", "skills", "memory", "todo", "search", "session-search"],
             stream_delta_callback=on_token,
             tool_start_callback=on_tool_start,
             tool_complete_callback=on_tool_done,

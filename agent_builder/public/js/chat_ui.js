@@ -20,8 +20,9 @@ $(document).ready(function () {
 
     // ── Modern Lucide-style Icons (stroke-width: 1.5) ──────────
     const ICONS = {
-        sparkle:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/></svg>`,
-        send:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>`, // Up Arrow
+        // Welcome screen / assistant identity icon: clean "message with wave" — friendly, minimal, no star
+        sparkle:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 10h.01M12 10h.01M16 10h.01" stroke-width="2.5" stroke-linecap="round"/></svg>`,
+        send:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>`,
         close:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
         back:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="15 18 9 12 15 6"/></svg>`,
         newchat:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
@@ -29,36 +30,27 @@ $(document).ready(function () {
         spin:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>`,
         copy:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>`,
         retry:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>`,
-        // Recognizable robot-head avatar instead of the previous abstract sun/ray glyph
-        bot:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="8" width="16" height="12" rx="3"/><circle cx="9" cy="14" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="14" r="1" fill="currentColor" stroke="none"/><path d="M12 8V5"/><circle cx="12" cy="3.5" r="1.3" fill="currentColor" stroke="none"/><path d="M2 13h2M20 13h2"/></svg>`,
+        // Header avatar: clean rounded chat orb with a subtle pulse dot — minimal, modern, no robot parts
+        bot:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2C6.48 2 2 6.03 2 11c0 2.87 1.37 5.43 3.54 7.17L4 22l4.26-1.42A10.7 10.7 0 0 0 12 21c5.52 0 10-4.03 10-9S17.52 2 12 2z"/><circle cx="8.5" cy="11" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="11" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.5" cy="11" r="1.2" fill="currentColor" stroke="none"/></svg>`,
         expand:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>`,
         compress: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="21" y2="3"/><line x1="3" y1="21" x2="14" y2="10"/></svg>`,
         reload:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>`,
         stop:     `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>`,
         down:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>`,
-        // ── New in v4.1 / refined in v4.2 ──
         paperclip:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>`,
-        // Wrench reads more clearly as "tools/skills" than an abstract slash glyph
         skillIcon:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`,
         chevronRight:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="9 18 15 12 9 6"/></svg>`,
         fileText:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>`,
         listIcon:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>`,
-        // File-with-a-plus reads more literally as "create a doc" than a generic plus-circle
         plusCircle:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="13" x2="12" y2="19"/><line x1="9" y1="16" x2="15" y2="16"/></svg>`,
-        // Shrinking lines suggest "condensing" text, closer to what "summarise" means than stacked layers
         layers:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="16" y2="12"/><line x1="4" y1="18" x2="11" y2="18"/></svg>`,
         barChart:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>`,
-        // New in v4.2
         edit:         `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 113 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
         alertTriangle:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
-        // New in v4.3 — per-tool glyphs for the redesigned agent-actions list
         search:       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
         terminal:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="6 9 10 12 6 15"/><line x1="12" y1="15" x2="16" y2="15"/></svg>`,
-        // New launcher glyph — a chat bubble (instantly reads as "open chat")
-        // with the same sparkle motif used elsewhere reused at small scale
-        // inside it, so the AI signifier and the chat affordance are both
-        // present rather than relying on the sparkle alone.
-        launcherChat: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><g transform="translate(7,6) scale(0.42)"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" fill="currentColor" stroke="none"/></g></svg>`,
+        // Launcher: clean rounded-corner chat bubble, no decorations inside — instantly reads as "chat"
+        launcherChat: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 14.5a2.5 2.5 0 0 1-2.5 2.5H6.5L2 21.5V5a2.5 2.5 0 0 1 2.5-2.5h14A2.5 2.5 0 0 1 21 5z"/><circle cx="8" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="10" r="1" fill="currentColor" stroke="none"/></svg>`,
     };
     ICONS.plus = ICONS.newchat; // same glyph, reused intentionally for the input's "+" button
 
@@ -78,9 +70,8 @@ $(document).ready(function () {
 
     // ── SOTA DOM Structure Injection ───────────────────────────
     $('body').append(`
-        <button id="ab-launcher" title="Omnis Chat">
+        <button id="ab-launcher" title="Omnis — click to open, drag to reposition">
             <span class="ab-launcher-icon ab-launcher-icon-chat">${ICONS.launcherChat}</span>
-            <span class="ab-launcher-icon ab-launcher-icon-close">${ICONS.close}</span>
             <span id="ab-badge"></span>
         </button>
 
@@ -92,7 +83,7 @@ $(document).ready(function () {
                     <div id="ab-header-name">Omnis</div>
                     <div id="ab-header-status">
                         <div id="ab-status-dot"></div>
-                        <span id="ab-status-text">Ready</span>
+                        <span id="ab-status-text">Online</span>
                     </div>
                 </div>
                 <button id="ab-new-chat" class="ab-hbtn" title="New Chat">${ICONS.newchat}</button>
@@ -208,6 +199,16 @@ $(document).ready(function () {
     // Staged file attachments for the next message
     let _pendingFiles = [];
 
+    // Portal the skill flyout and tooltip to <body> so they escape
+    // overflow:hidden on #ab-window (which clips child absolute elements).
+    // They are positioned via JS using fixed viewport coordinates.
+    (function portalOverlays() {
+        const flyout = document.getElementById('ab-skill-panel');
+        const tooltip = document.getElementById('ab-skill-tooltip');
+        if (flyout) document.body.appendChild(flyout);
+        if (tooltip) document.body.appendChild(tooltip);
+    })();
+
     ChatMessages.init(ICONS);
     ChatList.init({ onSelect: openConversation, onNew: startNewChat });
     ChatRealtime.init({
@@ -223,7 +224,7 @@ $(document).ready(function () {
             try { ChatMessages.onDone((data && data.response) || '', false); }
             catch (err) { console.error('ChatMessages.onDone failed', err); }
             setInputState(false);
-            setStatus('Ready', false);
+            setStatus('Online', false);
             setTimeout(() => $('#ab-input').focus(), 50);
         },
         onError: (data) => {
@@ -245,7 +246,7 @@ $(document).ready(function () {
         $('#ab-back').hide();
         $('#ab-new-chat').show();
         $('#ab-header-name').text('Omnis');
-        setStatus('Ready', false);
+        setStatus('Online', false);
         ChatList.load();
     }
 
@@ -279,7 +280,104 @@ $(document).ready(function () {
         renderWelcomeScreen();
     }
 
-    $(document).on('click', '#ab-launcher', () => isOpen ? _close() : _open());
+    // ───────────────────────────────────────────────────────────
+    // Draggable launcher + draggable window
+    // Both use a shared drag routine: pointer events on the handle
+    // element, clamped to the viewport so neither floats offscreen.
+    // A tiny hasDragged flag prevents the click handler from firing
+    // if the pointer actually moved (drag vs click disambiguation).
+    // ───────────────────────────────────────────────────────────
+    function _makeDraggable(handleEl, movedEl, onDragEnd) {
+        let startX, startY, startLeft, startTop, hasDragged = false;
+
+        function _clamp(val, min, max) { return Math.max(min, Math.min(max, val)); }
+
+        function onPointerDown(e) {
+            if (e.button !== 0) return;
+            // Don't intercept clicks on interactive children (buttons inside header etc.)
+            if (handleEl !== movedEl && $(e.target).closest('button, a, input, textarea, select').length) return;
+
+            hasDragged = false;
+            const rect = movedEl.getBoundingClientRect();
+            startLeft = rect.left;
+            startTop  = rect.top;
+            startX    = e.clientX;
+            startY    = e.clientY;
+
+            // Anchor element to current viewport position so we can drive it freely
+            movedEl.style.left   = rect.left + 'px';
+            movedEl.style.top    = rect.top  + 'px';
+            movedEl.style.right  = 'auto';
+            movedEl.style.bottom = 'auto';
+
+            document.addEventListener('pointermove', onPointerMove);
+            document.addEventListener('pointerup',   onPointerUp);
+            // Do NOT call e.preventDefault() — it would suppress the click event
+        }
+
+        function onPointerMove(e) {
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            if (!hasDragged && Math.abs(dx) + Math.abs(dy) > 5) {
+                hasDragged = true;
+                // Only add drag cursor after we know it's a real drag
+                movedEl.style.transition = 'none';
+                movedEl.style.cursor = 'grabbing';
+            }
+            if (!hasDragged) return;
+
+            const vw = window.innerWidth, vh = window.innerHeight;
+            const w  = movedEl.offsetWidth,  h  = movedEl.offsetHeight;
+            movedEl.style.left = _clamp(startLeft + dx, 0, vw - w) + 'px';
+            movedEl.style.top  = _clamp(startTop  + dy, 0, vh - h) + 'px';
+        }
+
+        function onPointerUp() {
+            document.removeEventListener('pointermove', onPointerMove);
+            document.removeEventListener('pointerup',   onPointerUp);
+            movedEl.style.transition = '';
+            movedEl.style.cursor     = '';
+            if (onDragEnd) onDragEnd(hasDragged);
+        }
+
+        // If a drag occurred, eat the subsequent click so it doesn't toggle open/close
+        handleEl.addEventListener('click', function (e) {
+            if (hasDragged) { e.stopImmediatePropagation(); hasDragged = false; }
+        }, true);
+
+        handleEl.addEventListener('pointerdown', onPointerDown);
+    }
+
+    // Launcher: drag to reposition, click to open/close
+    const launcherEl = document.getElementById('ab-launcher');
+    const windowEl   = document.getElementById('ab-window');
+    _makeDraggable(launcherEl, launcherEl, function (wasDrag) {
+        if (wasDrag) _syncWindowToLauncher();
+    });
+    // Separate click handler for open/close (drag handler eats clicks when dragged)
+    launcherEl.addEventListener('click', function () {
+        isOpen ? _close() : _open();
+    });
+
+    // Window: header is the drag handle, whole window is the moved element.
+    const headerEl = document.getElementById('ab-header');
+    _makeDraggable(headerEl, windowEl, null);
+
+    function _syncWindowToLauncher() {
+        if (!isOpen) return;
+        const lr = launcherEl.getBoundingClientRect();
+        const wr = windowEl.getBoundingClientRect();
+        const vw = window.innerWidth, vh = window.innerHeight;
+        let left = lr.left - wr.width + lr.width;
+        let top  = lr.top  - wr.height - 12;
+        left = Math.max(8, Math.min(left, vw - wr.width  - 8));
+        top  = Math.max(8, Math.min(top,  vh - wr.height - 8));
+        windowEl.style.left   = left + 'px';
+        windowEl.style.top    = top  + 'px';
+        windowEl.style.right  = 'auto';
+        windowEl.style.bottom = 'auto';
+    }
+
     $(document).on('click', '#ab-close', _close);
     $(document).on('click', '#ab-back', showList);
 
@@ -289,14 +387,12 @@ $(document).ready(function () {
         isOpen = true;
         clearTimeout(_closeVisibilityTimer);
         $('#ab-window').removeClass('ab-fully-closed');
-        $('#ab-launcher').addClass('is-open');
         $('#ab-window').addClass('open');
         if (currentView === 'list') ChatList.load();
         else if (currentChatId) $('#ab-input').focus();
     }
     function _close() {
         isOpen = false;
-        $('#ab-launcher').removeClass('is-open');
         $('#ab-window').removeClass('open');
         closePlusMenu();
         closeSlashMenu();
@@ -476,17 +572,27 @@ $(document).ready(function () {
     });
 
     function positionFlyout($trigger, $panel) {
-        const winEl = document.getElementById('ab-window');
-        if (!winEl || !$trigger.length) return;
+        if (!$trigger.length) return;
         const triggerRect = $trigger[0].getBoundingClientRect();
-        const winRect = winEl.getBoundingClientRect();
         const panelWidth = $panel.outerWidth() || 240;
-        const spaceRight = winRect.right - triggerRect.right;
-        if (spaceRight < panelWidth + 16) {
-            $panel.css({ left: 'auto', right: '100%', marginLeft: 0, marginRight: '8px' });
-        } else {
-            $panel.css({ left: '100%', right: 'auto', marginRight: 0, marginLeft: '8px' });
+        const panelHeight = $panel.outerHeight() || 300;
+        const vw = window.innerWidth, vh = window.innerHeight;
+
+        // Prefer right of trigger; flip left if not enough space
+        let left = triggerRect.right + 8;
+        if (left + panelWidth > vw - 8) {
+            left = triggerRect.left - panelWidth - 8;
         }
+        left = Math.max(8, left);
+
+        // Align top with trigger; push up if overflows viewport bottom
+        let top = triggerRect.top;
+        if (top + panelHeight > vh - 8) {
+            top = vh - panelHeight - 8;
+        }
+        top = Math.max(8, top);
+
+        $panel.css({ left: left + 'px', top: top + 'px', right: 'auto', bottom: 'auto' });
     }
 
     let _skillFlyoutCloseTimer = null;
@@ -552,29 +658,26 @@ $(document).ready(function () {
         renderSkillList($('#ab-skill-list'), filtered);
     });
 
-    // Skill description tooltip (shared by flyout + slash menu)
+    // Skill description tooltip — portaled to <body> with position:fixed,
+    // always placed to the RIGHT of the hovered skill item so it never
+    // overlaps or hides the list below it.
     function showSkillTooltip($item, description) {
         if (!description) { hideSkillTooltip(); return; }
-        const winEl = document.getElementById('ab-window');
         const $tip = $('#ab-skill-tooltip');
-        if (!winEl) return;
         $tip.text(description).css({ display: 'block', visibility: 'hidden' });
-        const winRect = winEl.getBoundingClientRect();
         const itemRect = $item[0].getBoundingClientRect();
-        const tipW = $tip.outerWidth() || 200;
+        const tipW = $tip.outerWidth() || 220;
         const tipH = $tip.outerHeight() || 40;
+        const vw = window.innerWidth, vh = window.innerHeight;
 
-        let left = itemRect.right - winRect.left + 10;
-        if (itemRect.right + tipW + 10 > winRect.right) {
-            left = itemRect.left - winRect.left - tipW - 10;
-        }
+        // Prefer right of the item; fall back to left if near viewport edge
+        let left = itemRect.right + 10;
+        if (left + tipW > vw - 8) left = itemRect.left - tipW - 10;
         left = Math.max(8, left);
 
-        let top = itemRect.top - winRect.top;
-        if (itemRect.top + tipH > winRect.bottom) {
-            top = winRect.height - tipH - 12;
-        }
-        top = Math.max(8, top);
+        // Align vertically to mid-item; push up if it overflows viewport bottom
+        let top = itemRect.top + (itemRect.height / 2) - (tipH / 2);
+        top = Math.max(8, Math.min(top, vh - tipH - 8));
 
         $tip.css({ left: left + 'px', top: top + 'px', visibility: 'visible' });
     }

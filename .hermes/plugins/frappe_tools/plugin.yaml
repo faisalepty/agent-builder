@@ -6,9 +6,5 @@ provides_tools:
   - frappe_get_list
   - frappe_save_doc
   - frappe_delete_doc
-provides_skills:
-  - frappe-tools
-  - frappe-workspace
-  - frappe-dashboard
-  - frappe-chart
-  - frappe-ui
+  - view_skill
+  - list_skill
