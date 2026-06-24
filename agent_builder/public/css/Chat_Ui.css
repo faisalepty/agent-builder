@@ -74,6 +74,13 @@
 }
 #ab-launcher .ab-launcher-icon-chat svg { width: 26px; height: 26px; }
 #ab-launcher:active { cursor: grabbing; }
+/* Hide launcher when the widget is open — there's a close button in the header */
+#ab-launcher.ab-launcher-hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.7);
+    transition: opacity 0.2s ease, transform 0.2s var(--ab-spring);
+}
 
 #ab-badge {
     position: absolute;
@@ -441,187 +448,212 @@
 /* Streaming Cursor */
 .ab-cursor { display: inline-block; width: 6px; height: 14px; background: var(--primary); margin-left: 4px; vertical-align: middle; animation: blink 1s step-start infinite; border-radius: 2px; }
 
-/* ── Thinking Pill (header toggle) ──────────────────────────────── */
-.ab-thinking-container { margin: 4px 0 12px; width: 100%; }
+/* ── Thinking Pill + Action Steps ───────────────────────────────────
+   UX design:
+   · While waiting (no tools yet): animated 3-dot pill (showTyping row)
+   · While tools run: live pill with dots + "Working…" label + chevron,
+     steps list hidden by default. User clicks pill to expand/collapse.
+     Steps are in a scrollable container (max-height) — no long lists.
+   · After done: pill swaps to static summary "3 actions · 1.2s",
+     steps stay collapsed. User can still expand to review.
+   · Per-step time is removed from the condensed row — only shown in
+     the detail panel and in the final pill summary.
+   ─────────────────────────────────────────────────────────────── */
+
+.ab-thinking-container { margin: 2px 0 8px; width: 100%; }
+
+/* ── Shared pill styles (live + finalized) ── */
 .ab-thinking-pill {
     display: inline-flex; align-items: center; gap: 7px;
-    padding: 5px 10px 5px 8px; border-radius: 20px; cursor: pointer;
-    font-size: 12px; color: var(--text-muted); font-weight: 500;
-    transition: background 0.15s, color 0.15s;
-    border: 1px solid var(--border-color); user-select: none; background: var(--bg-color);
+    padding: 5px 10px 5px 9px; border-radius: 20px;
+    cursor: pointer; border: 1px solid var(--border-color);
+    background: var(--bg-color); font-size: 12px;
+    color: var(--text-muted); font-weight: 400;
+    transition: background 0.15s, border-color 0.15s;
+    user-select: none; line-height: 1;
 }
-.ab-thinking-pill:hover { background: var(--control-bg); color: var(--text-color); }
-.ab-thinking-pill svg { width: 14px; height: 14px; }
-.ab-thinking-status-icon { display: inline-flex; align-items: center; }
-.ab-thinking-pill.done .ab-thinking-status-icon svg { color: #10b981; }
-.ab-thinking-pill.errored { color: #ef4444; border-color: color-mix(in srgb, #ef4444 30%, var(--border-color)); }
-.ab-thinking-pill.errored .ab-thinking-status-icon svg { color: #ef4444; }
-.ab-spinner { width: 13px; height: 13px; border: 2px solid var(--border-color); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
-.ab-chevron { display: inline-flex; align-items: center; transform: rotate(-90deg); transition: transform 0.22s; margin-left: 2px; }
-.ab-chevron svg { width: 12px; height: 12px; }
-.ab-thinking-pill.expanded .ab-chevron { transform: rotate(0deg); }
+.ab-thinking-pill:hover { background: var(--control-bg); }
+.ab-thinking-pill.done    { color: var(--text-muted); }
+.ab-thinking-pill.errored { color: #ef4444; border-color: color-mix(in srgb,#ef4444 30%,var(--border-color)); }
 
-/* ── Timeline Steps ──────────────────────────────────────────────
-   Each step row = [icon-col] [step-main]
-   The icon-col holds a circle icon + a vertical connector line below it.
-   KEY: the icon-col uses align-self:stretch so it fills the FULL height
-   of the step (including the expanded detail panel), and the connector
-   uses flex:1 so it fills ALL space below the icon.
-   This means the line always reaches the next icon regardless of whether
-   the detail panel is open or closed.
-   ────────────────────────────────────────────────────────────── */
+/* Chevron — points right when collapsed, down when expanded */
+.ab-chevron { display: inline-flex; align-items: center; transform: rotate(-90deg); transition: transform 0.2s; opacity: 0.5; }
+.ab-chevron svg { width: 11px; height: 11px; }
+.ab-thinking-pill.expanded .ab-chevron,
+.ab-thinking-live.expanded .ab-chevron { transform: rotate(0deg); opacity: 0.9; }
+
+/* Status icon in finalized pill */
+.ab-thinking-status-icon { display: inline-flex; align-items: center; }
+.ab-thinking-status-icon svg { width: 12px; height: 12px; }
+.ab-thinking-pill.done    .ab-thinking-status-icon svg { color: var(--text-muted); }
+.ab-thinking-pill.errored .ab-thinking-status-icon svg { color: #ef4444; }
+
+/* ── Live pill (while tools are running) ── */
+.ab-thinking-live {
+    /* inherits all .ab-thinking-pill styles */
+}
+.ab-thinking-live-label { font-size: 12px; color: var(--text-muted); }
+
+/* ── Typing dots — used in showTyping row AND in the live pill ── */
+/* Default size (standalone typing row) */
+.ab-typing-dots {
+    display: flex; gap: 4px; align-items: center;
+}
+.ab-typing-dots span {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--text-muted);
+    animation: typing-dot 1.3s infinite ease-in-out both;
+    display: block;
+}
+.ab-typing-dots span:nth-child(1) { animation-delay: -0.32s; }
+.ab-typing-dots span:nth-child(2) { animation-delay: -0.16s; }
+.ab-typing-dots span:nth-child(3) { animation-delay: 0s; }
+
+/* Slightly smaller dots inside the live pill */
+.ab-typing-dots--small span { width: 4px; height: 4px; }
+
+@keyframes typing-dot {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+    40%            { transform: scale(1);   opacity: 1;   }
+}
+
+/* ── Step list ─────────────────────────────────────────────────────
+   Indented under the pill. Max 4 rows visible (~26px each = 104px),
+   then scrolls. Uses proper icon-col + flex connector so the vertical
+   line sits between icons and stretches when detail expands.
+   ─────────────────────────────────────────────────────────────── */
 .ab-thinking-steps {
     display: flex; flex-direction: column;
-    margin: 8px 0 4px 4px; padding: 0;
+    margin: 4px 0 0 8px;   /* indent from left so steps sit inside the pill */
+    padding: 2px 0;
+    max-height: calc(4 * 30px); /* ~4 rows */
+    overflow-y: auto;
+    overflow-x: hidden;
 }
+
+/* ── Individual step row ── */
 .ab-thinking-step {
-    display: flex; align-items: stretch; /* stretch = icon-col fills full row height */
-    gap: 0; font-size: 12.5px; color: var(--text-muted);
-    animation: ab-fade-up 0.18s ease; position: relative;
+    display: flex;
+    align-items: stretch;   /* stretch = icon-col fills full row height inc. detail */
+    font-size: 12px; color: var(--text-muted);
+    animation: ab-fade-up 0.12s ease;
     cursor: pointer;
 }
 .ab-thinking-step.ab-step-is-error { color: #ef4444; }
 
-/* Icon column: narrow fixed gutter, stretches to match row height.
-   Contains: circle icon (fixed size) + connector line (fills rest). */
+/* Icon column: dot on top, connector line fills rest of row height */
 .ab-step-icon-col {
     display: flex; flex-direction: column; align-items: center;
-    flex-shrink: 0; width: 32px;
-    /* No padding-top — the icon itself is vertically centred in the headline row height (28px) */
+    flex-shrink: 0; width: 26px;
 }
-
-/* The circle icon badge */
 .ab-step-icon {
-    width: 22px; height: 22px; flex-shrink: 0;
+    width: 18px; height: 18px; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
-    border-radius: 50%; border: 1.5px solid var(--border-color);
+    border-radius: 50%;
+    border: 1.5px solid var(--border-color);
     background: var(--bg-color); color: var(--text-muted);
-    margin-top: 3px; /* nudge down to align with the headline text baseline */
-    transition: border-color 0.2s, background 0.2s, color 0.2s;
+    margin-top: 6px;                /* aligns dot with first line of text */
     position: relative; z-index: 1;
+    transition: border-color 0.2s, color 0.2s;
 }
-.ab-step-icon svg { width: 11px; height: 11px; display: block; }
+.ab-step-icon svg { width: 9px; height: 9px; display: block; }
 .ab-step-icon.running {
     border-color: var(--primary); color: var(--primary);
-    background: color-mix(in srgb, var(--primary) 10%, var(--bg-color));
-    animation: pulse 1.6s ease-in-out infinite;
+    animation: ab-step-pulse 1.4s ease-in-out infinite;
 }
-.ab-step-icon.done { border-color: #10b981; color: #10b981; background: color-mix(in srgb, #10b981 10%, var(--bg-color)); }
-.ab-step-icon.errored { border-color: #ef4444; color: #ef4444; background: color-mix(in srgb, #ef4444 10%, var(--bg-color)); }
+.ab-step-icon.done    { border-color: var(--border-color); color: var(--text-muted); }
+.ab-step-icon.errored { border-color: #ef4444; color: #ef4444; }
+@keyframes ab-step-pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
 
-/* Vertical connector line — stretches from below the icon to the bottom
-   of the step row (which may be tall if the detail panel is open).
-   Hidden on the LAST step (no next icon to connect to). */
+/* Connector: 1px line below the dot, fills ALL remaining height of the row.
+   This is the key: flex:1 inside a column that stretches to the row height
+   means the line always reaches the top of the next icon, even when the
+   detail panel below is open and tall. */
 .ab-step-connector {
-    width: 1.5px; flex: 1; min-height: 8px;
-    background: var(--border-color); margin: 4px 0 0;
-    align-self: stretch;
+    width: 1.5px;
+    flex: 1;
+    background: var(--border-color);
+    margin-top: 3px;
+    min-height: 6px;
 }
+/* No trailing line after the last step */
 .ab-thinking-step:last-child .ab-step-connector { visibility: hidden; }
 
-/* Step content: headline + expandable detail */
+/* Step content column */
 .ab-step-main {
     flex: 1; min-width: 0;
-    padding: 4px 4px 8px 10px;
-    /* bottom padding creates breathing room between this step's content
-       and the next icon, making the connector feel well-spaced */
+    padding: 5px 6px 10px 8px;
+    display: flex; flex-direction: column; gap: 0;
 }
-.ab-thinking-step:last-child .ab-step-main { padding-bottom: 4px; }
+.ab-thinking-step:last-child .ab-step-main { padding-bottom: 5px; }
 
-/* Headline row: name + elapsed time + chevron */
+/* Headline: icon name only — no time, no chevron crowding the right */
 .ab-step-headline {
-    display: flex; align-items: center; gap: 6px;
-    min-height: 22px; /* matches icon height for vertical rhythm */
-    padding: 0 2px;
-    border-radius: 6px; transition: background 0.15s;
+    display: flex; align-items: center; gap: 5px;
+    min-height: 18px;
 }
-.ab-thinking-step:hover .ab-step-headline { background: var(--control-bg); }
+.ab-step-name {
+    font-size: 12px; font-weight: 400; line-height: 1.35;
+    color: var(--text-muted); flex: 1;
+}
+.ab-step-name.running { font-style: italic; }
+.ab-step-name.done    { font-style: normal; }
+.ab-step-name.errored { color: #ef4444; font-style: normal; }
+.ab-step-time { display: none; } /* hidden — only in detail footer */
 
-.ab-step-name { flex: 1; line-height: 1.4; font-weight: 500; }
-.ab-step-name.done { color: var(--text-color); }
-.ab-step-name.errored { color: #ef4444; }
-.ab-step-name.running {
-    background: linear-gradient(90deg, var(--text-muted) 0%, var(--text-color) 45%, var(--text-muted) 100%);
-    background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
-    animation: ab-shimmer 1.8s linear infinite;
-}
-.ab-step-time {
-    font-size: 10.5px; font-family: var(--font-mono);
-    color: var(--text-muted); flex-shrink: 0; opacity: 0.75;
-}
+/* Chevron: hidden by default, shows on hover, rotates on expand */
 .ab-step-chevron {
     display: inline-flex; align-items: center; flex-shrink: 0;
-    transform: rotate(-90deg); transition: transform 0.2s;
-    color: var(--text-muted); opacity: 0.6;
+    transform: rotate(-90deg);
+    transition: opacity 0.15s, transform 0.18s;
+    color: var(--text-muted); opacity: 0;
 }
-.ab-step-chevron svg { width: 11px; height: 11px; }
-.ab-thinking-step.ab-step-expanded .ab-step-chevron { transform: rotate(0deg); opacity: 1; }
+.ab-step-chevron svg { width: 10px; height: 10px; }
+.ab-thinking-step:hover .ab-step-chevron  { opacity: 0.45; }
+.ab-thinking-step.ab-step-expanded .ab-step-chevron { transform: rotate(0deg); opacity: 0.8; }
 
-/* ── Step Detail Panel ───────────────────────────────────────────
-   Linear-inspired: clean card below the headline, slides in, no raw
-   JSON dump — structured sections with readable labels.
-   ────────────────────────────────────────────────────────────── */
+/* ── Step detail panel ──────────────────────────────────────────
+   Slides in below the headline. Tool chip + optional args block
+   + small status footer. No card borders — just subtle bg.
+   ─────────────────────────────────────────────────────────────── */
 .ab-step-detail {
-    display: none; margin-top: 6px;
-    border: 1px solid var(--border-color); border-radius: 10px;
-    overflow: hidden; background: var(--bg-color);
-    box-shadow: 0 1px 4px rgba(0,0,0,.06);
-    animation: ab-fade-up 0.15s ease;
+    display: none;
+    flex-direction: column; gap: 5px;
+    margin-top: 5px;
 }
-.ab-thinking-step.ab-step-expanded .ab-step-detail { display: block; }
+.ab-thinking-step.ab-step-expanded .ab-step-detail { display: flex; }
 
-/* Section header inside the detail card */
-.ab-step-detail-section {
-    padding: 8px 12px; border-bottom: 1px solid var(--border-color);
+/* Tool chip — e.g. "frappe_get_list" */
+.ab-step-tool-chip {
+    display: inline-flex; align-items: center;
+    background: var(--control-bg); border: 1px solid var(--border-color);
+    border-radius: 4px; padding: 1px 6px;
+    font-size: 10.5px; font-family: var(--font-mono); color: var(--text-muted);
+    align-self: flex-start;
 }
-.ab-step-detail-section:last-child { border-bottom: none; }
-.ab-step-detail-label {
-    font-size: 10px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.06em; color: var(--text-muted);
-    margin-bottom: 5px; display: flex; align-items: center; gap: 5px;
-}
-.ab-step-detail-label svg { width: 10px; height: 10px; }
-
-/* Monospace block for args / result output */
+/* Args block */
 .ab-step-detail-block {
-    font-family: var(--font-mono); font-size: 11.5px; line-height: 1.55;
+    font-family: var(--font-mono); font-size: 10.5px; line-height: 1.5;
     white-space: pre-wrap; word-break: break-all;
-    background: var(--ab-code-bg); color: var(--ab-code-text);
-    border-radius: 6px; padding: 8px 10px; margin: 0;
-    max-height: 200px; overflow-y: auto;
+    background: var(--control-bg); color: var(--text-muted);
+    border-radius: 5px; padding: 5px 8px; margin: 0;
+    max-height: 130px; overflow-y: auto; border: none;
 }
-.ab-step-detail-block.is-error {
-    background: color-mix(in srgb, #ef4444 10%, var(--ab-code-bg));
-    color: #fca5a5; border: 1px solid color-mix(in srgb, #ef4444 25%, transparent);
-}
-
-/* Status badge inside the detail card footer */
-.ab-step-detail-status {
-    display: inline-flex; align-items: center; gap: 4px;
-    font-size: 10.5px; font-weight: 600; padding: 2px 8px;
-    border-radius: 20px; flex-shrink: 0;
-}
-.ab-step-detail-status.success { background: color-mix(in srgb, #10b981 12%, transparent); color: #10b981; }
-.ab-step-detail-status.error   { background: color-mix(in srgb, #ef4444 12%, transparent); color: #ef4444; }
-.ab-step-detail-status.running { background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); }
+.ab-step-detail-block.is-error { color: #ef4444; }
+/* Footer */
 .ab-step-detail-footer {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 6px 12px; background: var(--control-bg);
-    border-top: 1px solid var(--border-color); font-size: 11px; color: var(--text-muted);
+    display: flex; align-items: center; gap: 8px;
+    font-size: 10.5px; color: var(--text-muted); opacity: 0.65;
 }
+.ab-step-detail-status.error { color: #ef4444; opacity: 1; }
+.ab-step-detail-label { display: none; }
 
-/* Typing indicator — shimmering "Thinking" label + a small dot trio inside
-   a soft pill, instead of bare bouncing dots with no context */
-.ab-typing-pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 14px; background: var(--control-bg); margin-top: 2px; }
-.ab-typing-label {
-    font-size: 12.5px; font-weight: 500; background: linear-gradient(90deg, var(--text-muted) 0%, var(--text-color) 50%, var(--text-muted) 100%);
-    background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
-    animation: ab-shimmer 1.6s linear infinite;
+/* ── Typing indicator (standalone dots row — before first tool fires) ── */
+.ab-typing-pill {
+    display: inline-flex; align-items: center;
+    padding: 4px 2px; background: transparent;
 }
-.ab-typing-dots { display: flex; gap: 4px; }
-.ab-typing-dots span { width: 5px; height: 5px; border-radius: 50%; background: var(--text-muted); animation: typing-dot 1.4s infinite ease-in-out both; }
-.ab-typing-dots span:nth-child(1) { animation-delay: -0.32s; }
-.ab-typing-dots span:nth-child(2) { animation-delay: -0.16s; }
+.ab-typing-label { display: none; } /* label not used — dots speak for themselves */
 @keyframes ab-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
 /* ── HTML Artifacts ───────────────────────────────────────────── */

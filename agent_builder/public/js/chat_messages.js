@@ -171,7 +171,6 @@ window.ChatMessages = (function () {
             `<div class="ab-row agent" id="${_typingRowId}">
                 <div class="ab-avatar">${_icons.bot}</div>
                 <div class="ab-typing-pill">
-                    <span class="ab-typing-label">Thinking</span>
                     <div class="ab-typing-dots"><span></span><span></span><span></span></div>
                 </div>
             </div>`
@@ -297,14 +296,18 @@ window.ChatMessages = (function () {
             _thinkStartTime = Date.now();
             _currentThinkingRow = _nextId();
             _currentThinkingSteps = [];
+            // Thinking container: pill header (dots + label, clickable) + hidden steps list.
+            // Steps are hidden by default — user clicks the pill to expand.
+            // The pill stays visible throughout all tool calls; only swapped to
+            // the finalized summary version by onDone.
             const $thinking = $(
                 `<div class="ab-thinking-container" id="${_currentThinkingRow}">
-                    <div class="ab-thinking-pill expanded">
-                        <div class="ab-spinner"></div>
-                        <span>Thinking</span>
+                    <button class="ab-thinking-pill ab-thinking-live" type="button">
+                        <div class="ab-typing-dots ab-typing-dots--small"><span></span><span></span><span></span></div>
+                        <span class="ab-thinking-live-label">Working…</span>
                         <span class="ab-chevron">${_icons.down}</span>
-                    </div>
-                    <div class="ab-thinking-steps"></div>
+                    </button>
+                    <div class="ab-thinking-steps" style="display:none;"></div>
                 </div>`
             );
             _streamBubbleId ? $(`#row-${_streamBubbleId}`).before($thinking) : $('#ab-messages').append($thinking);
@@ -316,7 +319,7 @@ window.ChatMessages = (function () {
         _currentThinkingSteps.push({ id: stepId, startTime: Date.now(), status: 'running', doneLabel: meta.done });
 
         const _stepArgsHtml = _prettyArgs(meta.args);
-        const _noArgs = _stepArgsHtml === _escapeHtml('No arguments') || !_stepArgsHtml;
+        const _noArgs = !_stepArgsHtml || _stepArgsHtml === _escapeHtml('No arguments');
         $(`#${_currentThinkingRow} .ab-thinking-steps`).append(
             `<div class="ab-thinking-step" id="${stepId}">
                 <div class="ab-step-icon-col">
@@ -326,18 +329,13 @@ window.ChatMessages = (function () {
                 <div class="ab-step-main">
                     <div class="ab-step-headline">
                         <span class="ab-step-name running">${_escapeHtml(meta.running)}</span>
-                        <span class="ab-step-time"></span>
                         <span class="ab-step-chevron">${_icons.down}</span>
                     </div>
                     <div class="ab-step-detail">
-                        <div class="ab-step-detail-section">
-                            <div class="ab-step-detail-label">Tool</div>
-                            <code style="font-size:11.5px;font-family:var(--font-mono);color:var(--text-color);">${_escapeHtml(data.tool || '')}</code>
-                        </div>
-                        ${!_noArgs ? '<div class=\"ab-step-detail-section\"><div class=\"ab-step-detail-label\">Input</div><pre class=\"ab-step-detail-block\">' + _stepArgsHtml + '</pre></div>' : ''}
+                        ${!_noArgs ? '<pre class=\"ab-step-detail-block\">' + _stepArgsHtml + '</pre>' : '<span style=\"font-size:10.5px;color:var(--text-muted);opacity:0.6;\">No input</span>'}
                         <div class="ab-step-detail-footer">
                             <span class="ab-step-detail-status running" id="${stepId}-status">Running…</span>
-                            <span id="${stepId}-time-footer" style="font-family:var(--font-mono);font-size:10.5px;"></span>
+                            <span id="${stepId}-time-footer" style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-muted);opacity:0.6;"></span>
                         </div>
                     </div>
                 </div>
@@ -398,12 +396,19 @@ window.ChatMessages = (function () {
         if (_currentThinkingRow) {
             const total = _thinkStartTime ? Date.now() - _thinkStartTime : 0;
             const totalStr = _formatElapsed(total);
-            const $pill = $(`#${_currentThinkingRow} .ab-thinking-pill`);
-
-            $pill.removeClass('expanded').addClass(isError ? 'errored' : 'done').html(
-                _finalizedPillHtml(isError, isError ? 'Stopped after an error' : `Thought for ${totalStr}`)
+            const $container = $(`#${_currentThinkingRow}`);
+            const nTools = _currentThinkingSteps.length;
+            const label = isError
+                ? 'Stopped after an error'
+                : `${nTools} action${nTools !== 1 ? 's' : ''} · ${totalStr}`;
+            // Replace the live animated pill with the finalized static pill
+            $container.find('.ab-thinking-live').replaceWith(
+                `<button class="ab-thinking-pill ${isError ? 'errored' : 'done'}" type="button">
+                    ${_finalizedPillHtml(isError, label)}
+                </button>`
             );
-            $(`#${_currentThinkingRow} .ab-thinking-steps`).hide(); // Auto collapse on done
+            $container.find('.ab-thinking-steps').hide();
+            _bindThinkingToggle($container);
             _resetThinkingState();
         }
 
@@ -636,8 +641,8 @@ window.ChatMessages = (function () {
                        <pre class="ab-step-detail-block${stepError ? ' is-error' : ''}">${_escapeHtml(String(_rPretty).slice(0, 4000))}</pre>
                    </div>`
                 : '';
-            const _hArgsHtml = _prettyArgs(meta.args);
-            const _hNoArgs = !_hArgsHtml || _hArgsHtml === _escapeHtml('No arguments');
+            const _hArgsHtml = _prettyArgs(s.args);   /* use raw s.args not meta.args */
+            const _hNoArgs = !_hArgsHtml || _hArgsHtml === _escapeHtml('No arguments') || _hArgsHtml === _escapeHtml('{}');
             const _hStatus = stepError ? 'error' : 'success';
             const _hStatusLabel = stepError ? 'Failed' : 'Done';
             return `<div class="ab-thinking-step${stepError ? ' ab-step-is-error' : ''}">
@@ -648,19 +653,14 @@ window.ChatMessages = (function () {
                 <div class="ab-step-main">
                     <div class="ab-step-headline">
                         <span class="ab-step-name ${stepError ? 'errored' : 'done'}">${_escapeHtml(meta.done)}</span>
-                        <span class="ab-step-time">${_escapeHtml(timeStr)}</span>
                         <span class="ab-step-chevron">${_icons.down}</span>
                     </div>
                     <div class="ab-step-detail">
-                        <div class="ab-step-detail-section">
-                            <div class="ab-step-detail-label">Tool</div>
-                            <code style="font-size:11.5px;font-family:var(--font-mono);color:var(--text-color);">${_escapeHtml(s.tool || '')}</code>
-                        </div>
-                        ${!_hNoArgs ? '<div class=\"ab-step-detail-section\"><div class=\"ab-step-detail-label\">Input</div><pre class=\"ab-step-detail-block\">' + _hArgsHtml + '</pre></div>' : ''}
-                        ${detailExtra}
+                        ${!_hNoArgs ? '<pre class=\"ab-step-detail-block\">' + _hArgsHtml + '</pre>' : ''}
+                        ${_rPretty ? '<pre class=\"ab-step-detail-block' + (stepError ? ' is-error' : '') + '\">' + _escapeHtml(String(_rPretty).slice(0, 3000)) + '</pre>' : ''}
                         <div class="ab-step-detail-footer">
                             <span class="ab-step-detail-status ${_hStatus}">${_hStatusLabel}</span>
-                            <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-muted);">${_escapeHtml(timeStr)}</span>
+                            ${timeStr ? '<span style=\"font-family:var(--font-mono);font-size:10.5px;color:var(--text-muted);opacity:0.6;\">' + _escapeHtml(timeStr) + '</span>' : ''}
                         </div>
                     </div>
                 </div>
@@ -670,7 +670,7 @@ window.ChatMessages = (function () {
         const $thinking = $(
             `<div class="ab-thinking-container" id="${rowId}">
                 <div class="ab-thinking-pill ${hasError ? 'errored' : 'done'}">
-                    ${_finalizedPillHtml(hasError, hasError ? 'Stopped after an error' : `Thought for ${_formatElapsed(totalMs)}`)}
+                    ${_finalizedPillHtml(hasError, hasError ? 'Stopped after an error' : `Used ${steps.length} tool${steps.length !== 1 ? 's' : ''} · ${_formatElapsed(totalMs)}`)}
                 </div>
                 <div class="ab-thinking-steps" style="display:none;">${stepsHtml}</div>
             </div>`

@@ -388,12 +388,16 @@ $(document).ready(function () {
         clearTimeout(_closeVisibilityTimer);
         $('#ab-window').removeClass('ab-fully-closed');
         $('#ab-window').addClass('open');
+        // Hide the launcher while the widget is open — header has its own close btn
+        $('#ab-launcher').addClass('ab-launcher-hidden');
         if (currentView === 'list') ChatList.load();
         else if (currentChatId) $('#ab-input').focus();
     }
     function _close() {
         isOpen = false;
         $('#ab-window').removeClass('open');
+        // Restore launcher
+        $('#ab-launcher').removeClass('ab-launcher-hidden');
         closePlusMenu();
         closeSlashMenu();
         // Collapsing any fullscreen artifact here is real defense-in-depth:
@@ -453,7 +457,7 @@ $(document).ready(function () {
     // Redis hiccup, a thread that died without ever publishing), this makes
     // sure the input always recovers instead of staying stuck on "Thinking…"
     // with the stop button showing forever.
-    const THINKING_TIMEOUT_MS = 175000;
+    const THINKING_TIMEOUT_MS = 1175000;
     let _thinkingWatchdog = null;
     function resetThinkingWatchdog() {
         clearThinkingWatchdog();
