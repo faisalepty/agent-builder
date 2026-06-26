@@ -56,13 +56,13 @@
     "created_at": "2026-06-17T13:00:17.260312+00:00",
     "created_by": null,
     "last_patched_at": null,
-    "last_used_at": "2026-06-18T12:13:31.978331+00:00",
-    "last_viewed_at": "2026-06-18T12:13:31.968210+00:00",
+    "last_used_at": "2026-06-24T05:02:37.322645+00:00",
+    "last_viewed_at": "2026-06-24T05:02:37.316050+00:00",
     "patch_count": 0,
     "pinned": false,
     "state": "active",
-    "use_count": 6,
-    "view_count": 6
+    "use_count": 12,
+    "view_count": 12
   },
   "frappe-skills-setup": {
     "archived_at": null,

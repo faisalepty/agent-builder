@@ -86,36 +86,70 @@ def _slugify(value):
    
     return re.sub(r"[^a-z0-9]+", "-", str(value).strip().lower()).strip("-")
 
+def build_skills_system_prompt() -> str:
+    """
+    Build the <available_skills> block for the agent system prompt.
+    Similar to Hermes' build_skills_system_prompt().
+    """
+
+    skills = frappe.get_all(
+        "Skill",
+        fields=[
+            "name_",
+            "description"
+        ],
+        order_by="name_ asc"
+    )
+
+    if not skills:
+        return ""
+
+    lines = ["<available_skills>"]
+
+    for skill in skills:
+        name = skill.get("name_")
+        description = skill.get("description", "")
+
+        if not name:
+            continue
+
+        lines.append(f"- {name}: {description}")
+
+    lines.append("</available_skills>")
+    lines.append("")
+    lines.append(
+        "Before replying, review the available skills above. "
+        "If one or more skills appear relevant to the user's request, "
+        "call skill_view(skill_name) to load the full instructions before proceeding. "
+        "Skills contain workflows, conventions, implementation patterns, "
+        "and quality standards specific to this Frappe environment. "
+        "Do not assume skill contents; load the skill first when needed."
+    )
+
+    return "\n".join(lines)
+
 @frappe.whitelist()
 def get_skills():
     """Return all skills available to the agent for the frontend."""
+
     try:
-        try:
-            from tools.skills_tool import skills_list
-        except ImportError:
-            from hermes.tools.skills_tool import skills_list
+        native_skills = frappe.get_all(
+            "Skill",
+            fields=[
+                "name_",
+                "description"
+            ],
+            order_by="name_ asc"
+        )
 
-        response = skills_list()
-        
-        # DRY JSON parsing
-        if isinstance(response, str):
-            try:
-                response = json.loads(response)
-            except json.JSONDecodeError as e:
-                # Modern Frappe logging uses kwargs
-                frappe.log_error(title="Skills JSON Parse Error", message=str(e))
-                return {"skills": []}
-
-        # Safely extract the list regardless of whether it's a dict or a direct list
-        native_skills = response.get("skills", []) if isinstance(response, dict) else (response if isinstance(response, list) else [])
-
-        # Build the payload directly
         formatted_skills = []
+
         for s in native_skills:
-            raw_name = s.get("name", "")
+            raw_name = s.get("name_")
+
             if not raw_name:
                 continue
-                
+
             formatted_skills.append({
                 "name": _slugify(raw_name),
                 "label": raw_name.replace("-", " ").title().replace(" Ui", " UI"),
@@ -124,8 +158,11 @@ def get_skills():
 
         return {"skills": formatted_skills}
 
-    except Exception as e:
-        frappe.log_error(title="Skills Extraction Failed", message=frappe.get_traceback())
+    except Exception:
+        frappe.log_error(
+            title="Skills Extraction Failed",
+            message=frappe.get_traceback()
+        )
         return {"skills": []}
 
 def parse_json(data, default=None):
@@ -169,40 +206,45 @@ def chat(message, chat_id=None, attachments=None):
 # --- 3. The Background Task ---
 def process_agent_chat(message, chat_id, attachments, user):
     """Background job to process the AI agent interaction."""
-    
+
     chat_doc = frappe.get_doc("Agent Chat", chat_id)
     room = get_user_room(user)
     agent_context = parse_json(chat_doc.agent_context, None)
 
-    # Fold attachment references into the message for the agent
     agent_message = message
     if attachments:
-        file_lines = "\n".join(f"- {a.get('file_name', 'file')}: {a.get('file_url', '')}" for a in attachments)
+        file_lines = "\n".join(
+            f"- {a.get('file_name', 'file')}: {a.get('file_url', '')}"
+            for a in attachments
+        )
         agent_message = f"{message}\n\n[Attached files]\n{file_lines}".strip()
 
     def publish(event, data):
-        # Using Frappe's native socketio publisher (replace emit_via_redis)
         frappe.publish_realtime(event, data, room=room)
 
     tool_call_log = []
     _tool_start_times = {}
 
-    # Callbacks
     def on_token(delta):
         publish("agent_token", {"delta": delta})
 
     def on_tool_start(tool_call_id, tool_name, args):
-        publish("agent_event", {"type": "tool_start", "tool": tool_name, "args": json.dumps(args), "call_id": tool_call_id})
+        publish("agent_event", {
+            "type": "tool_start", "tool": tool_name,
+            "args": json.dumps(args), "call_id": tool_call_id
+        })
         _tool_start_times[tool_call_id] = time.time()
         tool_call_log.append({
-            "call_id": tool_call_id,
-            "tool": tool_name,
+            "call_id": tool_call_id, "tool": tool_name,
             "args": json.dumps(args) if not isinstance(args, str) else args,
             "status": "running",
         })
 
     def on_tool_done(tool_call_id, tool_name, args, result):
-        publish("agent_event", {"type": "tool_done", "tool": tool_name, "result": str(result)[:500], "call_id": tool_call_id})
+        publish("agent_event", {
+            "type": "tool_done", "tool": tool_name,
+            "result": str(result)[:500], "call_id": tool_call_id
+        })
         started = _tool_start_times.pop(tool_call_id, None)
         for entry in tool_call_log:
             if entry.get("call_id") == tool_call_id:
@@ -214,8 +256,10 @@ def process_agent_chat(message, chat_id, attachments, user):
 
     def on_tool_status(event_type, tool_name=None, preview=None, **kwargs):
         payload = {"type": "tool_progress", "event": event_type}
-        if tool_name: payload["tool"] = tool_name
-        if preview: payload["preview"] = preview
+        if tool_name:
+            payload["tool"] = tool_name
+        if preview:
+            payload["preview"] = preview
         publish("agent_event", payload)
 
     def save_chat_message(role, content, extra_fields=None):
@@ -231,7 +275,11 @@ def process_agent_chat(message, chat_id, attachments, user):
         frappe.get_doc(doc).insert(ignore_permissions=True)
 
     try:
-        save_chat_message("user", message, {"attachments": json.dumps(attachments)} if attachments else None)
+        save_chat_message(
+            "user", message,
+            {"attachments": json.dumps(attachments)} if attachments else None
+        )
+        skills_prompt = build_skills_system_prompt()
 
         agent = AIAgent(
             model="openrouter/owl-alpha",
@@ -243,10 +291,17 @@ def process_agent_chat(message, chat_id, attachments, user):
             tool_complete_callback=on_tool_done,
             tool_progress_callback=on_tool_status,
         )
-        result = agent.run_conversation(user_message=agent_message, conversation_history=agent_context)
+
+        result = agent.run_conversation(
+            user_message=agent_message,
+            conversation_history=agent_context
+        )
         final_response = result["final_response"]
 
-        save_chat_message("assistant", final_response, {"tool_calls": json.dumps(tool_call_log)} if tool_call_log else None)
+        save_chat_message(
+            "assistant", final_response,
+            {"tool_calls": json.dumps(tool_call_log)} if tool_call_log else None
+        )
 
         frappe.db.set_value("Agent Chat", chat_id, {
             "agent_context": json.dumps(result["messages"], default=str),
@@ -258,18 +313,21 @@ def process_agent_chat(message, chat_id, attachments, user):
         publish("agent_done", {"response": final_response, "chat_id": chat_id})
 
     except Exception as e:
-        # Use kwargs for modern Frappe error logging compatibility
         frappe.log_error(title="Agent Chat Error", message=frappe.get_traceback())
 
         for entry in tool_call_log:
             if entry.get("status") == "running":
                 entry["status"] = "interrupted"
 
-        error_text = f"Sorry, something went wrong: {e}" if frappe.conf.get("developer_mode") else "Sorry, something went wrong while processing that request. Please try again."
+        error_text = (
+            f"Sorry, something went wrong: {e}"
+            if frappe.conf.get("developer_mode")
+            else "Sorry, something went wrong while processing that request. Please try again."
+        )
 
         try:
             error_extras = {"is_error": 1}
-            if tool_call_log: 
+            if tool_call_log:
                 error_extras["tool_calls"] = json.dumps(tool_call_log)
             save_chat_message("assistant", error_text, error_extras)
             frappe.db.commit()
@@ -279,4 +337,4 @@ def process_agent_chat(message, chat_id, attachments, user):
         try:
             publish("agent_error", {"response": error_text, "chat_id": chat_id})
         except Exception:
-            pass 
+            pass

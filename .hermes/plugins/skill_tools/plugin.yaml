@@ -1,0 +1,6 @@
+name: skill_tools
+version: 1.0.0
+description: View and list skills in the Frappe environment
+provides_tools:
+  - view_skill
+  - list_skills
