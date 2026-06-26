@@ -191,7 +191,7 @@ def chat(message, chat_id=None, attachments=None):
 
     frappe.enqueue(
         method="agent_builder.api.agent.process_agent_chat",  
-        queue="long",
+        queue="short",
         timeout=300,
         now=frappe.flags.in_test,
         message=message,
@@ -285,11 +285,7 @@ def process_agent_chat(message, chat_id, attachments, user):
             model="openrouter/owl-alpha",
             quiet_mode=False,
             platform="frappe",
-            enabled_toolsets=[
-                "frappe_tools", "delegation", "skill_tools"
-                "memory", "search", "session-search"
-            ],
-            ephemeral_system_prompt=skills_prompt,
+            enabled_toolsets=["frappe_tools","clarify","delegation", "skills", "memory", "todo", "search", "session-search"],
             stream_delta_callback=on_token,
             tool_start_callback=on_tool_start,
             tool_complete_callback=on_tool_done,
