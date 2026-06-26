@@ -17,13 +17,13 @@
     "created_at": "2026-06-11T07:24:53.317831+00:00",
     "created_by": null,
     "last_patched_at": "2026-06-11T07:25:52.541210+00:00",
-    "last_used_at": "2026-06-11T07:25:26.321237+00:00",
-    "last_viewed_at": "2026-06-11T07:25:26.315883+00:00",
+    "last_used_at": "2026-06-24T08:21:51.016656+00:00",
+    "last_viewed_at": "2026-06-24T08:21:51.011337+00:00",
     "patch_count": 3,
     "pinned": false,
     "state": "active",
-    "use_count": 2,
-    "view_count": 2
+    "use_count": 3,
+    "view_count": 3
   },
   "frappe-dashboard": {
     "archived_at": null,
@@ -69,26 +69,26 @@
     "created_at": "2026-06-11T05:14:33.677704+00:00",
     "created_by": "agent",
     "last_patched_at": "2026-06-11T05:18:42.354345+00:00",
-    "last_used_at": "2026-06-11T12:27:15.184416+00:00",
-    "last_viewed_at": "2026-06-11T12:27:15.175899+00:00",
+    "last_used_at": "2026-06-24T08:12:43.307308+00:00",
+    "last_viewed_at": "2026-06-24T08:12:43.298175+00:00",
     "patch_count": 3,
     "pinned": false,
     "state": "active",
-    "use_count": 2,
-    "view_count": 2
+    "use_count": 3,
+    "view_count": 3
   },
   "frappe-tools": {
     "archived_at": null,
     "created_at": "2026-06-11T07:16:46.074791+00:00",
     "created_by": null,
     "last_patched_at": null,
-    "last_used_at": "2026-06-11T07:24:17.021704+00:00",
-    "last_viewed_at": "2026-06-11T07:24:17.016982+00:00",
+    "last_used_at": "2026-06-24T08:11:59.206886+00:00",
+    "last_viewed_at": "2026-06-24T08:11:59.199772+00:00",
     "patch_count": 0,
     "pinned": false,
     "state": "active",
-    "use_count": 4,
-    "view_count": 4
+    "use_count": 11,
+    "view_count": 11
   },
   "frappe-ui": {
     "archived_at": null,
