@@ -209,6 +209,8 @@ def process_agent_chat(message, chat_id, attachments, user):
 
     chat_doc = frappe.get_doc("Agent Chat", chat_id)
     room = get_user_room(user)
+    agent_setup = frappe.get_doc("Agent Setup")
+    provider = agent_setup.provider or "openrouter"
     agent_context = parse_json(chat_doc.agent_context, None)
 
     agent_message = message
@@ -281,7 +283,9 @@ def process_agent_chat(message, chat_id, attachments, user):
         )
         skills_prompt = build_skills_system_prompt()
 
+
         agent = AIAgent(
+            provider=provider,
             model="openrouter/owl-alpha",
             quiet_mode=False,
             platform="frappe",
