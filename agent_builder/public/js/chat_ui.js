@@ -819,7 +819,7 @@ $(document).ready(function () {
         ChatMessages.showTyping();
 
         frappe.call({
-            method: 'agent_builder.api.agent.chat',
+            method: 'agent_builder.native_api.verify.chat',
             args: { message: msg, chat_id: currentChatId, attachments: JSON.stringify(attachments || []) },
             callback(r) {
                 if (r.message && r.message.chat_id) {

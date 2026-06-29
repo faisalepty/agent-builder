@@ -1,0 +1,64 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "creation": "2026-06-29 12:41:36.497266",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "role",
+  "content",
+  "tool_calls",
+  "tool_call_id",
+  "tool_name"
+ ],
+ "fields": [
+  {
+   "fieldname": "role",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Role",
+   "options": "user\nassistant\ntool",
+   "reqd": 1
+  },
+  {
+   "fieldname": "content",
+   "fieldtype": "Long Text",
+   "label": "Content"
+  },
+  {
+   "fieldname": "tool_calls",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "label": "Tool Calls (JSON)"
+  },
+  {
+   "fieldname": "tool_call_id",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Tool Call ID"
+  },
+  {
+   "fieldname": "tool_name",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Tool Name"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-29 12:48:40.101632",
+ "modified_by": "Administrator",
+ "module": "Agent Builder",
+ "name": "Agent Message",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
