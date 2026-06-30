@@ -32,14 +32,13 @@
   {
    "fieldname": "messages",
    "fieldtype": "Table",
-   "hidden": 1,
    "label": "Messages",
    "options": "Agent Message"
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-06-29 15:36:16.745553",
+ "modified": "2026-06-30 08:15:40.647464",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Agent session",
