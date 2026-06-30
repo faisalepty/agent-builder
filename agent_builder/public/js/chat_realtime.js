@@ -17,6 +17,11 @@ window.ChatRealtime = (function () {
             _cbs.onToken && _cbs.onToken(data.delta);
         });
 
+        frappe.realtime.on('agent_reasoning', (data) => {
+            if (!data || !data.delta) return;
+            _cbs.onReasoning && _cbs.onReasoning(data.delta);
+        });
+
         frappe.realtime.on('agent_event', (data) => {
             if (!data) return;
             if (data.type === 'tool_start') {

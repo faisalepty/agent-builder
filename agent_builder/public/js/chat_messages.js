@@ -18,6 +18,8 @@ window.ChatMessages = (function () {
     let _icons = {};
     let _streamBubbleId = null, _streamBuffer = '', _streamFlushScheduled = false, _typingRowId = null;
     let _currentThinkingRow = null, _currentThinkingSteps = [], _thinkStartTime = null;
+    let _reasoningBlockId = null, _reasoningBuffer = '', _reasoningFlushScheduled = false;
+    let _reasoningStartTime = null, _reasoningElapsedMs = null, _reasoningLive = false;
     let _stopped = false;
     const _artifactStore = new Map();
     const _artifactAnchors = new Map(); // artifactId -> placeholder comment node (records where to put it back)
@@ -63,7 +65,11 @@ window.ChatMessages = (function () {
 }
 
     function _resetStreamState() { _streamBubbleId = null; _streamBuffer = ''; _streamFlushScheduled = false; _typingRowId = null; }
-    function _resetThinkingState() { _currentThinkingRow = null; _currentThinkingSteps = []; _thinkStartTime = null; }
+    function _resetThinkingState() {
+        _currentThinkingRow = null; _currentThinkingSteps = []; _thinkStartTime = null;
+        _reasoningBlockId = null; _reasoningBuffer = ''; _reasoningFlushScheduled = false;
+        _reasoningStartTime = null; _reasoningElapsedMs = null; _reasoningLive = false;
+    }
 
     function loadHistory(chatId) {
         clear();
@@ -200,6 +206,7 @@ window.ChatMessages = (function () {
 
     function onToken(delta) {
         if (!delta || _stopped) return;
+        hideTyping();
         _ensureStreamBubble();
         _streamBuffer += delta;
         if (!_streamFlushScheduled) { _streamFlushScheduled = true; requestAnimationFrame(_flushStream); }
@@ -210,10 +217,132 @@ window.ChatMessages = (function () {
         if (!_streamBubbleId || _stopped) return;
         const el = document.getElementById(_streamBubbleId);
         if (el) {
-            el.innerHTML = _md(_streamBuffer) + '<span class="ab-cursor"></span>';
+            // The cursor is no longer a literal trailing <span> — concatenating
+            // it after the full re-parsed markdown made it an orphan sibling
+            // whenever the buffer ended mid-list-item (right after a bullet,
+            // before any text), since marked.js closes the </ul> and the span
+            // landed *after* it on its own line, rendering as a stray block.
+            // Instead we toggle a class and let CSS attach the cursor as a
+            // ::after on whichever element actually ends up last — paragraph,
+            // list item, whatever — so it's always genuinely inline.
+            el.innerHTML = _md(_streamBuffer);
+            el.classList.add('ab-streaming-cursor');
             _wrapTables(el);
             _scrollDown(true);
         }
+    }
+
+    // Freezes whatever has streamed into the current answer bubble so far
+    // (removes the live cursor, locks in the markdown) and clears the
+    // stream pointer. Must run before a thinking container is created if a
+    // bubble already exists — otherwise text that streams *after* the tool
+    // call/reasoning would silently keep appending into that earlier
+    // bubble (same DOM element, never reset), making the final answer
+    // visually merge into a preamble bubble sitting *above* the actions
+    // block instead of appearing after it. Calling this first guarantees
+    // any subsequent onToken call starts a brand-new bubble, so the
+    // visual order always matches chronological order: preamble text (if
+    // any) → thinking/actions → final answer.
+    function _freezeStreamBubble() {
+        if (!_streamBubbleId) return;
+        const el = document.getElementById(_streamBubbleId);
+        if (el) {
+            el.innerHTML = _md(_streamBuffer);
+            el.classList.remove('ab-streaming-cursor');
+            _wrapTables(el);
+            _addCodeCopyButtons(el);
+        }
+        _streamBubbleId = null;
+        _streamBuffer = '';
+    }
+
+    // Shared by onReasoning and onToolStart — whichever fires first creates
+    // the single accordion container that houses both the reasoning block
+    // (if any) and the tool-step list, in chronological order, so a turn
+    // that both reasons and calls tools shows one coherent timeline instead
+    // of two separate UI elements.
+    function _ensureThinkingContainer(initialLabel) {
+        hideTyping();
+        if (_currentThinkingRow) return _currentThinkingRow;
+        _freezeStreamBubble();
+        _thinkStartTime = Date.now();
+        _currentThinkingRow = _nextId();
+        _currentThinkingSteps = [];
+        const $thinking = $(
+            `<div class="ab-thinking-container" id="${_currentThinkingRow}">
+                <button class="ab-thinking-pill ab-thinking-live" type="button">
+                    <div class="ab-typing-dots ab-typing-dots--small"><span></span><span></span><span></span></div>
+                    <span class="ab-thinking-live-label">${initialLabel}</span>
+                    <span class="ab-chevron">${_icons.down}</span>
+                </button>
+                <div class="ab-thinking-steps" style="display:none;"></div>
+            </div>`
+        );
+        // _streamBubbleId is always null here now (frozen above), so this
+        // always appends — kept as a ternary only as a defensive fallback.
+        _streamBubbleId ? $(`#row-${_streamBubbleId}`).before($thinking) : $('#ab-messages').append($thinking);
+        _bindThinkingToggle($thinking);
+        return _currentThinkingRow;
+    }
+
+    function _setLiveLabel(text) {
+        if (!_currentThinkingRow) return;
+        $(`#${_currentThinkingRow} .ab-thinking-live-label`).text(text);
+    }
+
+    // ── Reasoning (chain-of-thought) block ──────────────────────────────
+    // Renders as the first item inside the same accordion as the tool
+    // steps: a muted, italic, auto-growing text block with a live cursor
+    // while streaming. Auto-collapses (cursor removed, elapsed time shown)
+    // the moment either a tool call starts or the turn finishes — matching
+    // how reasoning models' "thinking" traces are conventionally presented.
+    function onReasoning(delta) {
+        if (!delta || _stopped) return;
+        _ensureThinkingContainer('Reasoning…');
+        if (!_reasoningBlockId) {
+            _reasoningBlockId = _nextId();
+            _reasoningStartTime = Date.now();
+            _reasoningLive = true;
+            $(`#${_currentThinkingRow} .ab-thinking-steps`).prepend(
+                `<div class="ab-reasoning-block live" id="${_reasoningBlockId}">
+                    <div class="ab-reasoning-text"></div>
+                    <div class="ab-reasoning-footer" style="display:none;">
+                        <span class="ab-reasoning-elapsed"></span>
+                    </div>
+                 </div>`
+            );
+        } else {
+            _setLiveLabel('Reasoning…');
+        }
+        _reasoningBuffer += delta;
+        if (!_reasoningFlushScheduled) { _reasoningFlushScheduled = true; requestAnimationFrame(_flushReasoning); }
+    }
+
+    function _flushReasoning() {
+        _reasoningFlushScheduled = false;
+        if (!_reasoningBlockId) return;
+        const el = document.querySelector(`#${_reasoningBlockId} .ab-reasoning-text`);
+        if (el) {
+            el.innerHTML = _escapeHtml(_reasoningBuffer).replace(/\n/g, '<br>') + (_reasoningLive ? '<span class="ab-cursor ab-cursor--ghost"></span>' : '');
+            // Keep the reasoning panel itself scrolled to the latest line —
+            // independent of the outer page scroll, since it's a capped,
+            // internally-scrolling box (see CSS max-height + overflow).
+            el.scrollTop = el.scrollHeight;
+        }
+        _scrollDown(true);
+    }
+
+    // Finalizes the reasoning block: stops the cursor, shows elapsed time.
+    // Called when a tool starts, or the turn ends without any tool calls.
+    function _finalizeReasoning() {
+        if (!_reasoningBlockId || !_reasoningLive) return;
+        _reasoningLive = false;
+        _reasoningElapsedMs = _reasoningStartTime ? Date.now() - _reasoningStartTime : 0;
+        const $block = $('#' + _reasoningBlockId);
+        $block.removeClass('live');
+        $block.find('.ab-reasoning-text .ab-cursor').remove();
+        $block.find('.ab-reasoning-footer').show();
+        $block.find('.ab-reasoning-elapsed').text(`Thought for ${_formatElapsed(_reasoningElapsedMs)}`);
     }
 
     // SOTA Thinking Accordion
@@ -291,28 +420,9 @@ window.ChatMessages = (function () {
     }
 
     function onToolStart(data) {
-        hideTyping();
-        if (!_currentThinkingRow) {
-            _thinkStartTime = Date.now();
-            _currentThinkingRow = _nextId();
-            _currentThinkingSteps = [];
-            // Thinking container: pill header (dots + label, clickable) + hidden steps list.
-            // Steps are hidden by default — user clicks the pill to expand.
-            // The pill stays visible throughout all tool calls; only swapped to
-            // the finalized summary version by onDone.
-            const $thinking = $(
-                `<div class="ab-thinking-container" id="${_currentThinkingRow}">
-                    <button class="ab-thinking-pill ab-thinking-live" type="button">
-                        <div class="ab-typing-dots ab-typing-dots--small"><span></span><span></span><span></span></div>
-                        <span class="ab-thinking-live-label">Working…</span>
-                        <span class="ab-chevron">${_icons.down}</span>
-                    </button>
-                    <div class="ab-thinking-steps" style="display:none;"></div>
-                </div>`
-            );
-            _streamBubbleId ? $(`#row-${_streamBubbleId}`).before($thinking) : $('#ab-messages').append($thinking);
-            _bindThinkingToggle($thinking);
-        }
+        _ensureThinkingContainer('Working…');
+        if (_reasoningLive) { _finalizeReasoning(); }
+        _setLiveLabel('Working…');
 
         const stepId = _nextId();
         const meta = _toolMeta(data.tool, data.args);
@@ -393,14 +503,24 @@ window.ChatMessages = (function () {
 
     function onDone(response, isError) {
         hideTyping();
+        if (_reasoningLive) _finalizeReasoning();
         if (_currentThinkingRow) {
             const total = _thinkStartTime ? Date.now() - _thinkStartTime : 0;
             const totalStr = _formatElapsed(total);
             const $container = $(`#${_currentThinkingRow}`);
             const nTools = _currentThinkingSteps.length;
-            const label = isError
-                ? 'Stopped after an error'
-                : `${nTools} action${nTools !== 1 ? 's' : ''} · ${totalStr}`;
+
+            let label;
+            if (isError) {
+                label = 'Stopped after an error';
+            } else {
+                const parts = [];
+                if (_reasoningElapsedMs != null) parts.push(`Thought for ${_formatElapsed(_reasoningElapsedMs)}`);
+                if (nTools > 0) parts.push(`${nTools} action${nTools !== 1 ? 's' : ''} · ${totalStr}`);
+                else if (_reasoningElapsedMs == null) parts.push(totalStr);
+                label = parts.join(' · ') || totalStr;
+            }
+
             // Replace the live animated pill with the finalized static pill
             $container.find('.ab-thinking-live').replaceWith(
                 `<button class="ab-thinking-pill ${isError ? 'errored' : 'done'}" type="button">
@@ -416,6 +536,7 @@ window.ChatMessages = (function () {
             const el = document.getElementById(_streamBubbleId);
             const row = document.getElementById('row-' + _streamBubbleId);
             if (el) {
+                el.classList.remove('ab-streaming-cursor');
                 if (isError) {
                     if (row) row.classList.add('is-error');
                     el.classList.add('ab-bubble-error');
@@ -436,9 +557,10 @@ window.ChatMessages = (function () {
 
     function onStop() {
         _stopped = true;
+        if (_reasoningLive) _finalizeReasoning();
         if (_streamBubbleId) {
             const el = document.getElementById(_streamBubbleId);
-            if (el) { el.innerHTML = _md(_streamBuffer); _addCodeCopyButtons(el); }
+            if (el) { el.innerHTML = _md(_streamBuffer); el.classList.remove('ab-streaming-cursor'); _addCodeCopyButtons(el); }
             _streamBubbleId = null;
         }
         hideTyping();
@@ -694,5 +816,5 @@ window.ChatMessages = (function () {
         return _escapeHtml(text).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\n/g, '<br>');
     }
 
-    return { init, clear, loadHistory, appendUserMsg: _appendUserMessage, onToken, onToolStart, onToolDone, onDone, onStop, showTyping, hideTyping, reloadArtifact, expandArtifact, collapseAllFullscreenArtifacts };
+    return { init, clear, loadHistory, appendUserMsg: _appendUserMessage, onToken, onReasoning, onToolStart, onToolDone, onDone, onStop, showTyping, hideTyping, reloadArtifact, expandArtifact, collapseAllFullscreenArtifacts };
 })();

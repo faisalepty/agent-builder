@@ -445,8 +445,71 @@
 .ab-msg-action-btn svg { width: 14px; height: 14px; }
 .ab-resend-btn:hover { color: #ef4444; background: color-mix(in srgb, #ef4444 10%, var(--control-bg)); }
 
-/* Streaming Cursor */
-.ab-cursor { display: inline-block; width: 6px; height: 14px; background: var(--primary); margin-left: 4px; vertical-align: middle; animation: blink 1s step-start infinite; border-radius: 2px; }
+/* Streaming Cursor — attached as a ::after on whichever element ends up
+   last inside the bubble (paragraph, list item, code line, etc.) rather
+   than a literal trailing <span>. The old approach concatenated the cursor
+   span after the full re-parsed markdown string; whenever the stream
+   buffer happened to end right after a list bullet (before any item text),
+   marked.js would close the </ul> and the span landed as an orphan sibling
+   on its own line below the list — rendering as a chunky stray block
+   instead of a subtle inline blink. Targeting :last-child::after instead
+   guarantees it's always genuinely inline with the actual last content,
+   regardless of markdown structure. */
+.ab-bubble.ab-streaming-cursor > *:last-child::after,
+.ab-bubble.ab-streaming-cursor li:last-child > *:last-child::after {
+    content: '';
+    display: inline-block;
+    width: 6px; height: 14px;
+    background: var(--primary);
+    margin-left: 3px;
+    vertical-align: text-bottom;
+    animation: blink 1s step-start infinite;
+    border-radius: 2px;
+}
+/* Fallback for an empty bubble (no children parsed yet) — cursor on the
+   bubble itself rather than waiting on a child element to exist */
+.ab-bubble.ab-streaming-cursor:empty::after {
+    content: '';
+    display: inline-block;
+    width: 6px; height: 14px;
+    background: var(--primary);
+    vertical-align: text-bottom;
+    animation: blink 1s step-start infinite;
+    border-radius: 2px;
+}
+/* Reasoning block keeps its own separate ghost cursor (defined below) —
+   unrelated to the main-answer streaming cursor above. */
+.ab-cursor--ghost { display: inline-block; width: 6px; height: 14px; background: var(--text-muted); opacity: 0.6; margin-left: 4px; vertical-align: middle; animation: blink 1s step-start infinite; border-radius: 2px; }
+
+/* ── Reasoning (chain-of-thought) block ──────────────────────────────
+   Sits as the first item inside the same accordion as the tool steps
+   (.ab-thinking-steps), so reasoning and actions read as one continuous
+   timeline rather than two separate UI pieces. Muted + italic to read as
+   "internal" content, distinct from the final answer bubble. Capped height
+   with its own scroll once the trace gets long, so a verbose reasoning
+   model doesn't blow out the whole accordion. */
+.ab-reasoning-block {
+    margin: 0 0 10px 0;
+    padding: 0 0 10px 8px;
+    border-left: 1.5px solid var(--border-color);
+    animation: ab-fade-up 0.12s ease;
+}
+.ab-reasoning-block.live { border-left-color: var(--primary); }
+.ab-reasoning-text {
+    font-size: 12px; font-style: italic; line-height: 1.55;
+    color: var(--text-muted); opacity: 0.85;
+    max-height: 110px; overflow-y: auto; overflow-x: hidden;
+    white-space: pre-wrap; word-break: break-word;
+    /* fade the top edge so older reasoning lines scroll out softly
+       instead of being hard-clipped */
+    mask-image: linear-gradient(to bottom, transparent 0, black 14px);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 14px);
+}
+.ab-reasoning-block.live .ab-reasoning-text { opacity: 1; }
+.ab-reasoning-footer {
+    margin-top: 4px; font-size: 10.5px; font-style: normal;
+    color: var(--text-muted); opacity: 0.6;
+}
 
 /* ── Thinking Pill + Action Steps ───────────────────────────────────
    UX design:
