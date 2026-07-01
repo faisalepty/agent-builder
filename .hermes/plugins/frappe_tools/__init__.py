@@ -23,10 +23,10 @@ def register(ctx):
         handler=tools.frappe_save_doc,
     )
     ctx.register_tool(
-        name="frappe_delete_doc",
+        name="frappe_execute_action",
         toolset="frappe_tools",
-        schema=schemas.FRAPPE_DELETE_DOC,
-        handler=tools.frappe_delete_doc,
+        schema=schemas.FRAPPE_EXECUTE_ACTION,
+        handler=tools.frappe_execute_action,
     )
     ctx.register_tool(
         name="view_skill",
