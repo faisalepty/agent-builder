@@ -281,10 +281,24 @@ def process_agent_chat(message, chat_id, attachments, user):
         )
         skills_prompt = build_skills_system_prompt()
 
+        agent_setup = frappe.get_doc("Agent Setup")
+        model = agent_setup.model
+        if not model:
+            provider = (agent_setup.provider or "openrouter").strip().lower()
+            if provider == "openrouter":
+                model = "anthropic/claude-sonnet-4"
+            elif provider == "gemini":
+                model = "gemini-2.5-pro"
+            elif provider == "anthropic":
+                model = "claude-3-5-sonnet-latest"
+            else:
+                model = "anthropic/claude-sonnet-4"
+
         agent = AIAgent(
-            model="openrouter/owl-alpha",
+            model=model,
             quiet_mode=False,
             platform="frappe",
+            ephemeral_system_prompt=skills_prompt,
             enabled_toolsets=["frappe_tools","clarify","delegation", "skills", "memory", "todo", "search", "session-search"],
             stream_delta_callback=on_token,
             tool_start_callback=on_tool_start,
