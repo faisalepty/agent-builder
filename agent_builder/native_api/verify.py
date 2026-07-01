@@ -10,29 +10,27 @@ from agent_builder.native_api.agent.agent import Agent, MaxTurnsError
 @frappe.whitelist()
 def get_messages(chat_id, limit=50, start=0):
     """Load display messages for a chat — paginated."""
-    session = frappe.get_doc("Agent session", chat_id)
-    if session.user != frappe.session.user:
+    
+    if not frappe.db.exists("Agent session", chat_id):
+        frappe.throw("Chat not found", frappe.DoesNotExistError)
+        
+    user = frappe.db.get_value("Agent session", chat_id, "user")
+    if user != frappe.session.user:
         frappe.throw("Not authorised", frappe.PermissionError)
 
-    base_fields = ["name", "role", "content", "timestamp"]
-    extra_fields = ["attachments", "tool_calls", "is_error"]
-    
-    query_kwargs = {
-        "doctype": "Agent Message",
-        "filters": {"parent": chat_id, "parenttype": "Agent session"},
-        "order_by": "timestamp asc",
-        "limit_page_length": limit,
-        "start": start,
-    }
+    title = frappe.db.get_value("Agent session", chat_id, "title")
 
-    try:
-        messages = frappe.get_list(fields=base_fields + extra_fields, **query_kwargs)
-        frappe.log_error(f"Loaded messages list: {messages}", "get_messages")
-    except Exception:
-        messages = frappe.get_list(fields=base_fields, **query_kwargs)
-        frappe.log_error(f"Loaded messages list: {messages}", "get_messages")
-
-    return {"messages": messages, "title": session.title}
+    messages = frappe.get_list(
+        "Agent Message",
+        filters={"parent": chat_id, "parenttype": "Agent session"},
+        fields=["name", "role", "content", "timestamp", "attachments", "tool_calls", "is_error"],
+        order_by="timestamp asc",
+        limit_page_length=limit,
+        start=start,
+        ignore_permissions=True
+    )
+        
+    return {"messages": messages, "title": title}
 
 
 @frappe.whitelist()
@@ -109,3 +107,4 @@ def process_agent_chat(message, chat_id, attachments, user):
         error_text = str(e) if frappe.conf.get("developer_mode") else "Sorry, something went wrong."
         conversation.emit_error(error_text)
         frappe.log_error("Agent Chat Error", frappe.get_traceback())
+

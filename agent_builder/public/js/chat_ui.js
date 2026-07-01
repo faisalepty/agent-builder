@@ -262,6 +262,7 @@ $(document).ready(function () {
 
     function openConversation(chatId, title) {
         currentChatId = chatId;
+        ChatRealtime.setActiveSession(chatId);
         ChatList.setActive(chatId);
         _pendingFiles = [];
         renderAttachmentChips();
@@ -272,6 +273,7 @@ $(document).ready(function () {
     function startNewChat() {
         // Clear runtime tracking to signify an un-saved conversation state
         currentChatId = null;
+        ChatRealtime.setActiveSession(null);
         _pendingFiles = [];
         renderAttachmentChips();
 
@@ -819,12 +821,18 @@ $(document).ready(function () {
         setStatus('Thinking…', true);
         ChatMessages.showTyping();
 
+        // For a brand-new chat we don't have a session_id yet — tell
+        // ChatRealtime to adopt whatever session_id shows up on the first
+        // incoming event, so tokens land here and not in some other tab.
+        if (isFirstMessage) ChatRealtime.expectNewSession();
+
         frappe.call({
             method: 'agent_builder.native_api.verify.chat',
             args: { message: msg, chat_id: currentChatId, attachments: JSON.stringify(attachments || []) },
             callback(r) {
                 if (r.message && r.message.chat_id) {
                     currentChatId = r.message.chat_id;
+                    ChatRealtime.setActiveSession(currentChatId);
 
                     // If this was a deferred chat initialization, update the sidebar UI registry now
                     if (isFirstMessage) {

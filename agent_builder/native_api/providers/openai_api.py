@@ -15,6 +15,7 @@
 import asyncio
 import logging
 import os
+from agent_builder.agent_builder.doctype.agent_setup import agent_setup
 import frappe
 import random
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -22,6 +23,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from openai import AsyncOpenAI, APIStatusError, APIConnectionError
 
 from agent_builder.native_api.agent_types.messages import Message, MessageList
+
+from .registry import get_provider
 
 logger = logging.getLogger(__name__)
 
@@ -38,11 +41,11 @@ TokenCallback = Optional[Callable[[str], Any]]
 class OpenAIProvider:
     def __init__(self, model: str) -> None:
         agent_setup = frappe.get_doc("Agent Setup")
+        provider = get_provider((agent_setup.provider or "").lower() or "openrouter")
         self.model = model
         self.client = AsyncOpenAI(
             api_key=agent_setup.get_password("api_key"),
-            # base_url="https://openrouter.ai/api/v1",
-            base_url="https://integrate.api.nvidia.com/v1",
+            base_url=provider.base_url,
         )
 
     async def generate(
