@@ -1,31 +1,60 @@
-# verify.py
+# agent_builder/native_api/verify.py
 import frappe
 import asyncio
-from pathlib import Path
 
 from agent_builder.native_api.agent.conversation import Conversation
 from agent_builder.native_api.agent.agent import Agent, MaxTurnsError
-from agent_builder.native_api.providers.openai_api import OpenAIProvider
-from agent_builder.native_api.tools.decorator import ToolRegistry
-from agent_builder.native_api.tools.loader import load_tools
-from agent_builder.native_api.tools.internal.skill_list import skill_list
 
-# FIX: resolve the tools directory relative to this file, not the worker's
-# cwd. "./tools" resolved against an RQ worker's cwd (usually the bench
-# root) was very likely loading zero tools silently.
-TOOLS_DIR = Path(__file__).resolve().parent / "tools"
+
+
+@frappe.whitelist()
+def get_messages(chat_id, limit=50, start=0):
+    """Load display messages for a chat — paginated."""
+    session = frappe.get_doc("Agent session", chat_id)
+    if session.user != frappe.session.user:
+        frappe.throw("Not authorised", frappe.PermissionError)
+
+    base_fields = ["name", "role", "content", "timestamp"]
+    extra_fields = ["attachments", "tool_calls", "is_error"]
+    
+    query_kwargs = {
+        "doctype": "Agent Message",
+        "filters": {"parent": chat_id, "parenttype": "Agent session"},
+        "order_by": "timestamp asc",
+        "limit_page_length": limit,
+        "start": start,
+    }
+
+    try:
+        messages = frappe.get_list(fields=base_fields + extra_fields, **query_kwargs)
+        frappe.log_error(f"Loaded messages list: {messages}", "get_messages")
+    except Exception:
+        messages = frappe.get_list(fields=base_fields, **query_kwargs)
+        frappe.log_error(f"Loaded messages list: {messages}", "get_messages")
+
+    return {"messages": messages, "title": session.title}
+
+
+@frappe.whitelist()
+def get_chats():
+    """Return the current user's chat list."""
+    chats = frappe.get_list(
+        "Agent session",
+        filters={"user": frappe.session.user, "status": "Active"},
+        fields=["name", "title", "last_active", "message_count"],
+        order_by="last_active desc",
+        limit_page_length=50,
+    )
+    return {"chats": chats}
 
 
 @frappe.whitelist()
 def chat(message, chat_id=None, attachments=None):
+    """API Endpoint: Queues the message for background processing."""
     user = frappe.session.user
-
-    # FIX: Frappe v17 removed the second argument from parse_json
     attachments = frappe.parse_json(attachments) if attachments else []
 
     if not chat_id:
-        # Conversation.__init__ already inserts the new doc when no
-        # session_id is passed — no need to create it twice.
         chat_id = Conversation(user=user).session_id
 
     frappe.enqueue(
@@ -43,7 +72,7 @@ def chat(message, chat_id=None, attachments=None):
 
 
 def process_agent_chat(message, chat_id, attachments, user):
-    """Background job."""
+    """Background Job: Executes the agent loop."""
     agent_message = message
     if attachments:
         file_lines = "\n".join(
@@ -52,49 +81,22 @@ def process_agent_chat(message, chat_id, attachments, user):
         )
         agent_message = f"{message}\n\n[Attached files]\n{file_lines}".strip()
 
-    # Conversation is created up front (outside the try) so that even if
-    # something below blows up, we still have a valid `conversation` to
-    # publish the error event through with the correct room.
     conversation = Conversation(session_id=chat_id, user=user)
 
     try:
-        registry = ToolRegistry()
-        load_tools(registry, str(TOOLS_DIR))
-
-        # Sanity check — if this ever logs 0, tool loading silently failed
-        # and the agent is running with no tools available.
-        frappe.logger().info(f"[agent_chat] loaded {len(registry.get_tool_schemas())} tool schemas from {TOOLS_DIR}")
-
-        skills_context = skill_list()
-
-        system_prompt = (
-            "You are an advanced automated operational runtime framework.\n\n"
-            "### AVAILABLE SKILLS\n"
-            f"{skills_context}\n\n"
-            "Use `skill_view` to read a skill's full specification before acting on it."
-        )
-
-        provider = OpenAIProvider(model="openrouter/owl-alpha")
-        agent = Agent(
-            provider=provider,
-            registry=registry,
-            system_prompt=system_prompt,
-            max_turns=20,
-        )
-
+        # Instantiate the standalone agent and run it
+        agent = Agent()
         conversation.add_user_message(agent_message)
 
-        final_response = asyncio.run(agent.run(conversation, on_token=conversation.emit_token))
+        final_response = asyncio.run(
+            agent.run(
+                conversation, 
+                on_token=conversation.emit_token, 
+                on_reasoning=conversation.emit_reasoning
+            )
+        )
 
-        # FIX: explicit commit — background workers don't auto-commit the
-        # way a request context does. Without this, the saved messages and
-        # the agent_done event can race a process exit / be invisible to
-        # the next request.
         frappe.db.commit()
-
-        # FIX: route through Conversation so the room is computed exactly
-        # the same way (get_user_room) as every other event in this turn,
-        # rather than re-deriving f"user_{user}" here.
         conversation.emit_done(final_response)
 
     except MaxTurnsError as e:

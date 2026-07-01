@@ -213,6 +213,7 @@ $(document).ready(function () {
     ChatList.init({ onSelect: openConversation, onNew: startNewChat });
     ChatRealtime.init({
         onToken: (delta) => { resetThinkingWatchdog(); ChatMessages.onToken(delta); },
+        onReasoning: (delta) => { resetThinkingWatchdog(); ChatMessages.onReasoning(delta); },
         onToolStart: (data) => { resetThinkingWatchdog(); ChatMessages.onToolStart(data); },
         onToolDone: (data) => { resetThinkingWatchdog(); ChatMessages.onToolDone(data); },
         onStatusChange: (text, thinking) => { resetThinkingWatchdog(); setStatus(text, thinking); },

@@ -16,6 +16,10 @@
 window.ChatMessages = (function () {
 
     let _icons = {};
+    // Not part of the shared icon set passed in via init() — reasoning is
+    // chat_messages-internal, so it's simplest (and avoids touching
+    // chat_ui.js) to keep its one glyph local.
+    const _CLOCK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>';
     let _streamBubbleId = null, _streamBuffer = '', _streamFlushScheduled = false, _typingRowId = null;
     let _currentThinkingRow = null, _currentThinkingSteps = [], _thinkStartTime = null;
     let _reasoningBlockId = null, _reasoningBuffer = '', _reasoningFlushScheduled = false;
@@ -77,12 +81,13 @@ window.ChatMessages = (function () {
         $('#ab-messages').html('<div class="ab-loading" style="text-align:center;color:var(--text-muted);padding:40px 0;">Loading conversation…</div>');
 
         frappe.call({
-            method: 'agent_builder.api.agent.get_messages',
+            method: 'agent_builder.native_api.verify.get_messages',
             args: { chat_id: chatId },
             callback(r) {
                 $('#ab-messages').empty();
                 if (!r.message || !r.message.messages.length) { $('#ab-welcome').show(); return; }
                 r.message.messages.forEach(msg => {
+                    console.log('Loading historical message:', msg);
                     if (msg.role === 'user') {
                         _appendUserMessage(msg.content, _safeParseJSON(msg.attachments));
                     } else if (msg.role === 'assistant') {
@@ -207,6 +212,14 @@ window.ChatMessages = (function () {
     function onToken(delta) {
         if (!delta || _stopped) return;
         hideTyping();
+        // Text resuming after an open thinking container means the agent's
+        // current work episode (reasoning + any tools it ran) is over and
+        // it's now narrating/answering — close that episode out as its own
+        // collapsed segment so a later tool/reasoning event starts a brand
+        // new one, instead of silently re-opening this finished container.
+        // This is what produces the screenshot's pattern of multiple
+        // separate collapsible groups interleaved with text in one turn.
+        if (_currentThinkingRow) _finalizeThinkingContainer(false);
         _ensureStreamBubble();
         _streamBuffer += delta;
         if (!_streamFlushScheduled) { _streamFlushScheduled = true; requestAnimationFrame(_flushStream); }
@@ -303,11 +316,27 @@ window.ChatMessages = (function () {
             _reasoningBlockId = _nextId();
             _reasoningStartTime = Date.now();
             _reasoningLive = true;
-            $(`#${_currentThinkingRow} .ab-thinking-steps`).prepend(
-                `<div class="ab-reasoning-block live" id="${_reasoningBlockId}">
-                    <div class="ab-reasoning-text"></div>
-                    <div class="ab-reasoning-footer" style="display:none;">
-                        <span class="ab-reasoning-elapsed"></span>
+            // Same icon-col / connector / step-main skeleton as a tool step
+            // (.ab-thinking-step) so reasoning reads as one more item in the
+            // same vertical timeline rather than a visually distinct block —
+            // matching the screenshot, where the clock-icon reasoning row
+            // sits inline between the pen-icon edit row and the checkmark.
+            // Appended (not prepended) so a second reasoning burst later in
+            // the same container — after a tool already ran — lands after
+            // that tool's step, in true chronological order, rather than
+            // jumping back to the top of the list.
+            $(`#${_currentThinkingRow} .ab-thinking-steps`).append(
+                `<div class="ab-thinking-step ab-reasoning-block live" id="${_reasoningBlockId}">
+                    <div class="ab-step-icon-col">
+                        <div class="ab-step-icon running">${_CLOCK_ICON}</div>
+                        <div class="ab-step-connector"></div>
+                    </div>
+                    <div class="ab-step-main">
+                        <div class="ab-step-headline">
+                            <span class="ab-step-name running">Reasoning…</span>
+                            <span class="ab-step-chevron">${_icons.down}</span>
+                        </div>
+                        <div class="ab-reasoning-text"></div>
                     </div>
                  </div>`
             );
@@ -332,17 +361,25 @@ window.ChatMessages = (function () {
         _scrollDown(true);
     }
 
-    // Finalizes the reasoning block: stops the cursor, shows elapsed time.
-    // Called when a tool starts, or the turn ends without any tool calls.
+    // Finalizes the reasoning step: stops the cursor/icon pulse, swaps the
+    // headline to past tense with elapsed time — same done-state contract
+    // as a tool step (_finalizeStep below), so the two never look like two
+    // different UI systems glued together.
     function _finalizeReasoning() {
         if (!_reasoningBlockId || !_reasoningLive) return;
         _reasoningLive = false;
         _reasoningElapsedMs = _reasoningStartTime ? Date.now() - _reasoningStartTime : 0;
         const $block = $('#' + _reasoningBlockId);
         $block.removeClass('live');
+        $block.find('.ab-step-icon').removeClass('running').addClass('done');
+        $block.find('.ab-step-name').removeClass('running').addClass('done').text(`Thought for ${_formatElapsed(_reasoningElapsedMs)}`);
         $block.find('.ab-reasoning-text .ab-cursor').remove();
-        $block.find('.ab-reasoning-footer').show();
-        $block.find('.ab-reasoning-elapsed').text(`Thought for ${_formatElapsed(_reasoningElapsedMs)}`);
+        // Clear the pointer (but not _reasoningElapsedMs, still read for the
+        // container's final pill label) so a later onReasoning call in this
+        // same container creates a brand-new step row instead of reopening
+        // and appending into this now-finalized one.
+        _reasoningBlockId = null;
+        _reasoningBuffer = '';
     }
 
     // SOTA Thinking Accordion
@@ -501,36 +538,49 @@ window.ChatMessages = (function () {
         $actions.append(`<button class="ab-msg-action-btn ab-resend-btn" title="Retry">${_icons.retry || ''}</button>`);
     }
 
+    // Collapses the currently-open thinking container (reasoning block +
+    // tool steps accumulated since it was opened) into its finalized,
+    // collapsed pill — then clears the "current" pointers so the next
+    // reasoning/tool event opens a fresh container rather than reopening
+    // this one. Shared by onDone (turn fully ends) and onToken (a new
+    // text segment starts, meaning this work episode is over even though
+    // the turn itself continues) — that sharing is what lets one turn
+    // render as several distinct collapsible groups, matching how Claude's
+    // own UI segments reasoning/tool-use episodes around narration text.
+    function _finalizeThinkingContainer(isError) {
+        if (!_currentThinkingRow) return;
+        if (_reasoningLive) _finalizeReasoning();
+
+        const total = _thinkStartTime ? Date.now() - _thinkStartTime : 0;
+        const totalStr = _formatElapsed(total);
+        const $container = $(`#${_currentThinkingRow}`);
+        const nTools = _currentThinkingSteps.length;
+
+        let label;
+        if (isError) {
+            label = 'Stopped after an error';
+        } else {
+            const parts = [];
+            if (_reasoningElapsedMs != null) parts.push(`Thought for ${_formatElapsed(_reasoningElapsedMs)}`);
+            if (nTools > 0) parts.push(`${nTools} action${nTools !== 1 ? 's' : ''} · ${totalStr}`);
+            else if (_reasoningElapsedMs == null) parts.push(totalStr);
+            label = parts.join(' · ') || totalStr;
+        }
+
+        // Replace the live animated pill with the finalized static pill
+        $container.find('.ab-thinking-live').replaceWith(
+            `<button class="ab-thinking-pill ${isError ? 'errored' : 'done'}" type="button">
+                ${_finalizedPillHtml(isError, label)}
+            </button>`
+        );
+        $container.find('.ab-thinking-steps').hide();
+        _bindThinkingToggle($container);
+        _resetThinkingState();
+    }
+
     function onDone(response, isError) {
         hideTyping();
-        if (_reasoningLive) _finalizeReasoning();
-        if (_currentThinkingRow) {
-            const total = _thinkStartTime ? Date.now() - _thinkStartTime : 0;
-            const totalStr = _formatElapsed(total);
-            const $container = $(`#${_currentThinkingRow}`);
-            const nTools = _currentThinkingSteps.length;
-
-            let label;
-            if (isError) {
-                label = 'Stopped after an error';
-            } else {
-                const parts = [];
-                if (_reasoningElapsedMs != null) parts.push(`Thought for ${_formatElapsed(_reasoningElapsedMs)}`);
-                if (nTools > 0) parts.push(`${nTools} action${nTools !== 1 ? 's' : ''} · ${totalStr}`);
-                else if (_reasoningElapsedMs == null) parts.push(totalStr);
-                label = parts.join(' · ') || totalStr;
-            }
-
-            // Replace the live animated pill with the finalized static pill
-            $container.find('.ab-thinking-live').replaceWith(
-                `<button class="ab-thinking-pill ${isError ? 'errored' : 'done'}" type="button">
-                    ${_finalizedPillHtml(isError, label)}
-                </button>`
-            );
-            $container.find('.ab-thinking-steps').hide();
-            _bindThinkingToggle($container);
-            _resetThinkingState();
-        }
+        _finalizeThinkingContainer(isError);
 
         if (_streamBubbleId) {
             const el = document.getElementById(_streamBubbleId);

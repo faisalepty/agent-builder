@@ -481,21 +481,17 @@
    unrelated to the main-answer streaming cursor above. */
 .ab-cursor--ghost { display: inline-block; width: 6px; height: 14px; background: var(--text-muted); opacity: 0.6; margin-left: 4px; vertical-align: middle; animation: blink 1s step-start infinite; border-radius: 2px; }
 
-/* ── Reasoning (chain-of-thought) block ──────────────────────────────
-   Sits as the first item inside the same accordion as the tool steps
-   (.ab-thinking-steps), so reasoning and actions read as one continuous
-   timeline rather than two separate UI pieces. Muted + italic to read as
-   "internal" content, distinct from the final answer bubble. Capped height
-   with its own scroll once the trace gets long, so a verbose reasoning
-   model doesn't blow out the whole accordion. */
-.ab-reasoning-block {
-    margin: 0 0 10px 0;
-    padding: 0 0 10px 8px;
-    border-left: 1.5px solid var(--border-color);
-    animation: ab-fade-up 0.12s ease;
-}
-.ab-reasoning-block.live { border-left-color: var(--primary); }
+/* ── Reasoning (chain-of-thought) step ───────────────────────────────
+   Renders with the exact same icon-col / connector / step-main skeleton
+   as a tool step (.ab-thinking-step), just with a clock glyph and its own
+   scrollable text body instead of args/output — so reasoning is one more
+   row in the same vertical timeline, not a visually separate block. Muted
+   + italic to read as "internal" content, distinct from the final answer
+   bubble. Capped height with its own scroll once the trace gets long, so
+   a verbose reasoning model doesn't blow out the whole accordion. */
+.ab-reasoning-block .ab-step-icon svg { width: 9px; height: 9px; }
 .ab-reasoning-text {
+    margin-top: 2px;
     font-size: 12px; font-style: italic; line-height: 1.55;
     color: var(--text-muted); opacity: 0.85;
     max-height: 110px; overflow-y: auto; overflow-x: hidden;
@@ -506,10 +502,8 @@
     -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 14px);
 }
 .ab-reasoning-block.live .ab-reasoning-text { opacity: 1; }
-.ab-reasoning-footer {
-    margin-top: 4px; font-size: 10.5px; font-style: normal;
-    color: var(--text-muted); opacity: 0.6;
-}
+.ab-reasoning-block:not(.live) .ab-reasoning-text { display: none; } /* collapsed once finalized, expandable via .ab-step-expanded same as tool steps */
+.ab-thinking-step.ab-step-expanded .ab-reasoning-text { display: block; }
 
 /* ── Thinking Pill + Action Steps ───────────────────────────────────
    UX design:
@@ -519,6 +513,10 @@
      Steps are in a scrollable container (max-height) — no long lists.
    · After done: pill swaps to static summary "3 actions · 1.2s",
      steps stay collapsed. User can still expand to review.
+   · A turn can contain several of these containers in sequence — one
+     per reasoning/tool episode, split apart by any narration text that
+     streamed in between (see _finalizeThinkingContainer in JS) — so a
+     single agent turn reads as: text → group → text → group → text.
    · Per-step time is removed from the condensed row — only shown in
      the detail panel and in the final pill summary.
    ─────────────────────────────────────────────────────────────── */

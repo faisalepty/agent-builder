@@ -15,8 +15,8 @@
 import asyncio
 import logging
 import os
-import random
 import frappe
+import random
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from openai import AsyncOpenAI, APIStatusError, APIConnectionError
@@ -35,16 +35,14 @@ _PERMANENT_STATUS = {400, 401, 403, 404, 422}
 TokenCallback = Optional[Callable[[str], Any]]
 
 
-
 class OpenAIProvider:
-    def __init__(self, model: str = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning") -> None:
+    def __init__(self, model: str) -> None:
         agent_setup = frappe.get_doc("Agent Setup")
         self.model = model
         self.client = AsyncOpenAI(
             api_key=agent_setup.get_password("api_key"),
-            base_url="https://openrouter.ai/api/v1",
-            # api_key=os.environ["NVIDIA_API_KEY"],
-            # base_url="https://integrate.api.nvidia.com/v1",
+            # base_url="https://openrouter.ai/api/v1",
+            base_url="https://integrate.api.nvidia.com/v1",
         )
 
     async def generate(
@@ -52,6 +50,7 @@ class OpenAIProvider:
         messages: MessageList,
         tools: Optional[List[Dict[str, Any]]] = None,
         on_token: TokenCallback = None,
+        on_reasoning: TokenCallback = None,
     ) -> Tuple[Message, Any]:
         """
         Sends a chat completion request and returns:
@@ -60,22 +59,37 @@ class OpenAIProvider:
         message_dict is a plain dict safe to append to conversation history.
         tool_calls is None when the model is done.
 
-        If on_token is provided, the request is streamed and on_token(delta)
-        is invoked for every text fragment as it arrives. The final return
-        value is identical either way — streaming is purely a side channel
-        for live UI updates, callers don't need to branch on it.
+        If on_token and/or on_reasoning is provided, the request is
+        streamed. on_token(delta) fires for visible answer text; on_reasoning
+        (delta) fires separately for the model's chain-of-thought, on
+        providers/models that expose one (OpenRouter's unified `reasoning`
+        delta field, or vLLM/DeepSeek-style `reasoning_content`). Models
+        that don't support reasoning simply never call on_reasoning — the
+        caller doesn't need to know in advance whether the model reasons.
+
+        The final return value is identical across all modes — streaming
+        is purely a side channel for live UI updates, callers don't need
+        to branch on it. If reasoning text was produced, message_dict also
+        carries a "reasoning" key alongside "content".
 
         Retries on transient errors (429, 5xx, network) with exponential
         backoff + jitter. Raises immediately on permanent errors. Note:
-        once a stream has emitted partial tokens to on_token, a retry of
-        that attempt will re-emit tokens from the start — callers doing UI
-        streaming should treat each attempt's tokens as belonging to a
+        once a stream has emitted partial tokens to on_token/on_reasoning,
+        a retry of that attempt will re-emit from the start — callers doing
+        UI streaming should treat each attempt's tokens as belonging to a
         single in-progress bubble, not append-only across retries.
         """
         kwargs: Dict[str, Any] = {
             "model": self.model,
             "messages": messages,
         }
+        # NOTE: OpenRouter only returns a `reasoning` delta if the request
+        # asks for it AND the underlying model supports it. Uncomment for
+        # reasoning-capable models (o1/o3, DeepSeek-R1, etc.) — harmless
+        # no-op for models that don't support it:
+        # kwargs["extra_body"] = {"reasoning": {"effort": "low"}, "reasoning_budget": 1024}
+        # kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
+        
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
@@ -86,8 +100,8 @@ class OpenAIProvider:
 
         for attempt in range(_MAX_RETRIES):
             try:
-                if on_token is not None:
-                    return await self._generate_streaming(kwargs, on_token)
+                if on_token is not None or on_reasoning is not None:
+                    return await self._generate_streaming(kwargs, on_token, on_reasoning)
                 return await self._generate_once(kwargs)
 
             except APIStatusError as exc:
@@ -134,16 +148,27 @@ class OpenAIProvider:
 
         message = choice.message
         message_dict: Message = message.model_dump(exclude_none=True)
+        # Some providers (OpenRouter unified, DeepSeek-style vLLM deployments)
+        # put chain-of-thought on a non-standard field that model_dump()
+        # already picks up if present on the pydantic model; normalize the
+        # two known field names into a single "reasoning" key so callers
+        # only ever need to check one place.
+        if "reasoning_content" in message_dict and "reasoning" not in message_dict:
+            message_dict["reasoning"] = message_dict.pop("reasoning_content")
         return message_dict, getattr(message, "tool_calls", None)
 
     # ── Streaming path ─────────────────────────────────────────────────
 
     async def _generate_streaming(
-        self, kwargs: Dict[str, Any], on_token: Callable[[str], Any]
+        self,
+        kwargs: Dict[str, Any],
+        on_token: Optional[Callable[[str], Any]],
+        on_reasoning: Optional[Callable[[str], Any]] = None,
     ) -> Tuple[Message, Any]:
         stream = await self.client.chat.completions.create(**kwargs, stream=True)
 
         content_parts: List[str] = []
+        reasoning_parts: List[str] = []
         # tool_calls arrive as index-addressed fragments that must be
         # reassembled: {0: {"id": ..., "name": ..., "arguments": "..."}}
         tool_call_frags: Dict[int, Dict[str, Any]] = {}
@@ -165,11 +190,27 @@ class OpenAIProvider:
             if getattr(delta, "role", None):
                 role = delta.role
 
+            # Reasoning/chain-of-thought delta. Different providers use
+            # different field names for the same concept:
+            #   - OpenRouter's unified field: delta.reasoning
+            #   - DeepSeek-R1 / many vLLM deployments: delta.reasoning_content
+            # Check both; whichever is present (if any) wins. Models that
+            # don't support reasoning simply never set either, so this is a
+            # no-op for them.
+            reasoning_delta = getattr(delta, "reasoning", None) or getattr(delta, "reasoning_content", None)
+            if reasoning_delta:
+                reasoning_parts.append(reasoning_delta)
+                if on_reasoning is not None:
+                    result = on_reasoning(reasoning_delta)
+                    if asyncio.iscoroutine(result):
+                        await result
+
             if delta.content:
                 content_parts.append(delta.content)
-                result = on_token(delta.content)
-                if asyncio.iscoroutine(result):
-                    await result
+                if on_token is not None:
+                    result = on_token(delta.content)
+                    if asyncio.iscoroutine(result):
+                        await result
 
             if getattr(delta, "tool_calls", None):
                 for tc_delta in delta.tool_calls:
@@ -195,12 +236,15 @@ class OpenAIProvider:
             )
 
         content = "".join(content_parts)
+        reasoning = "".join(reasoning_parts)
         tool_calls = None
         if tool_call_frags:
             ordered = [tool_call_frags[i] for i in sorted(tool_call_frags)]
             tool_calls = [_DeltaToolCall(t) for t in ordered]
 
         message_dict: Message = {"role": role, "content": content or None}
+        if reasoning:
+            message_dict["reasoning"] = reasoning
         if tool_call_frags:
             message_dict["tool_calls"] = [tc.copy() for tc in
                                            [tool_call_frags[i] for i in sorted(tool_call_frags)]]

@@ -11,7 +11,10 @@
  "field_order": [
   "user",
   "title",
-  "messages"
+  "messages",
+  "status",
+  "last_active",
+  "message_count"
  ],
  "fields": [
   {
@@ -34,11 +37,33 @@
    "fieldtype": "Table",
    "label": "Messages",
    "options": "Agent Message"
+  },
+  {
+   "default": "Active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Active\nArchived"
+  },
+  {
+   "fieldname": "last_active",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Last Active"
+  },
+  {
+   "fieldname": "message_count",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Messages",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-06-30 08:15:40.647464",
+ "modified": "2026-07-01 09:50:23.978518",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Agent session",

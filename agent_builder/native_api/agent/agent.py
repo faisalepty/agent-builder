@@ -1,4 +1,4 @@
-# omnis_hermes/agent/agent.py
+# agent_builder/native_api/agent/agent.py
 import asyncio
 import json
 import logging
@@ -7,45 +7,50 @@ import time
 from typing import Callable, Optional, Tuple
 
 from agent_builder.native_api.agent.conversation import Conversation
+from agent_builder.native_api.agent.setup import get_tool_registry, get_system_prompt
 from agent_builder.native_api.tools.executor import ToolExecutor
 from agent_builder.native_api.providers.openai_api import OpenAIProvider
-from agent_builder.native_api.tools.decorator import ToolRegistry
 
 logger = logging.getLogger(__name__)
+
 
 class MaxTurnsError(Exception):
     pass
 
+
 class Agent:
+    """
+    Standalone Agent. 
+    
+    Handles its own tool loading, system prompt generation, and provider setup
+    internally via setup.py. The caller only needs to provide the model name.
+    """
     def __init__(
         self,
-        provider: OpenAIProvider,
-        registry: ToolRegistry,
-        system_prompt: str = "You are an automated Hermes system node.",
+        model: str = "nvidia/nemotron-3-ultra-550b-a55b",
         max_turns: int = 20,
         max_retries: int = 2,
         max_context_chars: int = 32000,
     ):
-        self.provider = provider
-        self.registry = registry
-        self.system_prompt = system_prompt
+        # 1. Bootstrap internal dependencies via setup.py
+        self.registry = get_tool_registry()
+        self.system_prompt = get_system_prompt()
+        
+        # 2. Initialize provider and executor
+        self.provider = OpenAIProvider(model=model)
+        self.executor = ToolExecutor(self.registry)
+        
+        # 3. Store config
         self.max_turns = max_turns
         self.max_retries = max_retries
         self.max_context_chars = max_context_chars
-        self.executor = ToolExecutor(registry)
 
     async def run(
         self,
         conversation: Conversation,
         on_token: Optional[Callable[[str], None]] = None,
+        on_reasoning: Optional[Callable[[str], None]] = None,
     ) -> str:
-        """
-        on_token, if given, is called with each raw text delta as the
-        model's response streams in for that turn. It fires only for the
-        assistant's own text — not tool output — and only for turns where
-        the model is actually emitting content (a pure tool-call turn may
-        produce no token events at all).
-        """
         available_tools = self.registry.get_tool_schemas()
         conversation.set_system(self.system_prompt)
 
@@ -59,9 +64,11 @@ class Agent:
                 messages = self._trim_context(conversation.get_messages())
 
                 response, tool_calls = await self._retry_llm(
-                    messages, available_tools, on_token=on_token
+                    messages, available_tools, on_token=on_token, on_reasoning=on_reasoning
                 )
-                conversation.add_assistant_message(response, streamed=on_token is not None)
+                conversation.add_assistant_message(
+                    response, streamed=on_token is not None or on_reasoning is not None
+                )
 
                 if not tool_calls:
                     return response.get("content", "")
@@ -75,7 +82,6 @@ class Agent:
                     last_fp = fp
                     loop_strikes = 0
 
-                # Execute tools one-by-one to measure time and emit events
                 for tc in tool_calls:
                     name = tc.function.name
                     try:
@@ -83,15 +89,12 @@ class Agent:
                     except json.JSONDecodeError:
                         args = tc.function.arguments
 
-                    # 1. Tell conversation to emit the 'tool_start' event
                     conversation.emit_tool_start(tc.id, name, args)
 
-                    # 2. Execute tool and measure time (time.monotonic is safe against system clock shifts)
                     t0 = time.monotonic()
                     result = await self.executor._dispatch(name, tc.function.arguments)
                     elapsed_ms = int((time.monotonic() - t0) * 1000)
 
-                    # 3. Tell conversation to save to DB and emit 'tool_done' event
                     conversation.add_tool_result(tc.id, name, result, elapsed_ms=elapsed_ms)
 
             raise MaxTurnsError(f"Exceeded {self.max_turns}-turn budget.")
@@ -99,12 +102,13 @@ class Agent:
         finally:
             conversation.save()
 
-    async def _retry_llm(self, messages, tools, on_token=None):
+    async def _retry_llm(self, messages, tools, on_token=None, on_reasoning=None):
         last_err = None
         for attempt in range(self.max_retries + 1):
             try:
                 return await self.provider.generate(
-                    messages=messages, tools=tools or None, on_token=on_token
+                    messages=messages, tools=tools or None,
+                    on_token=on_token, on_reasoning=on_reasoning,
                 )
             except Exception as e:
                 last_err = e

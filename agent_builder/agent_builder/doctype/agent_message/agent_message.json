@@ -11,7 +11,10 @@
   "content",
   "tool_calls",
   "tool_call_id",
-  "tool_name"
+  "tool_name",
+  "timestamp",
+  "attachments",
+  "is_error"
  ],
  "fields": [
   {
@@ -44,13 +47,32 @@
    "fieldtype": "Data",
    "hidden": 1,
    "label": "Tool Name"
+  },
+  {
+   "fieldname": "timestamp",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Timestamp",
+   "reqd": 1
+  },
+  {
+   "fieldname": "attachments",
+   "fieldtype": "Code",
+   "label": "Attachments",
+   "options": "JSON"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_error",
+   "fieldtype": "Check",
+   "label": "Is Error"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-29 12:48:40.101632",
+ "modified": "2026-07-01 09:53:51.044587",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Agent Message",

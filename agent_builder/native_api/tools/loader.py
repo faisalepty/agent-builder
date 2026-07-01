@@ -1,12 +1,4 @@
 # omnis_hermes/tools/loader.py
-#
-# Auto-discovers and registers all @tool-decorated functions from
-# tools/internal/ and tools/external/ onto the ToolRegistry.
-#
-# This means adding a new tool is just:
-#   1. Create tools/internal/my_tool.py with a @tool-decorated function
-#   2. That's it — no manual registration needed
-#
 import importlib.util
 import logging
 from pathlib import Path
@@ -17,40 +9,68 @@ logger = logging.getLogger(__name__)
 
 
 def load_tools(registry: ToolRegistry, tools_dir: str | Path) -> None:
-    """
-    Scans tools/internal/ and tools/external/ for Python files,
-    imports each one, and registers any @tool-decorated functions found.
-    Skips __init__.py and this file itself.
-    """
     base = Path(tools_dir)
-    for subdir in ("internal", "external"):
-        target = base / subdir
-        if not target.exists():
+    
+    # Iterate through all sub-directories in the tools/ folder
+    for tool_group_dir in base.iterdir():
+        if not tool_group_dir.is_dir() or tool_group_dir.name.startswith("_"):
             continue
-        for py_file in sorted(target.glob("*.py")):
-            if py_file.name.startswith("_"):
+
+        # 1. Load schemas first
+        schema_file = tool_group_dir / "schema.py"
+        if schema_file.exists():
+            _load_schemas(schema_file, registry)
+        else:
+            logger.warning(f"Skipping {tool_group_dir.name}: missing schema.py")
+
+        # 2. Load and wire implementations
+        for py_file in tool_group_dir.glob("*.py"):
+            if py_file.name.startswith("_") or py_file.name == "schema.py":
                 continue
-            _register_from_file(py_file, registry)
+            _load_implementations(py_file, registry)
 
 
-def _register_from_file(py_file: Path, registry: ToolRegistry) -> None:
+def _load_schemas(schema_file: Path, registry: ToolRegistry) -> None:
+    """Dynamically finds all dict variables in schema.py and loads them."""
+    module_name = f"tools.{schema_file.parent.name}.schema"
+    spec = importlib.util.spec_from_file_location(module_name, schema_file)
+    module = importlib.util.module_from_spec(spec)
+    
+    try:
+        spec.loader.exec_module(module)
+        
+        # Auto-discover any variable that looks like a tool schema
+        schemas = {
+            val["name"]: val 
+            for val in vars(module).values() 
+            if isinstance(val, dict) and "name" in val and "parameters" in val
+        }
+        
+        if schemas:
+            registry.load_schemas(schemas)
+            logger.info(f"Loaded {len(schemas)} schemas from {schema_file.parent.name}/schema.py")
+            
+    except Exception as exc:
+        logger.error(f"Failed to load schemas from {schema_file}: {exc}")
+
+
+def _load_implementations(py_file: Path, registry: ToolRegistry) -> None:
+    """Finds @tool decorated functions and wires them to the pre-loaded schemas."""
     module_name = f"tools.{py_file.parent.name}.{py_file.stem}"
     spec = importlib.util.spec_from_file_location(module_name, py_file)
     module = importlib.util.module_from_spec(spec)
+    
     try:
         spec.loader.exec_module(module)
     except Exception as exc:
-        logger.error("Failed to load tool file '%s': %s", py_file, exc)
+        logger.error(f"Failed to load tool file {py_file}: {exc}")
         return
 
     for attr_name in dir(module):
         obj = getattr(module, attr_name)
         if callable(obj) and getattr(obj, "__is_tool__", False):
             try:
-                registry.register_native_tool(obj)
-                logger.debug("Registered tool '%s' from %s", obj.__tool_name__, py_file.name)
+                registry.register_tool(obj)
+                logger.debug(f"Wired executor '{obj.__schema_name__}' from {py_file.name}")
             except Exception as exc:
-                logger.error(
-                    "Failed to register tool '%s' from '%s': %s",
-                    attr_name, py_file, exc,
-                )
+                logger.error(f"Failed to wire {attr_name}: {exc}")
