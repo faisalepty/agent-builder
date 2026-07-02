@@ -26,18 +26,18 @@
    "reqd": 1
   },
   {
+   "description": "Optional: Specific model ID to use (e.g. anthropic/claude-sonnet-4 or google/gemini-2.5-pro)",
    "fieldname": "model",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Model",
-   "description": "Optional: Specific model ID to use (e.g. anthropic/claude-sonnet-4 or google/gemini-2.5-pro)"
+   "label": "Model"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-19 08:02:08.220070",
+ "modified": "2026-07-02 12:13:11.760413",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Agent Setup",
@@ -45,7 +45,6 @@
  "permissions": [
   {
    "create": 1,
-   "delete": 1,
    "email": 1,
    "print": 1,
    "read": 1,

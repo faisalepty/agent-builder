@@ -445,8 +445,89 @@
 .ab-msg-action-btn svg { width: 14px; height: 14px; }
 .ab-resend-btn:hover { color: #ef4444; background: color-mix(in srgb, #ef4444 10%, var(--control-bg)); }
 
-/* Streaming Cursor */
-.ab-cursor { display: inline-block; width: 6px; height: 14px; background: var(--primary); margin-left: 4px; vertical-align: middle; animation: blink 1s step-start infinite; border-radius: 2px; }
+/* Streaming Cursor — attached as a ::after on whichever element ends up
+   last inside the bubble (paragraph, list item, code line, etc.) rather
+   than a literal trailing <span>. The old approach concatenated the cursor
+   span after the full re-parsed markdown string; whenever the stream
+   buffer happened to end right after a list bullet (before any item text),
+   marked.js would close the </ul> and the span landed as an orphan sibling
+   on its own line below the list — rendering as a chunky stray block
+   instead of a subtle inline blink. Targeting :last-child::after instead
+   guarantees it's always genuinely inline with the actual last content,
+   regardless of markdown structure. */
+.ab-bubble.ab-streaming-cursor > *:last-child::after,
+.ab-bubble.ab-streaming-cursor li:last-child > *:last-child::after {
+    content: '';
+    display: inline-block;
+    width: 6px; height: 14px;
+    background: var(--primary);
+    margin-left: 3px;
+    vertical-align: text-bottom;
+    animation: blink 1s step-start infinite;
+    border-radius: 2px;
+}
+/* Fallback for an empty bubble (no children parsed yet) — cursor on the
+   bubble itself rather than waiting on a child element to exist */
+.ab-bubble.ab-streaming-cursor:empty::after {
+    content: '';
+    display: inline-block;
+    width: 6px; height: 14px;
+    background: var(--primary);
+    vertical-align: text-bottom;
+    animation: blink 1s step-start infinite;
+    border-radius: 2px;
+}
+/* Reasoning block keeps its own separate ghost cursor (defined below) —
+   unrelated to the main-answer streaming cursor above. */
+.ab-cursor--ghost { display: inline-block; width: 6px; height: 14px; background: var(--text-muted); opacity: 0.6; margin-left: 4px; vertical-align: middle; animation: blink 1s step-start infinite; border-radius: 2px; }
+
+/* ── Reasoning (chain-of-thought) step ───────────────────────────────
+   Renders with the exact same icon-col / connector / step-main skeleton
+   as a tool step (.ab-thinking-step), just with a clock glyph and its own
+   scrollable text body instead of args/output — so reasoning is one more
+   row in the same vertical timeline, not a visually separate block. Muted
+   + italic to read as "internal" content, distinct from the final answer
+   bubble. Capped height with its own scroll once the trace gets long, so
+   a verbose reasoning model doesn't blow out the whole accordion. */
+.ab-reasoning-block .ab-step-icon svg { width: 9px; height: 9px; }
+.ab-reasoning-wrap { position: relative; }
+.ab-reasoning-text {
+    margin-top: 2px;
+    font-size: 12px; font-style: italic; line-height: 1.55;
+    color: var(--text-muted); opacity: 0.85;
+    max-height: 110px; overflow-y: auto; overflow-x: hidden;
+    white-space: pre-wrap; word-break: break-word;
+    cursor: pointer;
+    /* fade the top edge so older reasoning lines scroll out softly
+       instead of being hard-clipped */
+    mask-image: linear-gradient(to bottom, transparent 0, black 14px);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 14px);
+}
+.ab-reasoning-block.live .ab-reasoning-text { opacity: 1; }
+.ab-reasoning-block:not(.live) .ab-reasoning-wrap { display: none; } /* collapsed once finalized, expandable via .ab-step-expanded same as tool steps */
+.ab-thinking-step.ab-step-expanded .ab-reasoning-wrap { display: block; }
+
+/* Clicking the reasoning text itself removes the clamp so the whole
+   trace reads top-to-bottom instead of scrolling in a small box. */
+.ab-reasoning-block.ab-reasoning-expanded .ab-reasoning-text {
+    max-height: none; overflow: visible;
+    mask-image: none; -webkit-mask-image: none;
+}
+
+/* Hover-only "Show more" affordance — only appears once the text
+   actually overflows its clamp (JS toggles .truncated after measuring),
+   and disappears again once expanded. */
+.ab-reasoning-hint {
+    display: none;
+    position: absolute; right: 0; bottom: 0;
+    font-size: 10.5px; font-weight: 500; color: var(--primary);
+    background: linear-gradient(to right, transparent, var(--bg-color) 40%);
+    padding: 0 0 0 18px;
+    opacity: 0; transition: opacity 0.15s;
+    pointer-events: none;
+}
+.ab-reasoning-block.truncated:not(.ab-reasoning-expanded) .ab-reasoning-hint { display: inline-block; }
+.ab-reasoning-block.truncated:not(.ab-reasoning-expanded):hover .ab-reasoning-hint { opacity: 1; }
 
 /* ── Thinking Pill + Action Steps ───────────────────────────────────
    UX design:
@@ -456,25 +537,31 @@
      Steps are in a scrollable container (max-height) — no long lists.
    · After done: pill swaps to static summary "3 actions · 1.2s",
      steps stay collapsed. User can still expand to review.
+   · A turn can contain several of these containers in sequence — one
+     per reasoning/tool episode, split apart by any narration text that
+     streamed in between (see _finalizeThinkingContainer in JS) — so a
+     single agent turn reads as: text → group → text → group → text.
    · Per-step time is removed from the condensed row — only shown in
      the detail panel and in the final pill summary.
    ─────────────────────────────────────────────────────────────── */
 
 .ab-thinking-container { margin: 2px 0 8px; width: 100%; }
 
-/* ── Shared pill styles (live + finalized) ── */
+/* ── Shared row styles (live + finalized) — flat, no pill/bubble chrome.
+   Just an icon-less text row: label + chevron. Matches the reference
+   thought-process UI (plain text rows, not buttons-in-boxes). ── */
 .ab-thinking-pill {
-    display: inline-flex; align-items: center; gap: 7px;
-    padding: 5px 10px 5px 9px; border-radius: 20px;
-    cursor: pointer; border: 1px solid var(--border-color);
-    background: var(--bg-color); font-size: 12px;
-    color: var(--text-muted); font-weight: 400;
-    transition: background 0.15s, border-color 0.15s;
-    user-select: none; line-height: 1;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 0; border-radius: 0;
+    cursor: pointer; border: none;
+    background: transparent; font-size: 12.5px;
+    color: var(--text-muted); font-weight: 500;
+    transition: color 0.15s;
+    user-select: none; line-height: 1.3;
 }
-.ab-thinking-pill:hover { background: var(--control-bg); }
+.ab-thinking-pill:hover { color: var(--text-color); }
 .ab-thinking-pill.done    { color: var(--text-muted); }
-.ab-thinking-pill.errored { color: #ef4444; border-color: color-mix(in srgb,#ef4444 30%,var(--border-color)); }
+.ab-thinking-pill.errored { color: #ef4444; }
 
 /* Chevron — points right when collapsed, down when expanded */
 .ab-chevron { display: inline-flex; align-items: center; transform: rotate(-90deg); transition: transform 0.2s; opacity: 0.5; }
@@ -492,30 +579,32 @@
 .ab-thinking-live {
     /* inherits all .ab-thinking-pill styles */
 }
-.ab-thinking-live-label { font-size: 12px; color: var(--text-muted); }
+.ab-thinking-live-label { font-size: 12.5px; }
 
-/* ── Typing dots — used in showTyping row AND in the live pill ── */
-/* Default size (standalone typing row) */
-.ab-typing-dots {
-    display: flex; gap: 4px; align-items: center;
+/* ── Shimmer text — the "shine sweeping across the text" loading state,
+   used anywhere something is actively in progress (the standalone
+   "Thinking" row, the live accordion label, a running step name)
+   instead of a dot loader. ── */
+.ab-shimmer-text {
+    background-image: linear-gradient(
+        90deg,
+        var(--text-muted) 0%, var(--text-muted) 38%,
+        var(--text-color) 50%,
+        var(--text-muted) 62%, var(--text-muted) 100%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent;
+    animation: ab-shimmer 1.7s linear infinite;
 }
-.ab-typing-dots span {
-    width: 5px; height: 5px; border-radius: 50%;
-    background: var(--text-muted);
-    animation: typing-dot 1.3s infinite ease-in-out both;
-    display: block;
-}
-.ab-typing-dots span:nth-child(1) { animation-delay: -0.32s; }
-.ab-typing-dots span:nth-child(2) { animation-delay: -0.16s; }
-.ab-typing-dots span:nth-child(3) { animation-delay: 0s; }
 
-/* Slightly smaller dots inside the live pill */
-.ab-typing-dots--small span { width: 4px; height: 4px; }
-
-@keyframes typing-dot {
-    0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
-    40%            { transform: scale(1);   opacity: 1;   }
+/* ── Standalone "Thinking" row (before any tokens/reasoning arrive) ── */
+.ab-thinking-flat {
+    display: inline-flex; align-items: center;
+    padding: 5px 0; font-size: 12.5px;
 }
+
+@keyframes ab-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
 /* ── Step list ─────────────────────────────────────────────────────
    Indented under the pill. Max 4 rows visible (~26px each = 104px),
@@ -647,14 +736,6 @@
 }
 .ab-step-detail-status.error { color: #ef4444; opacity: 1; }
 .ab-step-detail-label { display: none; }
-
-/* ── Typing indicator (standalone dots row — before first tool fires) ── */
-.ab-typing-pill {
-    display: inline-flex; align-items: center;
-    padding: 4px 2px; background: transparent;
-}
-.ab-typing-label { display: none; } /* label not used — dots speak for themselves */
-@keyframes ab-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
 /* ── HTML Artifacts ───────────────────────────────────────────── */
 .ab-artifact { margin: 16px 0; border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; background: var(--bg-color); box-shadow: var(--ab-shadow-sm); transition: box-shadow 0.2s; }

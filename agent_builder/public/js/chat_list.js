@@ -17,7 +17,7 @@ window.ChatList = (function () {
 
     function load() {
         frappe.call({
-            method: 'agent_builder.api.agent.get_chats',
+            method: 'agent_builder.native_api.verify.get_chats',
             callback(r) {
                 if (r.message) {
                     _allChats = r.message.chats || [];

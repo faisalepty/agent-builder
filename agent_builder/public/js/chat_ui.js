@@ -187,6 +187,25 @@ $(document).ready(function () {
         `);
     }
 
+    // Put this at the top of chat_ui.js (outside the $(document).ready block)
+    window._copyToClipboard = function(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+            return navigator.clipboard.writeText(text);
+        }
+        return new Promise(function (resolve, reject) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            try { document.execCommand('copy'); resolve(); }
+            catch (e) { reject(e); }
+            finally { document.body.removeChild(ta); }
+        });
+    };
+
     // State
     let isOpen = false, isThinking = false, currentChatId = null, currentView = 'list', isExpanded = false;
 
@@ -213,6 +232,7 @@ $(document).ready(function () {
     ChatList.init({ onSelect: openConversation, onNew: startNewChat });
     ChatRealtime.init({
         onToken: (delta) => { resetThinkingWatchdog(); ChatMessages.onToken(delta); },
+        onReasoning: (delta) => { resetThinkingWatchdog(); ChatMessages.onReasoning(delta); },
         onToolStart: (data) => { resetThinkingWatchdog(); ChatMessages.onToolStart(data); },
         onToolDone: (data) => { resetThinkingWatchdog(); ChatMessages.onToolDone(data); },
         onStatusChange: (text, thinking) => { resetThinkingWatchdog(); setStatus(text, thinking); },
@@ -261,6 +281,7 @@ $(document).ready(function () {
 
     function openConversation(chatId, title) {
         currentChatId = chatId;
+        ChatRealtime.setActiveSession(chatId);
         ChatList.setActive(chatId);
         _pendingFiles = [];
         renderAttachmentChips();
@@ -271,6 +292,7 @@ $(document).ready(function () {
     function startNewChat() {
         // Clear runtime tracking to signify an un-saved conversation state
         currentChatId = null;
+        ChatRealtime.setActiveSession(null);
         _pendingFiles = [];
         renderAttachmentChips();
 
@@ -448,9 +470,14 @@ $(document).ready(function () {
         $('#ab-input').val($(this).data('text')).trigger('input').focus();
     });
 
+    // Header status is intentionally static — "Online" always. All turn
+    // state (thinking, running a tool, error, stopped) is now conveyed
+    // inline in the conversation itself (the shimmering "Thinking" row,
+    // the thought-process accordion, and error bubbles), not by rewriting
+    // this label. Kept as a function (rather than deleting every call
+    // site) so isThinking/watchdog wiring below doesn't need to change.
     function setStatus(text, thinking, isError) {
-        $('#ab-status-text').text(text);
-        $('#ab-status-dot').toggleClass('thinking', !!thinking && !isError).toggleClass('error', !!isError);
+        // no-op by design
     }
 
     // Safety net: if no realtime event arrives at all (dropped connection,
@@ -498,7 +525,7 @@ $(document).ready(function () {
         if (_skillsLoading) return;
         _skillsLoading = true;
         frappe.call({
-            method: 'agent_builder.api.agent.get_skills',
+            method: 'agent_builder.native_api.verify.get_skills',
             callback(r) {
                 _skills = (r.message && r.message.skills) || [];
                 _finishSkillsLoad();
@@ -818,12 +845,18 @@ $(document).ready(function () {
         setStatus('Thinking…', true);
         ChatMessages.showTyping();
 
+        // For a brand-new chat we don't have a session_id yet — tell
+        // ChatRealtime to adopt whatever session_id shows up on the first
+        // incoming event, so tokens land here and not in some other tab.
+        if (isFirstMessage) ChatRealtime.expectNewSession();
+
         frappe.call({
-            method: 'agent_builder.api.agent.chat',
+            method: 'agent_builder.native_api.verify.chat',
             args: { message: msg, chat_id: currentChatId, attachments: JSON.stringify(attachments || []) },
             callback(r) {
                 if (r.message && r.message.chat_id) {
                     currentChatId = r.message.chat_id;
+                    ChatRealtime.setActiveSession(currentChatId);
 
                     // If this was a deferred chat initialization, update the sidebar UI registry now
                     if (isFirstMessage) {

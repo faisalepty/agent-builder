@@ -1,5 +1,0 @@
-plugins:
-  enabled:
-  - frappe_tools
-  - skill_tools
-  disabled: []
