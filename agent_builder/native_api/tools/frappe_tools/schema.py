@@ -80,25 +80,28 @@ FRAPPE_SAVE_DOC = {
     },
 }
 
-FRAPPE_DELETE_DOC = {
-    "name": "frappe_delete_doc",
+FRAPPE_EXECUTE_ACTION = {
+    "name": "frappe_execute_action",
     "description": (
-        "Permanently delete a Frappe document by DocType and name. "
-        "Use with caution — this cannot be undone. "
-        "Only works on documents the current user has delete permission for."
+        "Transition a document's state via Submission, Cancellation, or Frappe Workflows. "
+        "Use this tool when you need to submit, cancel, approve, or reject a document."
     ),
     "parameters": {
         "type": "object",
         "properties": {
             "doctype": {
                 "type": "string",
-                "description": "The DocType name e.g. 'ToDo'",
+                "description": "The DocType name e.g. 'Sales Order'",
             },
             "name": {
                 "type": "string",
-                "description": "The document name/ID to delete",
+                "description": "The document name/ID e.g. 'SO-00001'",
+            },
+            "action": {
+                "type": "string",
+                "description": "The action to execute. Standard actions: 'Submit', 'Cancel'. For workflows, use the action name e.g. 'Approve', 'Reject'.",
             },
         },
-        "required": ["doctype", "name"],
+        "required": ["doctype", "name", "action"],
     },
 }

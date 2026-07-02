@@ -12,9 +12,11 @@
   "user",
   "title",
   "messages",
+  "tool_calls",
   "status",
   "last_active",
-  "message_count"
+  "message_count",
+  "tool_call_count"
  ],
  "fields": [
   {
@@ -59,11 +61,24 @@
    "in_list_view": 1,
    "label": "Messages",
    "read_only": 1
+  },
+  {
+   "description": "Normalized log of all tool calls requested by the assistant.",
+   "fieldname": "tool_calls",
+   "fieldtype": "Table",
+   "label": "Tool Calls",
+   "options": "Agent Tool Call"
+  },
+  {
+   "fieldname": "tool_call_count",
+   "fieldtype": "Int",
+   "label": "Tool Call Count",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-07-01 09:50:23.978518",
+ "modified": "2026-07-02 09:08:10.039781",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Agent session",

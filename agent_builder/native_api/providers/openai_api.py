@@ -39,9 +39,10 @@ TokenCallback = Optional[Callable[[str], Any]]
 
 
 class OpenAIProvider:
-    def __init__(self, model: str) -> None:
+    def __init__(self) -> None:
         agent_setup = frappe.get_doc("Agent Setup")
         provider = get_provider((agent_setup.provider or "").lower() or "openrouter")
+        model = agent_setup.model
         self.model = model
         self.client = AsyncOpenAI(
             api_key=agent_setup.get_password("api_key"),

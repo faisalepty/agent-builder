@@ -5,9 +5,10 @@ from agent_builder.native_api.tools.decorator import tool
 import frappe
 
 @tool(schema_name="frappe_get_doc")
-def frappe_get_dochhh(args: dict, **kwargs) -> str:
+def frappe_get_doc(args: dict, **kwargs) -> str:
     try:
         doc = frappe.get_doc(args["doctype"], args["name"])
+        doc.check_permission("read")
 
         return json.dumps(doc.as_dict(), default=str)
 
@@ -57,11 +58,22 @@ def frappe_save_doc(args: dict, **kwargs) -> str:
         if name and frappe.db.exists(doctype, name):
             # Update existing
             doc = frappe.get_doc(doctype, name)
-            doc.update(data)
+            doc.check_permission("write")
+            
+            for key, value in data.items():
+                if key in ("name", "doctype", "modified", "creation", "owner", "docstatus", "idx"):
+                    continue
+                df = doc.meta.get_field(key)
+                if df and (df.read_only or df.hidden or df.fieldtype == "Read Only"):
+                    continue
+                doc.set(key, value)
+                
+
             doc.save()
         else:
             # Create new
             doc = frappe.get_doc(data)
+            doc.check_permission("create")
             doc.insert(ignore_permissions=False)
 
         frappe.db.commit()
@@ -74,13 +86,39 @@ def frappe_save_doc(args: dict, **kwargs) -> str:
         return json.dumps({"error": str(e)})
 
 
-@tool(schema_name="frappe_delete_doc")
-def frappe_delete_doc(args: dict, **kwargs) -> str:
+@tool(schema_name="frappe_execute_action")
+def frappe_execute_action(args: dict, **kwargs) -> str:
     try:
-        frappe.delete_doc(args["doctype"], args["name"])
-        frappe.db.commit()
-        return json.dumps({"doctype": args["doctype"], "name": args["name"], "status": "deleted"})
+        doctype = args.get("doctype")
+        name = args.get("name")
+        action = args.get("action")
+
+        if not (doctype and name and action):
+            return json.dumps({"error": "doctype, name, and action are required."})
+
+        doc = frappe.get_doc(doctype, name)
+        
+        active_workflow = frappe.get_all("Workflow", filters={"document_type": doctype, "is_active": 1})
+        
+        if active_workflow:
+            import frappe.model.workflow
+            frappe.model.workflow.apply_workflow(doc, action)
+            frappe.db.commit()
+            return json.dumps({"doctype": doctype, "name": name, "status": "action_executed", "action": action})
+        else:
+            if action.lower() == "submit":
+                doc.submit()
+            elif action.lower() == "cancel":
+                doc.cancel()
+            else:
+                return json.dumps({"error": f"Invalid action '{action}' for doctype without workflow."})
+            
+            frappe.db.commit()
+            return json.dumps({"doctype": doctype, "name": name, "status": "action_executed", "action": action})
+
     except frappe.PermissionError:
-        return json.dumps({"error": f"No permission to delete {args['doctype']} '{args['name']}'"})
+        return json.dumps({"error": f"No permission to perform '{args.get('action')}' on {args.get('doctype')} '{args.get('name')}'"})
+    except frappe.ValidationError as e:
+        return json.dumps({"error": f"Validation failed: {str(e)}"})
     except Exception as e:
         return json.dumps({"error": str(e)})

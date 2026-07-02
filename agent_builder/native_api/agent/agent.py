@@ -27,7 +27,6 @@ class Agent:
     """
     def __init__(
         self,
-        model: str = "nvidia/nemotron-3-ultra-550b-a55b",
         max_turns: int = 20,
         max_retries: int = 2,
         max_context_chars: int = 32000,
@@ -37,7 +36,7 @@ class Agent:
         self.system_prompt = get_system_prompt()
         
         # 2. Initialize provider and executor
-        self.provider = OpenAIProvider(model=model)
+        self.provider = OpenAIProvider()
         self.executor = ToolExecutor(self.registry)
         
         # 3. Store config
