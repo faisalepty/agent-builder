@@ -82,11 +82,7 @@ FRAPPE_SAVE_DOC = {
 
 FRAPPE_EXECUTE_ACTION = {
     "name": "frappe_execute_action",
-FRAPPE_EXECUTE_ACTION = {
-    "name": "frappe_execute_action",
     "description": (
-        "Transition a document's state via Submission, Cancellation, or Frappe Workflows. "
-        "Use this tool when you need to submit, cancel, approve, or reject a document."
         "Transition a document's state via Submission, Cancellation, or Frappe Workflows. "
         "Use this tool when you need to submit, cancel, approve, or reject a document."
     ),
@@ -96,31 +92,12 @@ FRAPPE_EXECUTE_ACTION = {
             "doctype": {
                 "type": "string",
                 "description": "The DocType name e.g. 'Sales Order'",
-                "description": "The DocType name e.g. 'Sales Order'",
             },
             "name": {
                 "type": "string",
                 "description": "The document name/ID e.g. 'SO-00001'",
             },
             "action": {
-                "type": "string",
-                "description": "The action to execute. Standard actions: 'Submit', 'Cancel'. For workflows, use the action name e.g. 'Approve', 'Reject'.",
-            },
-        },
-        "required": ["doctype", "name", "action"],
-    },
-}
-
-VIEW_SKILL = {
-    "name": "view_skill",
-    "description": (
-        "Fetch a Skill document by name. "
-        "Returns all fields of the Skill document."
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "skill_name": {
                 "type": "string",
                 "description": "The action to execute. Standard actions: 'Submit', 'Cancel'. For workflows, use the action name e.g. 'Approve', 'Reject'.",
             },
