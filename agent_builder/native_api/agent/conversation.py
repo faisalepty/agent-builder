@@ -44,13 +44,32 @@ class Conversation:
         for tc in self.doc.tool_calls:
             tool_calls_by_parent.setdefault(tc.parent_message, []).append(tc)
 
+        # Buffer to accumulate reasoning so we can attach it to the next assistant turn
+        pending_reasoning = []
+
         for row in self.doc.messages:
             if row.role == "reasoning":
-                continue  # never sent to the LLM
+                if row.content:
+                    pending_reasoning.append(row.content.strip())
+                continue
 
             if row.role == "assistant":
-                msg = {"role": "assistant", "content": row.content or ""}
+                content = row.content or ""
                 tc_rows = tool_calls_by_parent.get(row.message_id, [])
+
+                # Re-attach preceding reasoning into the assistant's content block.
+                # Wrapping it in <think> tags is the industry standard for OpenRouter 
+                # and open-weight reasoning models (like DeepSeek-R1).
+                if pending_reasoning:
+                    reasoning_text = "\n\n".join(pending_reasoning)
+                    if content:
+                        content = f"<think>\n{reasoning_text}\n</think>\n\n{content}"
+                    else:
+                        # Even if content is empty (e.g. only tool calls), pass the reasoning
+                        content = f"<think>\n{reasoning_text}\n</think>"
+                    pending_reasoning = []
+
+                msg = {"role": "assistant", "content": content}
 
                 if tc_rows:
                     msg["tool_calls"] = [
@@ -79,6 +98,8 @@ class Conversation:
                                     else tc.result) or "",
                     })
             else:
+                # For User or System messages, clear reasoning buffer if out of order
+                pending_reasoning = [] 
                 messages.append({"role": row.role, "content": row.content or ""})
 
         return messages

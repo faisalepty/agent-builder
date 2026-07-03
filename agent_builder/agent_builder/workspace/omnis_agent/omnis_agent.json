@@ -1,7 +1,7 @@
 {
  "app": "agent_builder",
  "charts": [],
- "content": "[{\"type\":\"header\",\"data\":{\"text\":\"Omnis Agent\"}}]",
+ "content": "[{\"id\":\"bohw5KLR9j\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Omnis Agent</span>\",\"col\":12}},{\"id\":\"crqpNfEm0J\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Omnis Setup\",\"col\":3}}]",
  "creation": "2026-06-19 09:26:07.851829",
  "custom_blocks": [],
  "docstatus": 0,
@@ -15,7 +15,7 @@
  "label": "Omnis Agent",
  "link_type": "DocType",
  "links": [],
- "modified": "2026-06-19 09:30:42.697169",
+ "modified": "2026-07-03 07:33:31.653379",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Omnis Agent",
@@ -26,7 +26,15 @@
  "quick_lists": [],
  "roles": [],
  "sequence_id": 29.0,
- "shortcuts": [],
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Omnis Setup",
+   "link_to": "Agent Setup",
+   "type": "DocType"
+  }
+ ],
  "title": "Omnis Agent",
  "type": "Workspace"
 }

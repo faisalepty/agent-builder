@@ -134,6 +134,18 @@
     border-radius: 20px;
     transition: all 0.3s var(--ab-spring);
 }
+/* In the wide expanded window, rows previously stretched full-width with
+   only the base 24px gap between them — at 95vw that reads as messages
+   being "far apart". Constrain to a comfortable reading column and tighten
+   the vertical rhythm instead. */
+#ab-window.ab-expanded #ab-messages {
+    align-items: center;
+    gap: 18px;
+}
+#ab-window.ab-expanded .ab-row {
+    max-width: 760px;
+    width: 100%;
+}
 /* Extra-robust closed state for #ab-window itself, on top of (not instead
    of) the actual root-cause fixes for the leaked-overlay bug, which were
    the iframe sandbox change in chat_messages.js and collapseAllFullscreen-
@@ -337,13 +349,9 @@
 
 /* Agent Message: No bubble, full width document style */
 .ab-row.agent { align-items: flex-start; justify-content: flex-start; }
-.ab-row.agent .ab-avatar {
-    width: 28px; height: 28px; border-radius: 8px;
-    background: color-mix(in srgb, var(--primary) 15%, var(--bg-color)); color: var(--primary);
-    flex-shrink: 0; display: flex; align-items: center; justify-content: center; margin-top: 2px;
-}
-.ab-row.agent .ab-avatar svg { width: 16px; height: 16px; }
-.ab-row.agent.is-error .ab-avatar { background: color-mix(in srgb, #ef4444 15%, var(--bg-color)); color: #ef4444; }
+/* Avatar icon removed for a cleaner timeline — assistant rows no longer
+   reserve a left icon column, agent content just starts at the row edge. */
+.ab-row.agent .ab-avatar { display: none; }
 .ab-row.agent .ab-bubble-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .ab-row.agent .ab-bubble {
     background: transparent;
@@ -588,20 +596,34 @@
 .ab-shimmer-text {
     background-image: linear-gradient(
         90deg,
-        var(--text-muted) 0%, var(--text-muted) 38%,
-        var(--text-color) 50%,
-        var(--text-muted) 62%, var(--text-muted) 100%
+        var(--text-muted) 0%, var(--text-muted) 25%,
+        var(--text-color) 45%, var(--text-color) 55%,
+        var(--text-muted) 75%, var(--text-muted) 100%
     );
-    background-size: 200% 100%;
+    background-size: 250% 100%;
     -webkit-background-clip: text; background-clip: text;
     color: transparent;
-    animation: ab-shimmer 1.7s linear infinite;
+    animation: ab-shimmer 1.6s ease-in-out infinite;
 }
 
-/* ── Standalone "Thinking" row (before any tokens/reasoning arrive) ── */
-.ab-thinking-flat {
-    display: inline-flex; align-items: center;
-    padding: 5px 0; font-size: 12.5px;
+/* ── "Request is in flight" row — shown after send, before the agent has
+   actually started reasoning or streaming anything. Deliberately just a
+   quiet pulse, not a "Thinking" label, since nothing has happened yet. ── */
+.ab-typing-indicator {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 10px 0;
+}
+.ab-typing-indicator span {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--text-muted);
+    animation: ab-typing-bounce 1.1s ease-in-out infinite both;
+}
+.ab-typing-indicator span:nth-child(1) { animation-delay: -0.24s; }
+.ab-typing-indicator span:nth-child(2) { animation-delay: -0.12s; }
+.ab-typing-indicator span:nth-child(3) { animation-delay: 0s; }
+@keyframes ab-typing-bounce {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.35; }
+    40%            { transform: scale(1);   opacity: 1; }
 }
 
 @keyframes ab-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
@@ -646,6 +668,7 @@
     transition: border-color 0.2s, color 0.2s;
 }
 .ab-step-icon svg { width: 9px; height: 9px; display: block; }
+.ab-step-icon-brain svg { width: 11px; height: 11px; }
 .ab-step-icon.running {
     border-color: var(--primary); color: var(--primary);
     animation: ab-step-pulse 1.4s ease-in-out infinite;
