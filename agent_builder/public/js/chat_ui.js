@@ -12,6 +12,26 @@
  */
 $(document).ready(function () {
 
+    // ── Role-based access gate ──────────────────────────────────
+    // Check with the server before rendering anything. If the current
+    // user doesn't have the configured allowed role, we bail out early
+    // and the chat widget is never injected into the DOM.
+    frappe.call({
+        method: 'agent_builder.api.agent.check_chat_access',
+        callback: function (r) {
+            const access = r && r.message;
+            if (access && access.has_access) {
+                _initChatWidget();
+            }
+            // If no access or call failed silently — nothing is rendered.
+        },
+        error: function () {
+            // Network/permission error — don't show widget
+        }
+    });
+
+    function _initChatWidget() {
+
     if (!window.marked) {
         const s = document.createElement('script');
         s.src = 'https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js';
@@ -939,4 +959,5 @@ $(document).ready(function () {
     });
 
     $('#ab-back').hide();
+    } // end _initChatWidget
 });

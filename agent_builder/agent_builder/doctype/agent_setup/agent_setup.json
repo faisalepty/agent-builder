@@ -8,7 +8,8 @@
  "field_order": [
   "api_key",
   "provider",
-  "model"
+  "model",
+  "allowed_role"
  ],
  "fields": [
   {
@@ -31,6 +32,13 @@
    "in_list_view": 1,
    "label": "Model",
    "description": "Optional: Specific model ID to use (e.g. anthropic/claude-sonnet-4 or google/gemini-2.5-pro)"
+  },
+  {
+   "fieldname": "allowed_role",
+   "fieldtype": "Link",
+   "label": "Allowed Role",
+   "options": "Role",
+   "description": "If set, only users with this role will see the chat widget. Leave blank to allow all users."
   }
  ],
  "grid_page_length": 50,

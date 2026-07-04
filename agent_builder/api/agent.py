@@ -157,6 +157,31 @@ def build_skills_system_prompt() -> str:
 
     return "\n".join(lines)
 
+@frappe.whitelist(allow_guest=False)
+def check_chat_access():
+    """
+    Returns whether the current user is allowed to use the chat widget.
+    If 'allowed_role' is set in Agent Setup, only users with that role can access it.
+    If blank, all logged-in users can access it.
+    """
+    try:
+        agent_setup = frappe.get_doc("Agent Setup")
+        allowed_role = agent_setup.get("allowed_role")
+
+        if not allowed_role:
+            # No restriction configured — everyone has access
+            return {"has_access": True}
+
+        user_roles = frappe.get_roles(frappe.session.user)
+        has_access = allowed_role in user_roles
+        return {"has_access": has_access, "required_role": allowed_role}
+
+    except Exception:
+        frappe.log_error(title="Chat Access Check Failed", message=frappe.get_traceback())
+        # Fail open — don't hide the chat if Agent Setup can't be read
+        return {"has_access": True}
+
+
 @frappe.whitelist()
 def get_skills():
     """Return all skills available to the agent for the frontend."""
