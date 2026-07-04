@@ -23,6 +23,16 @@ def setup_environment():
     if not api_key:
         frappe.throw("API key not set in Agent Setup", frappe.ValidationError)
 
+    # Provider name mapping: Agent Setup uses friendly names, Hermes uses internal IDs.
+    # "openai" in Hermes is aliased to openrouter — direct OpenAI API access needs "openai-api".
+    _provider_hermes_id = {
+        "openai":      "openai-api",   # direct api.openai.com — env var: OPENAI_API_KEY
+        "openrouter":  "openrouter",   # env var: OPENROUTER_API_KEY
+        "anthropic":   "anthropic",    # env var: ANTHROPIC_API_KEY
+        "gemini":      "gemini",       # env var: GEMINI_API_KEY
+    }
+    hermes_provider = _provider_hermes_id.get(provider, provider)
+
     # Set the provider's env var (e.g. OPENAI_API_KEY, OPENROUTER_API_KEY)
     os.environ[provider.upper() + "_API_KEY"] = api_key
 
@@ -47,7 +57,7 @@ def setup_environment():
             config = {}
 
         config["model"] = {
-            "provider": provider,
+            "provider": hermes_provider,
             "default":  effective_model,
         }
 
@@ -354,6 +364,10 @@ def process_agent_chat(message, chat_id, attachments, user):
         publish("agent_event", payload)
 
     def save_chat_message(role, content, extra_fields=None):
+        # Guard: content is mandatory in the doctype — use a fallback for
+        # tool-only turns where the LLM returns no text.
+        if not content or not str(content).strip():
+            content = "\u200b"  # zero-width space — satisfies reqd, renders invisible
         doc = {
             "doctype": "Agent Chat Message",
             "chat": chat_id,
@@ -376,6 +390,7 @@ def process_agent_chat(message, chat_id, attachments, user):
         provider = (agent_setup.provider or "openrouter").strip().lower()
         _provider_defaults = {
             "openai":      "gpt-4o-mini",
+            "openai-api":  "gpt-4o-mini",
             "openrouter":  "anthropic/claude-sonnet-4",
             "anthropic":   "claude-3-5-sonnet-latest",
             "gemini":      "gemini-2.5-pro",

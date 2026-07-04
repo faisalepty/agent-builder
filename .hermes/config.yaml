@@ -1,9 +1,8 @@
+model:
+  default: gpt-4o
+  provider: openai-api
 plugins:
+  disabled: []
   enabled:
   - frappe_tools
   - skill_tools
-  disabled: []
-
-model:
-  provider: openai
-  default: gpt-4o-mini
