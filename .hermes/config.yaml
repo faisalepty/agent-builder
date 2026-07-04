@@ -3,3 +3,7 @@ plugins:
   - frappe_tools
   - skill_tools
   disabled: []
+
+model:
+  provider: openai
+  default: gpt-4o-mini

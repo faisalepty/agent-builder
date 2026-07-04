@@ -10,18 +10,51 @@ from frappe.realtime import emit_via_redis, get_user_room
 
 
 def setup_environment():
-    """Set up necessary environment variables for the Hermes Agent framework."""
-    os.environ["HERMES_HOME"] = str(Path(__file__).resolve().parent.parent.parent / ".hermes")
+    """Set up necessary environment variables and Hermes config from Agent Setup."""
+    hermes_home = Path(__file__).resolve().parent.parent.parent / ".hermes"
+    os.environ["HERMES_HOME"] = str(hermes_home)
     os.environ["HERMES_ENABLE_PROJECT_PLUGINS"] = "true"
 
     agent_setup = frappe.get_doc("Agent Setup")
     api_key = agent_setup.get_password("api_key")
-    provider = agent_setup.provider or "openrouter"
-    
+    provider = (agent_setup.provider or "openrouter").strip().lower()
+    model = (agent_setup.model or "").strip()
+
     if not api_key:
-        frappe.throw("OpenRouter API key not set in Agent Setup", frappe.ValidationError)
-    
+        frappe.throw("API key not set in Agent Setup", frappe.ValidationError)
+
+    # Set the provider's env var (e.g. OPENAI_API_KEY, OPENROUTER_API_KEY)
     os.environ[provider.upper() + "_API_KEY"] = api_key
+
+    # Default model per provider when none is specified
+    _provider_defaults = {
+        "openai":      "gpt-4o-mini",
+        "openrouter":  "anthropic/claude-sonnet-4",
+        "anthropic":   "claude-3-5-sonnet-latest",
+        "gemini":      "gemini-2.5-pro",
+    }
+    effective_model = model or _provider_defaults.get(provider, "gpt-4o-mini")
+
+    # Write Hermes config.yaml so the framework picks up the right provider/model
+    config_path = hermes_home / "config.yaml"
+    try:
+        import yaml as _yaml
+        # Read existing config to preserve other keys (e.g. plugins)
+        if config_path.exists():
+            with open(config_path, "r") as f:
+                config = _yaml.safe_load(f) or {}
+        else:
+            config = {}
+
+        config["model"] = {
+            "provider": provider,
+            "default":  effective_model,
+        }
+
+        with open(config_path, "w") as f:
+            _yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
+    except Exception as e:
+        frappe.log_error(title="Hermes Config Write Failed", message=str(e))
    
 
 setup_environment()
@@ -261,6 +294,10 @@ def chat(message, chat_id=None, attachments=None):
 def process_agent_chat(message, chat_id, attachments, user):
     """Background job to process the AI agent interaction."""
 
+    # Re-run setup on every request so provider/model/key changes in Agent Setup
+    # are picked up immediately without restarting workers.
+    setup_environment()
+
     chat_doc = frappe.get_doc("Agent Chat", chat_id)
     room = get_user_room(user)
     agent_context = parse_json(chat_doc.agent_context, None)
@@ -336,17 +373,14 @@ def process_agent_chat(message, chat_id, attachments, user):
         skills_prompt = build_skills_system_prompt()
 
         agent_setup = frappe.get_doc("Agent Setup")
-        model = agent_setup.model
-        if not model:
-            provider = (agent_setup.provider or "openrouter").strip().lower()
-            if provider == "openrouter":
-                model = "anthropic/claude-sonnet-4"
-            elif provider == "gemini":
-                model = "gemini-2.5-pro"
-            elif provider == "anthropic":
-                model = "claude-3-5-sonnet-latest"
-            else:
-                model = "anthropic/claude-sonnet-4"
+        provider = (agent_setup.provider or "openrouter").strip().lower()
+        _provider_defaults = {
+            "openai":      "gpt-4o-mini",
+            "openrouter":  "anthropic/claude-sonnet-4",
+            "anthropic":   "claude-3-5-sonnet-latest",
+            "gemini":      "gemini-2.5-pro",
+        }
+        model = (agent_setup.model or "").strip() or _provider_defaults.get(provider, "gpt-4o-mini")
 
         agent = AIAgent(
             model=model,
