@@ -129,3 +129,4 @@
 2026-07-01 10:29:54,586 ERROR [20260701_102934_ff8c9a] agent.conversation_loop: API call failed after 3 retries. HTTP 404: No endpoints found for openrouter/owl-alpha. | provider= model=openrouter/owl-alpha msgs=2 tokens=~2,853
 2026-07-01 11:47:43,548 WARNING [20260701_114720_4721de] agent.tool_executor: Tool frappe_get_doc returned error (0.02s): {"error": "ToDo 'TODO-00001' does not exist"}
 2026-07-01 11:50:55,753 WARNING [20260701_115037_305596] agent.tool_executor: Tool frappe_save_doc returned error (0.03s): {"error": "Validation failed: Cannot change docstatus from 0 (Draft) to 2 (Cancelled)"}
+2026-07-03 09:20:03,181 WARNING [20260703_091942_983816] agent.tool_executor: Tool clarify returned error (0.00s): {"error": "Clarify tool is not available in this execution context."}

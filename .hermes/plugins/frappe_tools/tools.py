@@ -44,6 +44,46 @@ def frappe_get_list(args: dict, **kwargs) -> str:
         return json.dumps({"error": str(e)})
 
 
+_GUARDED_FIELDS = {
+    "disabled": (1, True, "1"),
+}
+_GUARDED_STATUSES = {"disabled", "inactive", "cancelled", "blocked"}
+
+def _check_disable_guard(data: dict, existing_doc=None) -> str | None:
+    """
+    Return a guardrail error message if the payload is attempting to
+    disable, deactivate, or inactivate a record.
+    Returns None if the operation is allowed.
+    """
+    # Guard: setting disabled = 1 / True / "1"
+    disabled_val = data.get("disabled")
+    if disabled_val is not None and str(disabled_val) in ("1", "true", "True"):
+        # If the record is already disabled, allow saving other fields
+        if existing_doc and getattr(existing_doc, "disabled", None) in (1, True, "1"):
+            pass  # already disabled — not our concern
+        else:
+            return (
+                "guardrail_blocked: Disabling records via the agent is not permitted. "
+                "Please inform the user how they can disable the record themselves "
+                "through the Frappe UI (open the record, tick the 'Disabled' checkbox, and save)."
+            )
+
+    # Guard: setting status to a disabled-equivalent value
+    status_val = str(data.get("status", "")).strip().lower()
+    if status_val and status_val in _GUARDED_STATUSES:
+        if existing_doc:
+            current_status = str(getattr(existing_doc, "status", "") or "").strip().lower()
+            if current_status == status_val:
+                pass  # already in that status — unrelated save
+            else:
+                return (
+                    f"guardrail_blocked: Setting a record's status to '{data.get('status')}' via the agent is not permitted. "
+                    f"Please inform the user how they can update the status themselves through the Frappe UI."
+                )
+
+    return None
+
+
 def frappe_save_doc(args: dict, **kwargs) -> str:
     
     try:
@@ -55,7 +95,12 @@ def frappe_save_doc(args: dict, **kwargs) -> str:
             # Update existing
             doc = frappe.get_doc(doctype, name)
             doc.check_permission("write")
-            
+
+            # --- Guardrail: block disable/inactivate attempts ---
+            guard_error = _check_disable_guard(data, existing_doc=doc)
+            if guard_error:
+                return json.dumps({"error": guard_error})
+
             for key, value in data.items():
                 if key in ("name", "doctype", "modified", "creation", "owner", "docstatus", "idx"):
                     continue
@@ -63,11 +108,14 @@ def frappe_save_doc(args: dict, **kwargs) -> str:
                 if df and (df.read_only or df.hidden or df.fieldtype == "Read Only"):
                     continue
                 doc.set(key, value)
-                
 
             doc.save()
         else:
-            # Create new
+            # Create new — guard still applies (e.g. someone creating a doc in a disabled state)
+            guard_error = _check_disable_guard(data)
+            if guard_error:
+                return json.dumps({"error": guard_error})
+
             doc = frappe.get_doc(data)
             doc.check_permission("create")
             doc.insert(ignore_permissions=False)

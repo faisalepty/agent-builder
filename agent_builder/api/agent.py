@@ -101,30 +101,59 @@ def build_skills_system_prompt() -> str:
         order_by="name_ asc"
     )
 
-    if not skills:
-        return ""
-
-    lines = ["<available_skills>"]
-
-    for skill in skills:
-        name = skill.get("name_")
-        description = skill.get("description", "")
-
-        if not name:
-            continue
-
-        lines.append(f"- {name}: {description}")
-
-    lines.append("</available_skills>")
+    lines = []
+    
+    # Add operation guardrails first
+    lines.append("<operation_guardrails>")
+    lines.append("CRITICAL RESTRICTIONS - You MUST follow these rules:")
     lines.append("")
-    lines.append(
-        "Before replying, review the available skills above. "
-        "If one or more skills appear relevant to the user's request, "
-        "call skill_view(skill_name) to load the full instructions before proceeding. "
-        "Skills contain workflows, conventions, implementation patterns, "
-        "and quality standards specific to this Frappe environment. "
-        "Do not assume skill contents; load the skill first when needed."
-    )
+    lines.append("1. DELETION: You are NOT capable of deleting records from the system.")
+    lines.append("   The delete functionality has been intentionally removed.")
+    lines.append("   When a user asks to delete a record:")
+    lines.append("   - Explain that you cannot delete records")
+    lines.append("   - List the available alternatives the USER can do themselves:")
+    lines.append("     * Cancel it (if the DocType supports cancellation)")
+    lines.append("     * Mark it as disabled (if the DocType has a 'disabled' field)")
+    lines.append("     * Update its status to inactive (if the DocType has a status field)")
+    lines.append("   - DO NOT perform any of these alternatives yourself")
+    lines.append("   - DO NOT call frappe_save_doc to set disabled=1 or status='Disabled'")
+    lines.append("   - ONLY explain what options are available for that particular document type")
+    lines.append("")
+    lines.append("2. DISABLING/INACTIVATING: When a user asks to disable or set a record to inactive:")
+    lines.append("   - DO NOT automatically perform the action")
+    lines.append("   - Instead, explain to the user how they can do it themselves:")
+    lines.append("     * Which field to update (e.g., 'disabled' checkbox)")
+    lines.append("     * Where to find it in the UI")
+    lines.append("   - ONLY perform the action if the user EXPLICITLY confirms after your explanation")
+    lines.append("")
+    lines.append("3. WORKAROUNDS: Never attempt workarounds for restricted operations.")
+    lines.append("   If you cannot perform an action directly, explain alternatives but DO NOT execute them.")
+    lines.append("")
+    lines.append("</operation_guardrails>")
+    lines.append("")
+
+    if skills:
+        lines.append("<available_skills>")
+
+        for skill in skills:
+            name = skill.get("name_")
+            description = skill.get("description", "")
+
+            if not name:
+                continue
+
+            lines.append(f"- {name}: {description}")
+
+        lines.append("</available_skills>")
+        lines.append("")
+        lines.append(
+            "Before replying, review the available skills above. "
+            "If one or more skills appear relevant to the user's request, "
+            "call skill_view(skill_name) to load the full instructions before proceeding. "
+            "Skills contain workflows, conventions, implementation patterns, "
+            "and quality standards specific to this Frappe environment. "
+            "Do not assume skill contents; load the skill first when needed."
+        )
 
     return "\n".join(lines)
 

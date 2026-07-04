@@ -5,6 +5,6 @@ provides_tools:
   - frappe_get_doc
   - frappe_get_list
   - frappe_save_doc
-  - frappe_delete_doc
+  - frappe_execute_action
   - view_skill
-  - list_skill
+  - list_skills
