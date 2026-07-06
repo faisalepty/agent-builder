@@ -4,6 +4,7 @@ import json
 import logging
 import random
 import time
+import frappe
 from typing import Callable, Optional, Tuple
 
 from agent_builder.native_api.agent.conversation import Conversation
@@ -27,7 +28,7 @@ class Agent:
     """
     def __init__(
         self,
-        max_turns: int = 20,
+        max_turns: int = 40,
         max_retries: int = 2,
         max_context_chars: int = 32000,
     ):
@@ -70,6 +71,7 @@ class Agent:
                 )
 
                 if not tool_calls:
+                    frappe.log_error(response, "Agent Final Response")
                     return response.get("content", "")
 
                 fp = (tool_calls[0].function.name, tool_calls[0].function.arguments)

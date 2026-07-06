@@ -139,15 +139,19 @@ def _slugify(value):
 
 @frappe.whitelist()
 def get_skills():
-    """Return all skills available to the agent for the frontend."""
+    """Return all skills available to the agent for the frontend.
 
+    Reads from the new Skill schema (name_, description) and returns a
+    slugified name for routing and a clean label for display.
+    """
     try:
         native_skills = frappe.get_all(
             "Skill",
             fields=[
-                "name_",
+                "name_",   # display name (Data, hidden, unique)
                 "description"
             ],
+            filters={"is_enabled": True},
             order_by="name_ asc"
         )
 
@@ -250,4 +254,3 @@ def process_agent_chat(message, chat_id, attachments, user):
         error_text = str(e) if frappe.conf.get("developer_mode") else "Sorry, something went wrong."
         conversation.emit_error(error_text)
         frappe.log_error("Agent Chat Error", frappe.get_traceback())
-

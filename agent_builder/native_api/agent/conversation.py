@@ -68,8 +68,8 @@ class Conversation:
                         # Even if content is empty (e.g. only tool calls), pass the reasoning
                         content = f"<think>\n{reasoning_text}\n</think>"
                     pending_reasoning = []
-
-                msg = {"role": "assistant", "content": content}
+                if content:
+                    msg = {"role": "assistant", "content": content}
 
                 if tc_rows:
                     msg["tool_calls"] = [

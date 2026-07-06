@@ -1,4 +1,4 @@
-# omnis_hermes/tools/internal/skill_view.py
+# omnis_hermes/tools/internal/view_skill.py
 import json
 import frappe
 from agent_builder.native_api.tools.decorator import tool

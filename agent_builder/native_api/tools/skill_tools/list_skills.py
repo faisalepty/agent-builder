@@ -1,4 +1,4 @@
-# omnis_hermes/tools/internal/skill_list.py
+# omnis_hermes/tools/internal/list_skills.py
 import json
 import frappe
 from agent_builder.native_api.tools.decorator import tool
@@ -7,7 +7,13 @@ from agent_builder.native_api.tools.decorator import tool
 @tool(schema_name="list_skills")
 def list_skills(args: dict, **kwargs) -> str:
     try:
-        skills = frappe.get_list("Skill", fields=["name", "description"], limit_page_length=args.get("limit", 20))
+        skills = frappe.get_list(
+            "Skill",
+            fields=["name", "description"],  # name = DocType id; description = new field
+            filters={"is_enabled": True},
+            limit_page_length=args.get("limit", 20),
+            order_by="name asc",
+        )
         return json.dumps(skills, default=str)
 
     except frappe.PermissionError:

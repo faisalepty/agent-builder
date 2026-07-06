@@ -1,5 +1,5 @@
 /**
- * chat_messages.js v4.3.5 — SOTA DOM structure update
+ * chat_messages.js v4.3.6 — SOTA DOM structure update
  * Generates cleaner HTML for bubbles to perfectly match the new CSS.
  * v4.3: artifact "fullscreen" now portals to <body> so it's a true
  * viewport-relative overlay regardless of the chat window's condensed vs.
@@ -27,6 +27,12 @@
  *   actual visible text arrives; whitespace-only tokens are buffered
  *   silently. A safety merge in onDone consolidates any adjacent
  *   finalized containers that slipped through.
+ * v4.3.6: FIX — first tokens of text between thinking containers are no
+ *   longer lost. _ensureStreamBubble() no longer resets _streamBuffer,
+ *   which was destroying content that onToken had just accumulated before
+ *   the bubble DOM element existed. The buffer is now only reset by
+ *   _freezeStreamBubble() and _resetStreamState(), both of which run
+ *   after the content has been consumed.
  */
 window.ChatMessages = (function () {
 
@@ -303,7 +309,13 @@ window.ChatMessages = (function () {
     function _ensureStreamBubble() {
         if (_streamBubbleId && document.getElementById(_streamBubbleId)) return;
         _streamBubbleId = _nextId();
-        _streamBuffer = '';
+        // IMPORTANT: Do NOT reset _streamBuffer here.
+        // onToken accumulates content into _streamBuffer BEFORE calling this
+        // function. If we reset the buffer here, the first token(s) are lost,
+        // causing truncated text like "me use..." instead of "Let me use...".
+        // The buffer is properly reset only by _freezeStreamBubble() (after
+        // rendering content into the bubble) and _resetStreamState() (on
+        // clear/new session).
         $('#ab-messages').append(
             '<div class="ab-row agent" id="row-' + _streamBubbleId + '">' +
                 '<div class="ab-avatar">' + _icons.bot + '</div>' +
@@ -321,9 +333,9 @@ window.ChatMessages = (function () {
 
         _streamBuffer += delta;
 
-        // KEY FIX: Only finalize the thinking container when there's actual
-        // visible text to display. Whitespace-only tokens (which LLMs often
-        // emit between reasoning and tool calls) must NOT trigger a finalize,
+        // Only finalize the thinking container when there's actual visible
+        // text to display. Whitespace-only tokens (which LLMs often emit
+        // between reasoning and tool calls) must NOT trigger a finalize,
         // otherwise each turn creates a separate "Thought Process" block.
         if (_currentThinkingRow && _streamBuffer.trim()) {
             _finalizeThinkingContainer(false);
@@ -369,7 +381,7 @@ window.ChatMessages = (function () {
                 }
             }
         }
-        // Always reset, even when no bubble was created (e.g. leading whitespace)
+        // Always reset both — content has been consumed (rendered or discarded)
         _streamBubbleId = null;
         _streamBuffer = '';
     }
@@ -639,9 +651,7 @@ window.ChatMessages = (function () {
         var $all = $('#ab-messages .ab-thinking-container.done, #ab-messages .ab-thinking-container.errored');
         if ($all.length <= 1) return;
 
-        // Walk backwards from the end to find the last consecutive group
-        // of thinking containers that have no visible content between them.
-        var groups = [];  // array of arrays of jQuery elements
+        var groups = [];
         var currentGroup = [];
 
         $all.each(function () {
@@ -652,8 +662,6 @@ window.ChatMessages = (function () {
                 return;
             }
 
-            // Check if $this immediately follows the last element in currentGroup
-            // with nothing but empty agent rows (ghost bubbles) in between.
             var $prev = currentGroup[currentGroup.length - 1];
             var $between = $prev.nextUntil($this);
             var onlyEmptyAgentRows = true;
@@ -661,15 +669,12 @@ window.ChatMessages = (function () {
             $between.each(function () {
                 var $el = $(this);
                 if ($el.hasClass('ab-row') && $el.hasClass('agent')) {
-                    // It's an agent row — check if it has any visible text
                     var text = $el.find('.ab-bubble').text().trim();
                     if (text) {
                         onlyEmptyAgentRows = false;
-                        return false; // break
+                        return false;
                     }
-                    // Empty agent row — ok to skip
                 } else {
-                    // Non-agent-row element between them — not adjacent
                     onlyEmptyAgentRows = false;
                     return false;
                 }
@@ -678,23 +683,19 @@ window.ChatMessages = (function () {
             if (onlyEmptyAgentRows) {
                 currentGroup.push($this);
             } else {
-                // Not adjacent — finalize current group and start a new one
                 if (currentGroup.length > 1) groups.push(currentGroup);
                 currentGroup = [$this];
             }
         });
 
-        // Don't forget the last group
         if (currentGroup.length > 1) groups.push(currentGroup);
 
-        // Merge each multi-container group into its first element
         groups.forEach(function (group) {
             var $first = group[0];
             var totalTools = 0;
             var hasReasoning = false;
             var hasError = false;
 
-            // Count steps from the first container
             $first.find('.ab-thinking-step').each(function () {
                 if ($(this).hasClass('ab-reasoning-block')) {
                     hasReasoning = true;
@@ -704,14 +705,11 @@ window.ChatMessages = (function () {
                 if ($(this).hasClass('ab-step-is-error')) hasError = true;
             });
 
-            // Merge subsequent containers into the first
             for (var i = 1; i < group.length; i++) {
                 var $container = group[i];
 
-                // Move all steps into the first container
                 $container.find('.ab-thinking-steps > *').appendTo($first.find('.ab-thinking-steps'));
 
-                // Count steps from this container
                 $container.find('.ab-thinking-step').each(function () {
                     if ($(this).hasClass('ab-reasoning-block')) {
                         hasReasoning = true;
@@ -721,7 +719,6 @@ window.ChatMessages = (function () {
                     if ($(this).hasClass('ab-step-is-error')) hasError = true;
                 });
 
-                // Remove empty agent rows between the previous container and this one
                 var $prevInGroup = group[i - 1];
                 $prevInGroup.nextUntil($container).each(function () {
                     var $el = $(this);
@@ -733,11 +730,9 @@ window.ChatMessages = (function () {
                     }
                 });
 
-                // Remove the now-empty container
                 $container.remove();
             }
 
-            // Recalculate the pill label with combined counts
             var label;
             if (hasError) {
                 label = 'Stopped after an error';
@@ -755,13 +750,10 @@ window.ChatMessages = (function () {
     function onDone(response, isError) {
         hideTyping();
 
-        // Finalize any current thinking container
         if (_currentThinkingRow) {
             _finalizeThinkingContainer(isError);
         }
 
-        // Safety merge: consolidate any adjacent finalized thinking containers
-        // that may have been created by intermediate whitespace-only tokens.
         _mergeAdjacentThinkingContainers();
 
         if (_streamBubbleId) {
@@ -780,12 +772,8 @@ window.ChatMessages = (function () {
                         _wrapTables(el);
                         setTimeout(function () { _mountAllArtifacts(); _addCodeCopyButtons(el); _scrollDown(); }, 0);
                     }
-                    // Generation is confirmed finished — this is the last bubble
-                    // of the turn, so the copy (and retry, if errored) action
-                    // belongs here now.
                     if (row) _addMsgActions(row.id, el.id, isError);
                 } else {
-                    // Empty stream bubble — remove it entirely
                     if (row) row.remove();
                 }
             }
@@ -802,7 +790,6 @@ window.ChatMessages = (function () {
         if (_currentThinkingRow) {
             _finalizeThinkingContainer(false);
         }
-        // Safety merge on stop as well
         _mergeAdjacentThinkingContainers();
 
         if (_streamBubbleId) {
@@ -814,11 +801,8 @@ window.ChatMessages = (function () {
                     el.innerHTML = _md(trimmed);
                     el.classList.remove('ab-streaming-cursor');
                     _addCodeCopyButtons(el);
-                    // Stopping early still ends the turn from the user's
-                    // perspective — whatever streamed so far is the final text.
                     if (row) _addMsgActions(row.id, el.id, false);
                 } else {
-                    // Empty bubble — remove it entirely
                     if (row) row.remove();
                 }
             }
@@ -974,13 +958,6 @@ window.ChatMessages = (function () {
 
     // ──────────────────────────────────────────────────────────────────
     // Historical thinking container renderer
-    //
-    // Accepts an ordered array of segments accumulated by loadHistory:
-    //   { type: 'reasoning', data: { text, elapsed_ms } }
-    //   { type: 'steps',    data: [ { tool, args, status, ... }, ... ] }
-    //
-    // Renders as ONE finalized collapsed container — mirroring the live
-    // _currentThinkingRow state machine.
     // ──────────────────────────────────────────────────────────────────
 
     /** Build a single finalized reasoning step row */
@@ -1060,7 +1037,6 @@ window.ChatMessages = (function () {
             }
         });
 
-        // Pill label — no elapsed times
         var label;
         if (hasError) {
             label = 'Stopped after an error';
@@ -1082,7 +1058,6 @@ window.ChatMessages = (function () {
         $('#ab-messages').append($thinking);
         _bindThinkingToggle($thinking);
 
-        // Measure each reasoning block for the "Show more" overflow hint
         requestAnimationFrame(function () {
             $thinking.find('.ab-reasoning-block').each(function () {
                 var $rt = $(this).find('.ab-reasoning-text');

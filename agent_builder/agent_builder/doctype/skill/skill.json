@@ -1,45 +1,147 @@
 {
  "actions": [],
  "allow_bulk_edit": 1,
- "allow_import": 1,
  "allow_rename": 1,
- "autoname": "field:name_",
- "creation": "2026-06-23 14:27:54.270793",
+ "creation": "2026-07-06 10:59:44.339120",
  "doctype": "DocType",
+ "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "name_",
   "description",
-  "content"
+  "is_enabled",
+  "disable_model_invocation",
+  "argument_hint",
+  "column_break_1",
+  "parent_skill",
+  "reference_slug",
+  "domain",
+  "section_break_1",
+  "content",
+  "section_break_2",
+  "attach",
+  "server_script",
+  "metadata"
  ],
  "fields": [
   {
-   "fieldname": "description",
-   "fieldtype": "Small Text",
-   "label": "Description"
+   "description": "The business domain or function this skill belongs to. Used for filtering and categorization.",
+   "fieldname": "domain",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Domain",
+   "options": "Finance\nHuman Resources\nLegal\nMarketing\nOperations\nSales\nCustomer Support\nData\nDesign\nEngineering\nProduct Management\nProductivity\nSmall Business\nOther"
   },
   {
+   "description": "A short, one-line summary of what this skill does.",
+   "fieldname": "description",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Description",
+   "length": 1000,
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "description": "Turn this on to make the skill available.",
+   "fieldname": "is_enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Enabled"
+  },
+  {
+   "default": "0",
+   "description": "Check this for command-only skills (slash menu) or reference/library skills. When checked, the skill won't appear in the system prompt it's only shown when explicitly called.",
+   "fieldname": "disable_model_invocation",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Disable Model Invocation"
+  },
+  {
+   "depends_on": "eval:doc.disable_model_invocation",
+   "description": "Placeholder text shown in the slash menu for command-type skills. Example: 'customer name' or 'order number'. Only appears when 'Disable Model Invocation' is checked.",
+   "fieldname": "argument_hint",
+   "fieldtype": "Data",
+   "label": "Argument Hint"
+  },
+  {
+   "description": "Link this skill to a parent skill. Use this for reference materials or sub-skills that belong to a main skill.",
+   "fieldname": "parent_skill",
+   "fieldtype": "Link",
+   "label": "Parent Skill",
+   "options": "Skill"
+  },
+  {
+   "description": "A short identifier used to build a unique name: '{parent-skill}-{this-slug}'. Prevents naming conflicts when multiple skills share the same parent. Required when Parent Skill is set.",
+   "fieldname": "reference_slug",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Reference Slug",
+   "mandatory_depends_on": "eval:doc.parent_skill"
+  },
+  {
+   "description": "The main body of the skill \u2014 instructions, guidance, or reference material. This is what the AI sees when the skill is loaded. Leave empty if this skill only uses an attachment or server script.",
    "fieldname": "content",
-   "fieldtype": "Text Editor",
+   "fieldtype": "Markdown Editor",
    "label": "Content"
   },
   {
+   "description": "Upload a template, reference document, or asset file. Stored privately regardless of upload settings.",
+   "fieldname": "attach",
+   "fieldtype": "Attach",
+   "label": "Attach"
+  },
+  {
+   "description": "Link a Server Script to make this skill executable. The script handles the actual logic and permissions.",
+   "fieldname": "server_script",
+   "fieldtype": "Link",
+   "label": "Server Script",
+   "options": "Server Script"
+  },
+  {
+   "description": "Extra information in key-value format (e.g., category, author, related DocTypes). Must be valid JSON.",
+   "fieldname": "metadata",
+   "fieldtype": "JSON",
+   "label": "Metadata"
+  },
+  {
+   "description": "Internal system name (Parent Skill).",
    "fieldname": "name_",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Name",
+   "no_copy": 1,
+   "read_only": 1,
    "unique": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_1",
+   "fieldtype": "Section Break"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_2",
+   "fieldtype": "Section Break",
+   "label": "Bundled Resources (optional)"
   }
  ],
  "grid_page_length": 50,
- "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-02 10:20:20.504572",
+ "modified": "2026-07-06 14:03:43.889039",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Skill",
- "naming_rule": "By fieldname",
+ "naming_rule": "By script",
  "owner": "Administrator",
  "permissions": [
+  {
+   "read": 1,
+   "role": "All"
+  },
   {
    "create": 1,
    "delete": 1,
@@ -55,7 +157,8 @@
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
- "sort_field": "creation",
+ "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "track_changes": 1
 }

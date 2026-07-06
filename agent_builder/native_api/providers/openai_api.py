@@ -92,8 +92,8 @@ class OpenAIProvider:
         # reasoning-capable models (o1/o3, DeepSeek-R1, etc.) — harmless
         # no-op for models that don't support it:
         # kwargs["extra_body"] = {"reasoning": {"effort": "low"}, "reasoning_budget": 1024}
-        # kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
-        
+        kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": True}}
+        # kwargs["extra_body"] = {"thinking": {"type": "enabled"}} 
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
