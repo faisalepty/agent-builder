@@ -357,7 +357,7 @@ window.ChatMessages = (function () {
         if (!_streamBubbleId || _stopped) return;
         var el = document.getElementById(_streamBubbleId);
         if (el) {
-            el.innerHTML = _md(_streamBuffer);
+            el.innerHTML = _md(_streamBuffer) + '<span class="ab-cursor ab-cursor--ghost"></span>';
             el.classList.add('ab-streaming-cursor');
             _wrapTables(el);
             _scrollDown(true);
@@ -370,6 +370,8 @@ window.ChatMessages = (function () {
             if (el) {
                 var trimmed = (_streamBuffer || '').trim();
                 if (trimmed) {
+                    var cursor = el.querySelector('.ab-cursor');
+                    if (cursor) cursor.remove();
                     el.innerHTML = _md(trimmed);
                     el.classList.remove('ab-streaming-cursor');
                     _wrapTables(el);
@@ -402,7 +404,17 @@ window.ChatMessages = (function () {
                 '<div class="ab-thinking-steps" style="display:none;"></div>' +
             '</div>'
         );
-        _streamBubbleId ? $('#row-' + _streamBubbleId).before($thinking) : $('#ab-messages').append($thinking);
+        if (_streamBubbleId) {
+            var $row = $('#row-' + _streamBubbleId);
+            var $bubbleWrap = $row.find('.ab-bubble-wrap');
+            if ($bubbleWrap.length) {
+                $bubbleWrap.prepend($thinking);
+            } else {
+                $row.before($thinking);
+            }
+        } else {
+            $('#ab-messages').append($thinking);
+        }
         _bindThinkingToggle($thinking);
         return _currentThinkingRow;
     }

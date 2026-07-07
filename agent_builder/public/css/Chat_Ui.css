@@ -1,5 +1,10 @@
 /**
- * Omnis Chat UI v4.3 — SOTA Agent Interface
+ * Omnis Chat UI v4.5 — SOTA Agent Interface
+ * v4.5: Premium light-mode code block aesthetics, fully operational status 
+ * orchestration, and pixel-perfect twin-layer border matching.
+ * v4.4: twin-layer input highlight (transparent textarea + mirror <div>
+ * with .ab-skill-token spans), #ab-input-wrap container for the overlay
+ * pair, slash-command autocomplete triggers on / anywhere in text.
  * v4.3: bigger condensed/expanded window, redesigned launcher (60px,
  * in-place icon crossfade, one-time entrance pop, .ab-fully-closed
  * hardening), a true viewport-relative fullscreen artifact overlay +
@@ -7,11 +12,6 @@
  * no longer renders inside #ab-window's transformed — and therefore
  * size-constrained — containing block), and a fully reworked per-tool
  * agent-actions list with a click-to-expand detail panel.
- * v4.2 (prior): Unified input, seamless agent text, dark-mode code blocks,
- * spring animations, Frappe variable compliance, "+" file/skill menu,
- * "/" slash-command skill autocomplete, a redesigned suggestions grid,
- * error-state styling, a shimmering thinking indicator, and icon-only
- * message actions.
  */
 
 /* ── Custom Properties ── */
@@ -20,8 +20,8 @@
     --ab-shadow-md: 0 8px 24px rgba(0,0,0,0.08);
     --ab-shadow-lg: 0 16px 48px rgba(0,0,0,0.12);
     --ab-spring: cubic-bezier(0.175, 0.885, 0.32, 1.1);
-    --ab-code-bg: #1e1e2e;
-    --ab-code-text: #cdd6f4;
+    --ab-code-bg: #f6f8fa;
+    --ab-code-text: #1f2328;
 }
 
 /* ── Launcher ─────────────────────────────────────────────────── */
@@ -43,11 +43,6 @@
     transition: transform 0.25s var(--ab-spring), box-shadow 0.2s;
     border: none;
     outline: none;
-    /* One-time pop on mount. No fill-mode: the animation's own last frame
-       (scale(1)/opacity:1) already matches the un-animated resting state,
-       so once it ends control reverts cleanly to :hover below with no
-       jump and no lingering higher-priority transform from the animation
-       layer fighting the hover transform. */
     animation: ab-launcher-pop 0.5s var(--ab-spring);
 }
 #ab-launcher:hover {
@@ -63,8 +58,6 @@
     #ab-launcher { animation: none; }
 }
 
-/* Single chat-bubble icon — always visible, no crossfade.
-   Dragging the launcher repositions it; clicking opens/closes the window. */
 #ab-launcher .ab-launcher-icon {
     position: absolute;
     inset: 0;
@@ -74,7 +67,6 @@
 }
 #ab-launcher .ab-launcher-icon-chat svg { width: 26px; height: 26px; }
 #ab-launcher:active { cursor: grabbing; }
-/* Hide launcher when the widget is open — there's a close button in the header */
 #ab-launcher.ab-launcher-hidden {
     opacity: 0;
     pointer-events: none;
@@ -134,10 +126,6 @@
     border-radius: 20px;
     transition: all 0.3s var(--ab-spring);
 }
-/* In the wide expanded window, rows previously stretched full-width with
-   only the base 24px gap between them — at 95vw that reads as messages
-   being "far apart". Constrain to a comfortable reading column and tighten
-   the vertical rhythm instead. */
 #ab-window.ab-expanded #ab-messages {
     align-items: center;
     gap: 18px;
@@ -146,14 +134,6 @@
     max-width: 760px;
     width: 100%;
 }
-/* Extra-robust closed state for #ab-window itself, on top of (not instead
-   of) the actual root-cause fixes for the leaked-overlay bug, which were
-   the iframe sandbox change in chat_messages.js and collapseAllFullscreen-
-   Artifacts() being called on close — opacity:0 + pointer-events:none
-   already keep #ab-window itself from intercepting clicks once closed,
-   but visibility:hidden removes it from hit-testing and the accessibility
-   tree entirely once the close transition finishes. Removed immediately
-   on next open so there's no flash-of-hidden-content. */
 #ab-window.ab-fully-closed { visibility: hidden; }
 
 /* ── Header ───────────────────────────────────────────────────── */
@@ -321,7 +301,6 @@
 .ab-row { display: flex; gap: 16px; animation: ab-fade-up 0.3s ease; position: relative; width: 100%; }
 .ab-row.no-anim { animation: none; }
 
-/* User Message: Clean rounded bubble aligned right */
 .ab-row.user { justify-content: flex-end; }
 .ab-row.user .ab-bubble-wrap { max-width: 80%; display: flex; flex-direction: column; align-items: flex-end; }
 .ab-row.user .ab-bubble {
@@ -335,7 +314,7 @@
 }
 .ab-row.user .ab-avatar { display: none; }
 
-/* Attachment chips rendered above a sent user message */
+.ab-msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; margin-bottom: 6px; max-width: 80%; }
 .ab-msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; margin-bottom: 6px; max-width: 80%; }
 .ab-msg-attachment {
     display: flex; align-items: center; gap: 6px; background: var(--control-bg);
@@ -347,10 +326,7 @@
 .ab-msg-attachment svg { width: 13px; height: 13px; flex-shrink: 0; }
 .ab-msg-attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Agent Message: No bubble, full width document style */
 .ab-row.agent { align-items: flex-start; justify-content: flex-start; }
-/* Avatar icon removed for a cleaner timeline — assistant rows no longer
-   reserve a left icon column, agent content just starts at the row edge. */
 .ab-row.agent .ab-avatar { display: none; }
 .ab-row.agent .ab-bubble-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .ab-row.agent .ab-bubble {
@@ -367,7 +343,6 @@
     border-radius: 12px; padding: 12px 14px; white-space: pre-wrap;
 }
 
-/* Markdown Styling inside Agent */
 .ab-bubble p { margin: 0 0 12px; }
 .ab-bubble p:last-child { margin-bottom: 0; }
 .ab-bubble ul, .ab-bubble ol { margin: 0 0 16px 24px; padding: 0; }
@@ -379,35 +354,24 @@
     border-radius: 4px; padding: 2px 6px; font-family: var(--font-mono); font-size: 12px;
 }
 
-/* Premium Dark Code Blocks */
 .ab-bubble pre {
     background: var(--ab-code-bg); color: var(--ab-code-text);
     border-radius: 12px; padding: 16px; overflow-x: auto;
-    margin: 16px 0; position: relative; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1);
+    margin: 16px 0; position: relative; box-shadow: inset 0 0 0 1px var(--border-color);
 }
 .ab-bubble pre code { background: none; color: inherit; padding: 0; font-size: 13px; line-height: 1.5; }
 .ab-pre-copy {
     position: absolute; top: 8px; right: 8px;
-    background: rgba(255,255,255,0.1); color: #fff;
-    border: none; border-radius: 6px; padding: 6px 10px;
+    background: var(--control-bg); color: var(--text-color);
+    border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 10px;
     font-size: 11px; cursor: pointer; opacity: 0; transition: all 0.2s;
     display: flex; align-items: center; gap: 6px; font-family: var(--font-stack);
 }
 .ab-bubble pre:hover .ab-pre-copy { opacity: 1; }
-.ab-pre-copy:hover { background: rgba(255,255,255,0.2); }
+.ab-pre-copy:hover { background: var(--bg-color); }
 .ab-pre-copy svg { width: 12px; height: 12px; }
 
-/* ── Responsive Table System ──────────────────────────────────
-   The wrapper is the scroll container. max-width:100% + overflow-x:auto
-   means the table can be as wide as it needs (min-width drives this) and
-   the wrapper handles the scrollbar without squeezing any column.
-   display:block on the wrapper is essential — inside a flex bubble-wrap
-   a plain block div can still shrink below its child's min-width without
-   it. The table itself must never use width:100% when it has a min-width,
-   because that causes columns to be crammed into the parent's width even
-   when the wrapper is narrower. width:max-content makes the table take
-   exactly as much space as its content needs (subject to min-width floor).
-   ──────────────────────────────────────────────────────────── */
+/* ── Responsive Table System ────────────────────────────────── */
 .ab-table-wrapper {
     display: block;
     width: 100%;
@@ -417,7 +381,6 @@
     -webkit-overflow-scrolling: touch;
     border-radius: 8px;
     border: 1px solid var(--border-color);
-    /* Contain the table so it doesn't bleed outside the message column */
     box-sizing: border-box;
 }
 .ab-bubble table {
@@ -432,16 +395,14 @@
     padding: 9px 14px;
     text-align: left;
     border-bottom: 1px solid var(--border-color);
-    white-space: nowrap;   /* Never wrap cell content — scroll instead */
+    white-space: nowrap;
 }
 .ab-bubble th { background: var(--control-bg); font-weight: 600; }
 .ab-bubble tr:last-child td { border-bottom: none; }
-/* In expanded/fullscreen mode, let long cells wrap naturally again */
 #ab-window.ab-expanded .ab-bubble th,
 #ab-window.ab-expanded .ab-bubble td { white-space: normal; }
 
-/* Message Actions — icon-only, consistent sizing so the row reads as one
-   cohesive toolbar instead of mismatched icon+label buttons */
+/* Message Actions */
 .ab-msg-actions { display: flex; align-items: center; gap: 4px; margin-top: 6px; opacity: 0; transition: opacity 0.2s; }
 .ab-row:hover .ab-msg-actions { opacity: 1; }
 .ab-msg-action-btn {
@@ -453,50 +414,30 @@
 .ab-msg-action-btn svg { width: 14px; height: 14px; }
 .ab-resend-btn:hover { color: #ef4444; background: color-mix(in srgb, #ef4444 10%, var(--control-bg)); }
 
-/* Streaming Cursor — attached as a ::after on whichever element ends up
-   last inside the bubble (paragraph, list item, code line, etc.) rather
-   than a literal trailing <span>. The old approach concatenated the cursor
-   span after the full re-parsed markdown string; whenever the stream
-   buffer happened to end right after a list bullet (before any item text),
-   marked.js would close the </ul> and the span landed as an orphan sibling
-   on its own line below the list — rendering as a chunky stray block
-   instead of a subtle inline blink. Targeting :last-child::after instead
-   guarantees it's always genuinely inline with the actual last content,
-   regardless of markdown structure. */
-.ab-bubble.ab-streaming-cursor > *:last-child::after,
-.ab-bubble.ab-streaming-cursor li:last-child > *:last-child::after {
-    content: '';
+/* Streaming Cursor */
+.ab-bubble.ab-streaming-cursor {
+    display: block;
+}
+.ab-bubble.ab-streaming-cursor .ab-cursor,
+.ab-cursor--ghost {
     display: inline-block;
-    width: 6px; height: 14px;
+    width: 6px;
+    height: 14px;
     background: var(--primary);
     margin-left: 3px;
     vertical-align: text-bottom;
     animation: blink 1s step-start infinite;
     border-radius: 2px;
+    flex-shrink: 0;
 }
-/* Fallback for an empty bubble (no children parsed yet) — cursor on the
-   bubble itself rather than waiting on a child element to exist */
-.ab-bubble.ab-streaming-cursor:empty::after {
-    content: '';
-    display: inline-block;
-    width: 6px; height: 14px;
-    background: var(--primary);
-    vertical-align: text-bottom;
-    animation: blink 1s step-start infinite;
-    border-radius: 2px;
+.ab-cursor--ghost {
+    background: var(--text-muted);
+    opacity: 0.6;
+    margin-left: 4px;
+    vertical-align: middle;
 }
-/* Reasoning block keeps its own separate ghost cursor (defined below) —
-   unrelated to the main-answer streaming cursor above. */
-.ab-cursor--ghost { display: inline-block; width: 6px; height: 14px; background: var(--text-muted); opacity: 0.6; margin-left: 4px; vertical-align: middle; animation: blink 1s step-start infinite; border-radius: 2px; }
 
-/* ── Reasoning (chain-of-thought) step ───────────────────────────────
-   Renders with the exact same icon-col / connector / step-main skeleton
-   as a tool step (.ab-thinking-step), just with a clock glyph and its own
-   scrollable text body instead of args/output — so reasoning is one more
-   row in the same vertical timeline, not a visually separate block. Muted
-   + italic to read as "internal" content, distinct from the final answer
-   bubble. Capped height with its own scroll once the trace gets long, so
-   a verbose reasoning model doesn't blow out the whole accordion. */
+/* ── Reasoning (chain-of-thought) step ─────────────────────────── */
 .ab-reasoning-block .ab-step-icon svg { width: 9px; height: 9px; }
 .ab-reasoning-wrap { position: relative; }
 .ab-reasoning-text {
@@ -506,25 +447,16 @@
     max-height: 110px; overflow-y: auto; overflow-x: hidden;
     white-space: pre-wrap; word-break: break-word;
     cursor: pointer;
-    /* fade the top edge so older reasoning lines scroll out softly
-       instead of being hard-clipped */
     mask-image: linear-gradient(to bottom, transparent 0, black 14px);
     -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 14px);
 }
 .ab-reasoning-block.live .ab-reasoning-text { opacity: 1; }
-.ab-reasoning-block:not(.live) .ab-reasoning-wrap { display: none; } /* collapsed once finalized, expandable via .ab-step-expanded same as tool steps */
+.ab-reasoning-block:not(.live) .ab-reasoning-wrap { display: none; }
 .ab-thinking-step.ab-step-expanded .ab-reasoning-wrap { display: block; }
-
-/* Clicking the reasoning text itself removes the clamp so the whole
-   trace reads top-to-bottom instead of scrolling in a small box. */
 .ab-reasoning-block.ab-reasoning-expanded .ab-reasoning-text {
     max-height: none; overflow: visible;
     mask-image: none; -webkit-mask-image: none;
 }
-
-/* Hover-only "Show more" affordance — only appears once the text
-   actually overflows its clamp (JS toggles .truncated after measuring),
-   and disappears again once expanded. */
 .ab-reasoning-hint {
     display: none;
     position: absolute; right: 0; bottom: 0;
@@ -537,27 +469,21 @@
 .ab-reasoning-block.truncated:not(.ab-reasoning-expanded) .ab-reasoning-hint { display: inline-block; }
 .ab-reasoning-block.truncated:not(.ab-reasoning-expanded):hover .ab-reasoning-hint { opacity: 1; }
 
-/* ── Thinking Pill + Action Steps ───────────────────────────────────
-   UX design:
-   · While waiting (no tools yet): animated 3-dot pill (showTyping row)
-   · While tools run: live pill with dots + "Working…" label + chevron,
-     steps list hidden by default. User clicks pill to expand/collapse.
-     Steps are in a scrollable container (max-height) — no long lists.
-   · After done: pill swaps to static summary "3 actions · 1.2s",
-     steps stay collapsed. User can still expand to review.
-   · A turn can contain several of these containers in sequence — one
-     per reasoning/tool episode, split apart by any narration text that
-     streamed in between (see _finalizeThinkingContainer in JS) — so a
-     single agent turn reads as: text → group → text → group → text.
-   · Per-step time is removed from the condensed row — only shown in
-     the detail panel and in the final pill summary.
-   ─────────────────────────────────────────────────────────────── */
+/* ── Thinking Pill + Action Steps ─────────────────────────────── */
+.ab-thinking-container {
+    margin: 2px 0 8px;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+#ab-window.ab-expanded .ab-thinking-container {
+    width: 100%;
+    max-width: 760px;
+    margin-left: 0;
+    margin-right: 0;
+    box-sizing: border-box;
+}
 
-.ab-thinking-container { margin: 2px 0 8px; width: 100%; }
-
-/* ── Shared row styles (live + finalized) — flat, no pill/bubble chrome.
-   Just an icon-less text row: label + chevron. Matches the reference
-   thought-process UI (plain text rows, not buttons-in-boxes). ── */
 .ab-thinking-pill {
     display: inline-flex; align-items: center; gap: 6px;
     padding: 3px 0; border-radius: 0;
@@ -571,28 +497,18 @@
 .ab-thinking-pill.done    { color: var(--text-muted); }
 .ab-thinking-pill.errored { color: #ef4444; }
 
-/* Chevron — points right when collapsed, down when expanded */
 .ab-chevron { display: inline-flex; align-items: center; transform: rotate(-90deg); transition: transform 0.2s; opacity: 0.5; }
 .ab-chevron svg { width: 11px; height: 11px; }
 .ab-thinking-pill.expanded .ab-chevron,
 .ab-thinking-live.expanded .ab-chevron { transform: rotate(0deg); opacity: 0.9; }
 
-/* Status icon in finalized pill */
 .ab-thinking-status-icon { display: inline-flex; align-items: center; }
 .ab-thinking-status-icon svg { width: 12px; height: 12px; }
 .ab-thinking-pill.done    .ab-thinking-status-icon svg { color: var(--text-muted); }
 .ab-thinking-pill.errored .ab-thinking-status-icon svg { color: #ef4444; }
 
-/* ── Live pill (while tools are running) ── */
-.ab-thinking-live {
-    /* inherits all .ab-thinking-pill styles */
-}
 .ab-thinking-live-label { font-size: 12.5px; }
 
-/* ── Shimmer text — the "shine sweeping across the text" loading state,
-   used anywhere something is actively in progress (the standalone
-   "Thinking" row, the live accordion label, a running step name)
-   instead of a dot loader. ── */
 .ab-shimmer-text {
     background-image: linear-gradient(
         90deg,
@@ -606,9 +522,6 @@
     animation: ab-shimmer 1.6s ease-in-out infinite;
 }
 
-/* ── "Request is in flight" row — shown after send, before the agent has
-   actually started reasoning or streaming anything. Deliberately just a
-   quiet pulse, not a "Thinking" label, since nothing has happened yet. ── */
 .ab-typing-indicator {
     display: inline-flex; align-items: center; gap: 4px;
     padding: 10px 0;
@@ -628,31 +541,25 @@
 
 @keyframes ab-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
-/* ── Step list ─────────────────────────────────────────────────────
-   Indented under the pill. Max 4 rows visible (~26px each = 104px),
-   then scrolls. Uses proper icon-col + flex connector so the vertical
-   line sits between icons and stretches when detail expands.
-   ─────────────────────────────────────────────────────────────── */
+/* ── Step list ───────────────────────────────────────────────── */
 .ab-thinking-steps {
     display: flex; flex-direction: column;
-    margin: 4px 0 0 8px;   /* indent from left so steps sit inside the pill */
+    margin: 4px 0 0 8px;
     padding: 2px 0;
-    max-height: calc(4 * 30px); /* ~4 rows */
+    max-height: calc(4 * 30px);
     overflow-y: auto;
     overflow-x: hidden;
 }
 
-/* ── Individual step row ── */
 .ab-thinking-step {
     display: flex;
-    align-items: stretch;   /* stretch = icon-col fills full row height inc. detail */
+    align-items: stretch;
     font-size: 12px; color: var(--text-muted);
     animation: ab-fade-up 0.12s ease;
     cursor: pointer;
 }
 .ab-thinking-step.ab-step-is-error { color: #ef4444; }
 
-/* Icon column: dot on top, connector line fills rest of row height */
 .ab-step-icon-col {
     display: flex; flex-direction: column; align-items: center;
     flex-shrink: 0; width: 26px;
@@ -663,7 +570,7 @@
     border-radius: 50%;
     border: 1.5px solid var(--border-color);
     background: var(--bg-color); color: var(--text-muted);
-    margin-top: 6px;                /* aligns dot with first line of text */
+    margin-top: 6px;
     position: relative; z-index: 1;
     transition: border-color 0.2s, color 0.2s;
 }
@@ -677,10 +584,6 @@
 .ab-step-icon.errored { border-color: #ef4444; color: #ef4444; }
 @keyframes ab-step-pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
 
-/* Connector: 1px line below the dot, fills ALL remaining height of the row.
-   This is the key: flex:1 inside a column that stretches to the row height
-   means the line always reaches the top of the next icon, even when the
-   detail panel below is open and tall. */
 .ab-step-connector {
     width: 1.5px;
     flex: 1;
@@ -688,10 +591,8 @@
     margin-top: 3px;
     min-height: 6px;
 }
-/* No trailing line after the last step */
 .ab-thinking-step:last-child .ab-step-connector { visibility: hidden; }
 
-/* Step content column */
 .ab-step-main {
     flex: 1; min-width: 0;
     padding: 5px 6px 10px 8px;
@@ -699,7 +600,6 @@
 }
 .ab-thinking-step:last-child .ab-step-main { padding-bottom: 5px; }
 
-/* Headline: icon name only — no time, no chevron crowding the right */
 .ab-step-headline {
     display: flex; align-items: center; gap: 5px;
     min-height: 18px;
@@ -711,9 +611,8 @@
 .ab-step-name.running { font-style: italic; }
 .ab-step-name.done    { font-style: normal; }
 .ab-step-name.errored { color: #ef4444; font-style: normal; }
-.ab-step-time { display: none; } /* hidden — only in detail footer */
+.ab-step-time { display: none; }
 
-/* Chevron: hidden by default, shows on hover, rotates on expand */
 .ab-step-chevron {
     display: inline-flex; align-items: center; flex-shrink: 0;
     transform: rotate(-90deg);
@@ -724,10 +623,6 @@
 .ab-thinking-step:hover .ab-step-chevron  { opacity: 0.45; }
 .ab-thinking-step.ab-step-expanded .ab-step-chevron { transform: rotate(0deg); opacity: 0.8; }
 
-/* ── Step detail panel ──────────────────────────────────────────
-   Slides in below the headline. Tool chip + optional args block
-   + small status footer. No card borders — just subtle bg.
-   ─────────────────────────────────────────────────────────────── */
 .ab-step-detail {
     display: none;
     flex-direction: column; gap: 5px;
@@ -735,7 +630,6 @@
 }
 .ab-thinking-step.ab-step-expanded .ab-step-detail { display: flex; }
 
-/* Tool chip — e.g. "frappe_get_list" */
 .ab-step-tool-chip {
     display: inline-flex; align-items: center;
     background: var(--control-bg); border: 1px solid var(--border-color);
@@ -743,7 +637,6 @@
     font-size: 10.5px; font-family: var(--font-mono); color: var(--text-muted);
     align-self: flex-start;
 }
-/* Args block */
 .ab-step-detail-block {
     font-family: var(--font-mono); font-size: 10.5px; line-height: 1.5;
     white-space: pre-wrap; word-break: break-all;
@@ -752,7 +645,6 @@
     max-height: 130px; overflow-y: auto; border: none;
 }
 .ab-step-detail-block.is-error { color: #ef4444; }
-/* Footer */
 .ab-step-detail-footer {
     display: flex; align-items: center; gap: 8px;
     font-size: 10.5px; color: var(--text-muted); opacity: 0.65;
@@ -772,15 +664,6 @@
 .ab-artifact-frame { width: 100%; min-height: 100px; background: #fff; }
 .ab-artifact-iframe { width: 100%; border: none; display: block; }
 
-/* Portaled to a direct child of <body> by chat_messages.js when entering
-   fullscreen (see _expandArtifactEl), specifically so it escapes
-   #ab-window's transform — an element with any transform other than
-   "none" becomes a containing block for its position:fixed descendants,
-   which previously confined "fullscreen" to the small chat window's own
-   box. As a direct <body> child this is now relative to the real
-   viewport, and behaves identically whether the window itself is
-   condensed or expanded. z-index sits above both #ab-window (9998) and
-   #ab-launcher (9999). */
 .ab-artifact.ab-artifact-full {
     position: fixed;
     inset: 16px;
@@ -805,8 +688,6 @@
     backdrop-filter: blur(2px);
     animation: ab-fade-in 0.2s ease;
 }
-/* Prevents the desk page behind the backdrop from scrolling while a
-   fullscreen artifact (rendered outside #ab-window) is open. */
 body.ab-artifact-fullscreen-active { overflow: hidden; }
 
 @keyframes ab-artifact-pop { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
@@ -824,13 +705,78 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
     border-color: var(--primary); background: var(--bg-color);
     box-shadow: 0 4px 16px color-mix(in srgb, var(--primary) 10%, transparent);
 }
-#ab-input {
-    width: 100%; background: transparent; border: none;
-    padding: 16px 64px 16px 50px; font-size: 14px; color: var(--text-color);
-    font-family: var(--font-stack); resize: none; outline: none;
-    max-height: 150px; line-height: 1.5; box-sizing: border-box;
+
+/* ── Twin-layer input highlight ─────────────────────────────────
+   #ab-input-wrap is a positioned container holding two stacked
+   elements: the highlight div (bottom) and the textarea (top).
+   ─────────────────────────────────────────────────────────────── */
+#ab-input-wrap {
+    position: relative;
+    flex: 1;
+    min-height: 0;
 }
-#ab-input::placeholder { color: var(--text-muted); }
+
+#ab-input-highlight {
+    position: absolute;
+    inset: 0;
+    padding: 16px 64px 16px 50px;
+    font-family: var(--font-stack);
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    overflow: hidden;
+    pointer-events: none;
+    color: var(--text-color);
+    z-index: 1;
+    border: 1px solid transparent;
+    box-sizing: border-box;
+}
+
+#ab-input {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    min-height: 50px;
+    background: transparent;
+    border: 1px solid transparent;
+    padding: 16px 64px 16px 50px;
+    font-family: var(--font-stack);
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text-color);
+    resize: none;
+    outline: none;
+    max-height: 150px;
+    box-sizing: border-box;
+    text-shadow: 0 0 0 0 transparent;
+    caret-color: var(--text-color);
+}
+
+/* When the highlight layer is active, make textarea text fully
+   transparent so only the styled version shows through. */
+#ab-input.ab-has-highlight {
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    caret-color: var(--text-color);
+}
+
+/* Skill token styling in the highlight layer */
+.ab-skill-token {
+    color: var(--primary);
+    font-weight: 500;
+    background: color-mix(in srgb, var(--primary) 10%, transparent);
+    border-radius: 4px;
+    padding: 0 2px;
+    white-space: nowrap;
+}
+
+#ab-input::placeholder { color: var(--text-muted); -webkit-text-fill-color: var(--text-muted); }
+#ab-input.ab-has-highlight::placeholder {
+    color: var(--text-muted);
+    -webkit-text-fill-color: var(--text-muted);
+}
 
 /* Staged file attachments, shown above the textarea */
 #ab-attachments-row { display: none; flex-wrap: wrap; gap: 6px; padding: 10px 16px 0; }
@@ -850,7 +796,7 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 #ab-file-input { display: none; }
 
 /* Leading "+" button inside the input box */
-#ab-plus-btn { position: absolute; left: 10px; bottom: 10px; }
+#ab-plus-btn { position: absolute; left: 10px; bottom: 10px; z-index: 5; }
 .ab-input-icon-btn {
     width: 32px; height: 32px; border-radius: 10px; border: none;
     background: transparent; color: var(--text-muted); display: flex;
@@ -862,7 +808,7 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 .ab-input-icon-btn.is-open svg { transform: rotate(45deg); }
 
 /* Absolute positioned actions inside the input */
-#ab-input-actions { position: absolute; right: 10px; bottom: 10px; display: flex; align-items: center; gap: 8px; }
+#ab-input-actions { position: absolute; right: 10px; bottom: 10px; display: flex; align-items: center; gap: 8px; z-index: 5; }
 #ab-char-count { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); padding-right: 4px; transition: color 0.2s; }
 #ab-char-count.near-limit { color: #f59e0b; }
 #ab-char-count.at-limit { color: #ef4444; }
@@ -908,8 +854,6 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 .ab-flyout-caret { margin-left: auto; color: var(--text-muted); display: flex; }
 .ab-flyout-caret svg { width: 14px; height: 14px; }
 
-/* Side flyout: portaled to <body> by JS so it escapes overflow:hidden on
-   #ab-window. Positioned via JS with fixed coordinates. */
 .ab-flyout {
     position: fixed; width: 240px;
     background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 16px;
@@ -953,8 +897,6 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 .ab-skill-item-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ab-skill-empty { padding: 16px 10px; text-align: center; font-size: 12px; color: var(--text-muted); }
 
-/* Shared skill-description tooltip — portaled to <body> with fixed positioning
-   so it appears to the right of the hovered skill item without clipping. */
 #ab-skill-tooltip {
     position: fixed; max-width: 220px; background: var(--text-color); color: var(--bg-color);
     font-size: 11.5px; line-height: 1.4; padding: 8px 10px; border-radius: 10px;

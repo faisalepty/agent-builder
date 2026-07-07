@@ -1,16 +1,15 @@
 /**
- * Chat_Ui.js v4.3 — SOTA Omnis Orchestrator
- * v4.3: launcher redesigned (chat-bubble glyph, in-place open/close
- * crossfade instead of fading the whole button away, a one-time entrance
- * pop, 60px target size), bigger condensed/expanded window dimensions,
- * two new per-tool icons (search/terminal) for the redesigned agent-
- * actions list, and close() now collapses any fullscreen artifact plus a
- * visibility:hidden fallback once the close transition finishes.
- * v4.2: friendlier/more relatable icon set, Omnis branding, redesigned
- * message-action row, working slash-flyout persistence, a bigger (but not
- * fullscreen) expand mode, and robust error-state handling end to end.
+ * Chat_Ui.js v4.5 — SOTA Omnis Orchestrator (Fully Orchestrated)
+ * v4.5: Clean light-mode code block aesthetics, fully operational status 
+ * indicator system, and synchronized border properties for twin-layer alignment.
+ * v4.4: twin-layer input highlight for skill tokens (transparent textarea
+ * over a mirrored <div> that wraps /known-skill in colored spans — no
+ * contenteditable, no input paradigm change). Slash-command autocomplete
+ * now triggers on / anywhere in the text, not just at position 0, and
+ * replaces the /query fragment at cursor position instead of wiping the
+ * whole input. Skill filter uses startsWith for tighter autocomplete.
  */
-$(document).ready(function () {
+ $(document).ready(function () {
 
     if (!window.marked) {
         const s = document.createElement('script');
@@ -20,7 +19,6 @@ $(document).ready(function () {
 
     // ── Modern Lucide-style Icons (stroke-width: 1.5) ──────────
     const ICONS = {
-        // Welcome screen / assistant identity icon: clean "message with wave" — friendly, minimal, no star
         sparkle:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 10h.01M12 10h.01M16 10h.01" stroke-width="2.5" stroke-linecap="round"/></svg>`,
         send:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>`,
         close:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
@@ -30,7 +28,6 @@ $(document).ready(function () {
         spin:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>`,
         copy:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>`,
         retry:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>`,
-        // Header avatar: clean rounded chat orb with a subtle pulse dot — minimal, modern, no robot parts
         bot:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2C6.48 2 2 6.03 2 11c0 2.87 1.37 5.43 3.54 7.17L4 22l4.26-1.42A10.7 10.7 0 0 0 12 21c5.52 0 10-4.03 10-9S17.52 2 12 2z"/><circle cx="8.5" cy="11" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="11" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.5" cy="11" r="1.2" fill="currentColor" stroke="none"/></svg>`,
         expand:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>`,
         compress: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="21" y2="3"/><line x1="3" y1="21" x2="14" y2="10"/></svg>`,
@@ -49,10 +46,9 @@ $(document).ready(function () {
         alertTriangle:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
         search:       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
         terminal:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="6 9 10 12 6 15"/><line x1="12" y1="15" x2="16" y2="15"/></svg>`,
-        // Launcher: clean rounded-corner chat bubble, no decorations inside — instantly reads as "chat"
         launcherChat: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 14.5a2.5 2.5 0 0 1-2.5 2.5H6.5L2 21.5V5a2.5 2.5 0 0 1 2.5-2.5h14A2.5 2.5 0 0 1 21 5z"/><circle cx="8" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="10" r="1" fill="currentColor" stroke="none"/></svg>`,
     };
-    ICONS.plus = ICONS.newchat; // same glyph, reused intentionally for the input's "+" button
+    ICONS.plus = ICONS.newchat;
 
     const SUGGESTIONS = [
         { label: 'List records',    icon: 'listIcon',   text: 'Show me the latest 10 open Sales Orders' },
@@ -61,7 +57,6 @@ $(document).ready(function () {
         { label: 'Run a report',    icon: 'barChart',    text: 'What are the top 5 items sold this month?' },
     ];
 
-    // Shared HTML-escaping helper (falls back to frappe's own utility when present)
     function escapeHtml(txt) {
         if (txt === undefined || txt === null) return '';
         if (window.frappe && frappe.utils && frappe.utils.escape_html) return frappe.utils.escape_html(String(txt));
@@ -113,7 +108,10 @@ $(document).ready(function () {
                         <div id="ab-input-box">
                             <div id="ab-attachments-row"></div>
 
-                            <textarea id="ab-input" rows="1" placeholder="Ask Omnis anything…"></textarea>
+                            <div id="ab-input-wrap">
+                                <div id="ab-input-highlight" aria-hidden="true"></div>
+                                <textarea id="ab-input" rows="1" placeholder="Ask Omnis anything…"></textarea>
+                            </div>
 
                             <button id="ab-plus-btn" class="ab-input-icon-btn" title="Add files or a skill" type="button">${ICONS.plus}</button>
 
@@ -166,7 +164,6 @@ $(document).ready(function () {
         </div>
     `);
 
-    // Reusable function to render the welcome layout dynamically
     function renderWelcomeScreen() {
         const cardsHtml = SUGGESTIONS.map((s, i) => `
             <button class="ab-suggestion-card" data-text="${escapeHtml(s.text)}" type="button" style="animation-delay:${i * 40}ms">
@@ -175,7 +172,6 @@ $(document).ready(function () {
             </button>
         `).join('');
 
-        // Remove old instances if any exist, then append clean
         $('#ab-welcome').remove();
         $('#ab-messages').append(`
             <div id="ab-welcome">
@@ -187,7 +183,6 @@ $(document).ready(function () {
         `);
     }
 
-    // Put this at the top of chat_ui.js (outside the $(document).ready block)
     window._copyToClipboard = function(text) {
         if (navigator.clipboard && window.isSecureContext) {
             return navigator.clipboard.writeText(text);
@@ -211,16 +206,16 @@ $(document).ready(function () {
 
     // Skills cache (shared by the "+" flyout and the "/" autocomplete)
     let _skills = [], _skillsLoaded = false, _skillsLoading = false, _skillsWaiters = [];
+    let _skillSlugSet = new Set();
 
     // Slash-menu state
-    let _slashFiltered = [], _slashActiveIndex = -1;
+    let _slashFiltered = [], _slashActiveIndex = -1, _slashStartPos = -1;
+    let _slashBlurTimeout = null;
 
     // Staged file attachments for the next message
     let _pendingFiles = [];
 
-    // Portal the skill flyout and tooltip to <body> so they escape
-    // overflow:hidden on #ab-window (which clips child absolute elements).
-    // They are positioned via JS using fixed viewport coordinates.
+    // Portal overlays to <body>
     (function portalOverlays() {
         const flyout = document.getElementById('ab-skill-panel');
         const tooltip = document.getElementById('ab-skill-tooltip');
@@ -237,9 +232,6 @@ $(document).ready(function () {
         onToolDone: (data) => { resetThinkingWatchdog(); ChatMessages.onToolDone(data); },
         onStatusChange: (text, thinking) => { resetThinkingWatchdog(); setStatus(text, thinking); },
         onDone: (data) => {
-            // However ChatMessages renders the response, setInputState(false)
-            // below must always run — a rendering bug here should never be
-            // able to leave the stop button stuck and the send button gone.
             clearThinkingWatchdog();
             try { ChatMessages.onDone((data && data.response) || '', false); }
             catch (err) { console.error('ChatMessages.onDone failed', err); }
@@ -287,28 +279,27 @@ $(document).ready(function () {
         renderAttachmentChips();
         showConv(title);
         ChatMessages.loadHistory(chatId);
+        $('#ab-input').val('').css('height', 'auto');
+        _updateInputHighlight();
+        closeSlashMenu();
+        closePlusMenu();
     }
 
     function startNewChat() {
-        // Clear runtime tracking to signify an un-saved conversation state
         currentChatId = null;
         ChatRealtime.setActiveSession(null);
         _pendingFiles = [];
         renderAttachmentChips();
-
-        // Prepare UI views instantly
         ChatMessages.clear();
         showConv('New Chat');
         renderWelcomeScreen();
+        $('#ab-input').val('').css('height', 'auto');
+        _updateInputHighlight();
+        closeSlashMenu();
+        closePlusMenu();
     }
 
-    // ───────────────────────────────────────────────────────────
-    // Draggable launcher + draggable window
-    // Both use a shared drag routine: pointer events on the handle
-    // element, clamped to the viewport so neither floats offscreen.
-    // A tiny hasDragged flag prevents the click handler from firing
-    // if the pointer actually moved (drag vs click disambiguation).
-    // ───────────────────────────────────────────────────────────
+    // ── Draggable Engine ───────────────────────────────────────
     function _makeDraggable(handleEl, movedEl, onDragEnd) {
         let startX, startY, startLeft, startTop, hasDragged = false;
 
@@ -316,7 +307,6 @@ $(document).ready(function () {
 
         function onPointerDown(e) {
             if (e.button !== 0) return;
-            // Don't intercept clicks on interactive children (buttons inside header etc.)
             if (handleEl !== movedEl && $(e.target).closest('button, a, input, textarea, select').length) return;
 
             hasDragged = false;
@@ -326,7 +316,6 @@ $(document).ready(function () {
             startX    = e.clientX;
             startY    = e.clientY;
 
-            // Anchor element to current viewport position so we can drive it freely
             movedEl.style.left   = rect.left + 'px';
             movedEl.style.top    = rect.top  + 'px';
             movedEl.style.right  = 'auto';
@@ -334,7 +323,6 @@ $(document).ready(function () {
 
             document.addEventListener('pointermove', onPointerMove);
             document.addEventListener('pointerup',   onPointerUp);
-            // Do NOT call e.preventDefault() — it would suppress the click event
         }
 
         function onPointerMove(e) {
@@ -342,7 +330,6 @@ $(document).ready(function () {
             const dy = e.clientY - startY;
             if (!hasDragged && Math.abs(dx) + Math.abs(dy) > 5) {
                 hasDragged = true;
-                // Only add drag cursor after we know it's a real drag
                 movedEl.style.transition = 'none';
                 movedEl.style.cursor = 'grabbing';
             }
@@ -354,15 +341,14 @@ $(document).ready(function () {
             movedEl.style.top  = _clamp(startTop  + dy, 0, vh - h) + 'px';
         }
 
-        function onPointerUp() {
+         function onPointerUp() {
             document.removeEventListener('pointermove', onPointerMove);
-            document.removeEventListener('pointerup',   onPointerUp);
+            document.removeEventListener('pointerup', onPointerUp);
             movedEl.style.transition = '';
             movedEl.style.cursor     = '';
             if (onDragEnd) onDragEnd(hasDragged);
         }
 
-        // If a drag occurred, eat the subsequent click so it doesn't toggle open/close
         handleEl.addEventListener('click', function (e) {
             if (hasDragged) { e.stopImmediatePropagation(); hasDragged = false; }
         }, true);
@@ -370,18 +356,15 @@ $(document).ready(function () {
         handleEl.addEventListener('pointerdown', onPointerDown);
     }
 
-    // Launcher: drag to reposition, click to open/close
     const launcherEl = document.getElementById('ab-launcher');
     const windowEl   = document.getElementById('ab-window');
     _makeDraggable(launcherEl, launcherEl, function (wasDrag) {
         if (wasDrag) _syncWindowToLauncher();
     });
-    // Separate click handler for open/close (drag handler eats clicks when dragged)
     launcherEl.addEventListener('click', function () {
         isOpen ? _close() : _open();
     });
 
-    // Window: header is the drag handle, whole window is the moved element.
     const headerEl = document.getElementById('ab-header');
     _makeDraggable(headerEl, windowEl, null);
 
@@ -410,7 +393,6 @@ $(document).ready(function () {
         clearTimeout(_closeVisibilityTimer);
         $('#ab-window').removeClass('ab-fully-closed');
         $('#ab-window').addClass('open');
-        // Hide the launcher while the widget is open — header has its own close btn
         $('#ab-launcher').addClass('ab-launcher-hidden');
         if (currentView === 'list') ChatList.load();
         else if (currentChatId) $('#ab-input').focus();
@@ -418,22 +400,14 @@ $(document).ready(function () {
     function _close() {
         isOpen = false;
         $('#ab-window').removeClass('open');
-        // Restore launcher
         $('#ab-launcher').removeClass('ab-launcher-hidden');
         closePlusMenu();
         closeSlashMenu();
-        // Collapsing any fullscreen artifact here is real defense-in-depth:
-        // it's portaled to <body> while expanded, so it would otherwise be
-        // left floating outside #ab-window if the chat is closed mid-view.
-        // The visibility:hidden timer below is separate, lower-stakes
-        // hardening for #ab-window's own closed state (see Chat_Ui.css).
         if (ChatMessages && ChatMessages.collapseAllFullscreenArtifacts) ChatMessages.collapseAllFullscreenArtifacts();
         clearTimeout(_closeVisibilityTimer);
         _closeVisibilityTimer = setTimeout(() => $('#ab-window').addClass('ab-fully-closed'), 420);
     }
 
-    // Navigating elsewhere in the Frappe desk SPA while an artifact is
-    // fullscreen would otherwise leave it orphaned on an unrelated page.
     if (window.frappe && frappe.router && frappe.router.on) {
         frappe.router.on('change', () => {
             if (ChatMessages && ChatMessages.collapseAllFullscreenArtifacts) ChatMessages.collapseAllFullscreenArtifacts();
@@ -470,20 +444,23 @@ $(document).ready(function () {
         $('#ab-input').val($(this).data('text')).trigger('input').focus();
     });
 
-    // Header status is intentionally static — "Online" always. All turn
-    // state (thinking, running a tool, error, stopped) is now conveyed
-    // inline in the conversation itself (the shimmering "Thinking" row,
-    // the thought-process accordion, and error bubbles), not by rewriting
-    // this label. Kept as a function (rather than deleting every call
-    // site) so isThinking/watchdog wiring below doesn't need to change.
+    // ── Status Administration ──────────────────────────────────
     function setStatus(text, thinking, isError) {
-        // no-op by design
+        const $dot = $('#ab-status-dot');
+        const $text = $('#ab-status-text');
+        if ($text.length) {
+            $text.text(text || 'Online');
+        }
+        if ($dot.length) {
+            $dot.removeClass('thinking error');
+            if (thinking) {
+                $dot.addClass('thinking');
+            } else if (isError) {
+                $dot.addClass('error');
+            }
+        }
     }
 
-    // Safety net: if no realtime event arrives at all (dropped connection,
-    // Redis hiccup, a thread that died without ever publishing), this makes
-    // sure the input always recovers instead of staying stuck on "Thinking…"
-    // with the stop button showing forever.
     const THINKING_TIMEOUT_MS = 1175000;
     let _thinkingWatchdog = null;
     function resetThinkingWatchdog() {
@@ -516,9 +493,7 @@ $(document).ready(function () {
         setStatus('Stopped', false);
     });
 
-    // ───────────────────────────────────────────────────────────
-    // Skills: data loading (shared by "+" flyout and "/" autocomplete)
-    // ───────────────────────────────────────────────────────────
+    // ── Skills Loader ──────────────────────────────────────────
     function loadSkills(onReady) {
         if (_skillsLoaded) { onReady && onReady(); return; }
         _skillsWaiters.push(onReady);
@@ -539,9 +514,11 @@ $(document).ready(function () {
     function _finishSkillsLoad() {
         _skillsLoaded = true;
         _skillsLoading = false;
+        _skillSlugSet = new Set(_skills.map(function (s) { return (s.name || '').toLowerCase(); }));
         const waiters = _skillsWaiters.slice();
         _skillsWaiters = [];
         waiters.forEach(cb => cb && cb());
+        _updateInputHighlight();
     }
 
     function _skillItemHtml(skill) {
@@ -565,20 +542,53 @@ $(document).ready(function () {
     function selectSkill(name) {
         if (!name) return;
         const $input = $('#ab-input');
-        $input.val('/' + name + ' ').trigger('input').focus();
         const el = $input[0];
-        if (el) el.selectionStart = el.selectionEnd = el.value.length;
+        if (!el) return;
+
+        const value = el.value || '';
+        const cursorPos = typeof el.selectionStart === 'number' ? el.selectionStart : value.length;
+
+        let newText;
+        let newPos;
+
+        if (_slashStartPos >= 0 && _slashStartPos <= cursorPos) {
+            const before = value.slice(0, _slashStartPos);
+            const after = value.slice(cursorPos);
+            newText = before + '/' + name + ' ' + after;
+            newPos = _slashStartPos + 1 + name.length + 1;
+        } else {
+            newText = value + '/' + name + ' ';
+            newPos = newText.length;
+        }
+
+        $input.val(newText);
+        if (typeof el.setSelectionRange === 'function') {
+            el.setSelectionRange(newPos, newPos);
+        } else {
+            el.selectionStart = el.selectionEnd = newPos;
+        }
+
+        _slashStartPos = -1;
         closePlusMenu();
         closeSlashMenu();
+
+        requestAnimationFrame(function () {
+            el.focus();
+            if (typeof el.setSelectionRange === 'function') {
+                el.setSelectionRange(newPos, newPos);
+            } else {
+                el.selectionStart = el.selectionEnd = newPos;
+            }
+            $input.trigger('input');
+        });
     }
 
-    $(document).on('click', '.ab-skill-item', function () {
+    $(document).on('mousedown', '.ab-skill-item', function (e) {
+        e.stopPropagation();
         selectSkill($(this).data('skill'));
     });
 
-    // ───────────────────────────────────────────────────────────
-    // "+" popover (upload files / browse skills)
-    // ───────────────────────────────────────────────────────────
+    // ── Plus Flyout Menu ───────────────────────────────────────
     function openPlusMenu() {
         closeSlashMenu();
         $('#ab-plus-menu').addClass('open');
@@ -609,14 +619,12 @@ $(document).ready(function () {
         const panelHeight = $panel.outerHeight() || 300;
         const vw = window.innerWidth, vh = window.innerHeight;
 
-        // Prefer right of trigger; flip left if not enough space
         let left = triggerRect.right + 8;
         if (left + panelWidth > vw - 8) {
             left = triggerRect.left - panelWidth - 8;
         }
         left = Math.max(8, left);
 
-        // Align top with trigger; push up if overflows viewport bottom
         let top = triggerRect.top;
         if (top + panelHeight > vh - 8) {
             top = vh - panelHeight - 8;
@@ -654,11 +662,6 @@ $(document).ready(function () {
         hideSkillTooltip();
     }
 
-    // The trigger row and the flyout panel sit a few px apart visually, so a
-    // plain mouseleave-on-trigger fires the instant the cursor crosses that
-    // gap — closing the list before it can ever be hovered. Both elements
-    // now share a single deferred close, cancelled the moment either is
-    // re-entered, so quick diagonal mouse movement into the panel works.
     $(document).on('mouseenter', '#ab-plus-menu .ab-has-flyout', function () {
         cancelCloseSkillFlyout();
         if ($('#ab-plus-menu').hasClass('open')) openSkillFlyout($(this));
@@ -689,9 +692,6 @@ $(document).ready(function () {
         renderSkillList($('#ab-skill-list'), filtered);
     });
 
-    // Skill description tooltip — portaled to <body> with position:fixed,
-    // always placed to the RIGHT of the hovered skill item so it never
-    // overlaps or hides the list below it.
     function showSkillTooltip($item, description) {
         if (!description) { hideSkillTooltip(); return; }
         const $tip = $('#ab-skill-tooltip');
@@ -701,12 +701,10 @@ $(document).ready(function () {
         const tipH = $tip.outerHeight() || 40;
         const vw = window.innerWidth, vh = window.innerHeight;
 
-        // Prefer right of the item; fall back to left if near viewport edge
         let left = itemRect.right + 10;
         if (left + tipW > vw - 8) left = itemRect.left - tipW - 10;
         left = Math.max(8, left);
 
-        // Align vertically to mid-item; push up if it overflows viewport bottom
         let top = itemRect.top + (itemRect.height / 2) - (tipH / 2);
         top = Math.max(8, Math.min(top, vh - tipH - 8));
 
@@ -722,9 +720,7 @@ $(document).ready(function () {
         hideSkillTooltip();
     });
 
-    // ───────────────────────────────────────────────────────────
-    // "/" slash-command skill autocomplete
-    // ───────────────────────────────────────────────────────────
+    // ── Slash Command Infrastructure ───────────────────────────
     function openSlashMenu() {
         closePlusMenu();
         $('#ab-slash-menu').addClass('open');
@@ -733,6 +729,7 @@ $(document).ready(function () {
         $('#ab-slash-menu').removeClass('open');
         _slashFiltered = [];
         _slashActiveIndex = -1;
+        _slashStartPos = -1;
         hideSkillTooltip();
     }
 
@@ -746,8 +743,9 @@ $(document).ready(function () {
     }
 
     function filterSlashMenu(query) {
-        _slashFiltered = !query ? _skills.slice() : _skills.filter(s =>
-            (s.name || '').toLowerCase().includes(query) || (s.label || '').toLowerCase().includes(query)
+        const q = query.toLowerCase();
+        _slashFiltered = !q ? _skills.slice() : _skills.filter(s =>
+            (s.name || '').toLowerCase().startsWith(q) || (s.label || '').toLowerCase().startsWith(q)
         );
         _slashActiveIndex = _slashFiltered.length ? 0 : -1;
         renderSkillList($('#ab-slash-list'), _slashFiltered);
@@ -755,10 +753,36 @@ $(document).ready(function () {
         $('#ab-slash-count').text(_slashFiltered.length ? `· ${_slashFiltered.length}` : '');
     }
 
-    function handleSlashTrigger(value) {
-        const match = /^\/([a-zA-Z0-9_-]*)$/.exec(value);
-        if (!match) { closeSlashMenu(); return; }
-        const query = match[1].toLowerCase();
+    function handleSlashTrigger() {
+        const el = document.getElementById('ab-input');
+        if (!el) return;
+        const value = el.value;
+        const cursorPos = el.selectionStart;
+
+        let slashPos = -1;
+        for (let i = cursorPos - 1; i >= 0; i--) {
+            const ch = value[i];
+            if (ch === ' ' || ch === '\n') break;
+            if (ch === '/' && (i === 0 || /[\s\n]/.test(value[i - 1]))) {
+                slashPos = i;
+                break;
+            }
+        }
+
+        if (slashPos === -1) {
+            _slashStartPos = -1;
+            closeSlashMenu();
+            return;
+        }
+
+        const query = value.slice(slashPos + 1, cursorPos);
+        if (!/^[a-zA-Z0-9_-]*$/.test(query)) {
+            _slashStartPos = -1;
+            closeSlashMenu();
+            return;
+        }
+
+        _slashStartPos = slashPos;
         openSlashMenu();
         if (!_skillsLoaded) {
             renderSkillList($('#ab-slash-list'), []);
@@ -769,12 +793,68 @@ $(document).ready(function () {
     }
 
     $(document).on('blur', '#ab-input', function () {
-        setTimeout(closeSlashMenu, 150);
+        _slashBlurTimeout = setTimeout(closeSlashMenu, 150);
     });
 
-    // ───────────────────────────────────────────────────────────
-    // File attachments (staged before send)
-    // ───────────────────────────────────────────────────────────
+    $(document).on('focus', '#ab-input', function () {
+        if (_slashBlurTimeout) {
+            clearTimeout(_slashBlurTimeout);
+            _slashBlurTimeout = null;
+        }
+    });
+
+    $(document).on('keyup', '#ab-input', function (e) {
+        if ($('#ab-slash-menu').hasClass('open') &&
+            ['ArrowLeft', 'ArrowRight', 'Home', 'End'].indexOf(e.key) !== -1) {
+            handleSlashTrigger();
+        }
+    });
+
+    // ── Twin-Layer Highlighting Synchronization ────────────────
+    function _updateInputHighlight() {
+        const el = document.getElementById('ab-input');
+        const hl = document.getElementById('ab-input-highlight');
+        if (!el || !hl) return;
+
+        if (!_skillSlugSet.size || !el.value) {
+            hl.innerHTML = '';
+            el.classList.remove('ab-has-highlight');
+            return;
+        }
+
+        const text = el.value;
+        let html = '';
+        let lastIndex = 0;
+        const regex = /\/([a-zA-Z0-9_-]+)/g;
+        let match;
+
+        while ((match = regex.exec(text)) !== null) {
+            if (match.index > lastIndex) {
+                html += escapeHtml(text.slice(lastIndex, match.index));
+            }
+            const slug = match[1].toLowerCase();
+            if (_skillSlugSet.has(slug)) {
+                html += '<span class="ab-skill-token">' + escapeHtml(match[0]) + '</span>';
+            } else {
+                html += escapeHtml(match[0]);
+            }
+            lastIndex = match.index + match[0].length;
+        }
+
+        if (lastIndex < text.length) {
+            html += escapeHtml(text.slice(lastIndex));
+        }
+
+        hl.innerHTML = html;
+        el.classList.add('ab-has-highlight');
+    }
+
+    $(document).on('scroll', '#ab-input', function () {
+        const hl = document.getElementById('ab-input-highlight');
+        if (hl) hl.scrollTop = this.scrollTop;
+    });
+
+    // ── Attachment Processing ──────────────────────────────────
     $(document).on('change', '#ab-file-input', function () {
         const files = Array.from(this.files || []);
         files.forEach(f => _pendingFiles.push(f));
@@ -820,21 +900,21 @@ $(document).ready(function () {
         }));
     }
 
-    // ───────────────────────────────────────────────────────────
-    // Close menus on outside click / Escape
-    // ───────────────────────────────────────────────────────────
+    // ── Context Boundary Controls ──────────────────────────────
     $(document).on('mousedown', function (e) {
         const $t = $(e.target);
-        if (!$t.closest('#ab-plus-menu, #ab-plus-btn').length) closePlusMenu();
-        if (!$t.closest('#ab-slash-menu, #ab-input').length) closeSlashMenu();
+        if (!$t.closest('#ab-plus-menu, #ab-plus-btn, #ab-skill-panel, #ab-skill-tooltip').length) {
+            closePlusMenu();
+        }
+        if (!$t.closest('#ab-slash-menu, #ab-slash-list, #ab-input').length) {
+            closeSlashMenu();
+        }
     });
     $(document).on('keydown', function (e) {
         if (e.key === 'Escape') { closePlusMenu(); closeSlashMenu(); }
     });
 
-    // ───────────────────────────────────────────────────────────
-    // Sending messages
-    // ───────────────────────────────────────────────────────────
+    // ── Dispatch Controls ──────────────────────────────────────
     let _lastSentMessage = '', _lastSentAttachments = [];
 
     function dispatchChatRequest(msg, attachments, isFirstMessage) {
@@ -845,9 +925,6 @@ $(document).ready(function () {
         setStatus('Thinking…', true);
         ChatMessages.showTyping();
 
-        // For a brand-new chat we don't have a session_id yet — tell
-        // ChatRealtime to adopt whatever session_id shows up on the first
-        // incoming event, so tokens land here and not in some other tab.
         if (isFirstMessage) ChatRealtime.expectNewSession();
 
         frappe.call({
@@ -858,7 +935,6 @@ $(document).ready(function () {
                     currentChatId = r.message.chat_id;
                     ChatRealtime.setActiveSession(currentChatId);
 
-                    // If this was a deferred chat initialization, update the sidebar UI registry now
                     if (isFirstMessage) {
                         ChatList.prepend(r.message);
                         ChatList.setActive(currentChatId);
@@ -867,9 +943,6 @@ $(document).ready(function () {
                 }
             },
             error() {
-                // The request never made it to the agent at all (permissions,
-                // validation, network) — surface that clearly instead of
-                // leaving the UI stuck on "Thinking…" forever.
                 setInputState(false);
                 setStatus('Error', false, true);
                 try { ChatMessages.onDone("Sorry, I couldn't send that. Please try again.", true); } catch (err) { console.error(err); }
@@ -881,10 +954,8 @@ $(document).ready(function () {
         const msg = $('#ab-input').val().trim();
         if ((!msg && !_pendingFiles.length) || isThinking) return;
 
-        // Check if this is the initial message of a deferred session
         const isFirstMessage = (currentChatId === null);
 
-        // CLEAR WELCOME SCREEN: Remove the welcome element if this is the first message
         if (isFirstMessage) {
             $('#ab-welcome').remove();
         }
@@ -892,6 +963,7 @@ $(document).ready(function () {
         closePlusMenu();
         closeSlashMenu();
         $('#ab-input').val('').css('height', 'auto');
+        _updateInputHighlight();
         $('#ab-char-count').text('').removeClass('near-limit at-limit');
 
         const filesToUpload = _pendingFiles.slice();
@@ -921,11 +993,14 @@ $(document).ready(function () {
     $(document).on('click', '.ab-resend-btn', retryLastMessage);
 
     $(document).on('click', '#ab-send', sendMessage);
-    $(document).on('keydown', '#ab-input', (e) => {
+    $(document).on('keydown', '#ab-input', function (e) {
         if ($('#ab-slash-menu').hasClass('open')) {
             if (e.key === 'ArrowDown') { e.preventDefault(); moveSlashActive(1); return; }
             if (e.key === 'ArrowUp') { e.preventDefault(); moveSlashActive(-1); return; }
             if (e.key === 'Escape') { e.preventDefault(); closeSlashMenu(); return; }
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') {
+                return;
+            }
             if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
                 e.preventDefault();
                 if (_slashActiveIndex >= 0 && _slashFiltered[_slashActiveIndex]) {
@@ -947,7 +1022,8 @@ $(document).ready(function () {
         } else {
             $('#ab-char-count').text('').removeClass('near-limit at-limit');
         }
-        handleSlashTrigger(this.value);
+        handleSlashTrigger();
+        _updateInputHighlight();
     });
 
     $(document).on('click', '.ab-copy-btn', function () {
@@ -960,8 +1036,6 @@ $(document).ready(function () {
         });
     });
 
-    // "Edit" only loads the message back into the input for the person to
-    // change — it must NOT send anything on its own.
     $(document).on('click', '.ab-edit-btn', function () {
         if (isThinking) return;
         const text = $('#' + $(this).data('bubble')).text();

@@ -109,6 +109,26 @@ class Conversation:
     def set_system(self, text):
         self.system_prompt = text
 
+    def add_system_message(self, text):
+        """Append a system-scoped message at this point in the conversation.
+
+        Unlike set_system() — which sets the global session-level prompt that
+        gets prepended as the very first message — this inserts a system
+        message inline, right before the next user/assistant message.
+
+        Used for per-turn skill injections: when a user types /skill-name,
+        the skill's content is loaded and inserted here so the agent sees
+        it as contextual instructions scoped to that specific request.
+        """
+        msg_id = _gen_id()
+        self.doc.append("messages", {
+            "message_id": msg_id,
+            "role": "system",
+            "content": text,
+            "timestamp": now_datetime(),
+        })
+        self._last_message_id = msg_id
+
     def add_user_message(self, text):
         if not self.doc.title:
             self.doc.title = (text or "")[:72]

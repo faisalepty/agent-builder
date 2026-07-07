@@ -87,3 +87,26 @@ if grand["input"]:
         f"Cache Hit Rate       : "
         f"{grand['cached']/grand['input']*100:.2f}%"
     )
+
+
+{
+  "name_": "Kenyan Audit Support",
+  "domain": "Finance",
+  "description": "Supports ICFR, CMA Kenya, and statutory audit compliance with control testing methodology, sample selection, and documentation standards for Frappe/ERPNext, including tool-driven evidence gathering.",
+  "is_enabled": 1,
+  "disable_model_invocation": 1,
+  "argument_hint": "control area or account to test (e.g. 'revenue cut-off', 'VAT/eTIMS controls', 'JE approval', 'AR aging')",
+  "parent_skill": "",
+  "reference_slug": "",
+  "attach": "",
+  "server_script": "",
+  "metadata": {
+    "country": "Kenya",
+    "regulatory_bodies": ["CMA", "ICPAK", "KRA", "ODPC", "SHA"],
+    "frameworks": ["IFRS", "Companies Act 2015", "CMA Code of Corporate Governance"],
+    "platform": "Frappe/ERPNext",
+    "required_tools": ["frappe_get_list", "frappe_get_doc"],
+    "excluded_tools": ["frappe_save_doc", "frappe_execute_action"],
+    "excluded_tools_reason": "Audit testing must be non-destructive and independent of the process under test"
+  }
+}

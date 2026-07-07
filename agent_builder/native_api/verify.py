@@ -8,6 +8,99 @@ from agent_builder.native_api.agent.conversation import Conversation
 from agent_builder.native_api.agent.agent import Agent, MaxTurnsError
 
 
+_SKILL_CMD_RE = re.compile(r'(?:^|\s)/([a-zA-Z][a-zA-Z0-9-]*)')
+
+
+def _extract_skill_commands(message: str):
+    """Extract /skill-name invocations from a user message.
+
+    Returns (skill_slugs, cleaned_message) where:
+      - skill_slugs: list of lowercased slug strings (e.g. ["customer-onboarding"])
+      - cleaned_message: the original message with /commands removed
+    """
+    if not message:
+        return [], message
+
+    slugs = []
+    for m in _SKILL_CMD_RE.finditer(message):
+        slugs.append(m.group(1).lower())
+
+    # Strip the slash commands from the visible message
+    cleaned = _SKILL_CMD_RE.sub('', message)
+    cleaned = re.sub(r' {2,}', ' ', cleaned).strip()
+
+    return slugs, cleaned
+
+
+def _load_invoked_skills(skill_slugs: list):
+    """Load full content for skills matching the given slugs.
+
+    Queries all enabled Skills, slugifies each name_, and matches against
+    the requested slugs. Returns (found_skills, not_found_slugs).
+
+    found_skills: [{slug, label, content, description}, ...]
+    not_found_slugs: ["some-slug", ...]
+    """
+    if not skill_slugs:
+        return [], []
+
+    all_skills = frappe.get_all(
+        "Skill",
+        fields=["name_", "content", "description"],
+        filters={"is_enabled": True},
+    )
+
+    found = []
+    found_slugs = set()
+
+    for s in all_skills:
+        raw_name = s.get("name_")
+        if not raw_name:
+            continue
+
+        slug = _slugify(raw_name)
+        if slug in skill_slugs and slug not in found_slugs:
+            found.append({
+                "slug": slug,
+                "label": raw_name,
+                "content": s.get("content") or "",
+                "description": s.get("description") or "",
+            })
+            found_slugs.add(slug)
+
+    not_found = [s for s in skill_slugs if s not in found_slugs]
+    return found, not_found
+
+
+def _build_skill_injection(skills: list):
+    """Build a system message string from loaded skill contents.
+
+    Returns None if skills is empty.
+    """
+    if not skills:
+        return None
+
+    sections = [
+        "# Skill Invocation",
+        "The user has explicitly invoked the following skill(s) via slash command. "
+        "Follow these instructions precisely for this request.\n",
+    ]
+
+    for skill in skills:
+        sections.append(f"## {skill['label']}")
+        if skill["description"]:
+            sections.append(f"_{skill['description']}_\n")
+        if skill["content"]:
+            sections.append(skill["content"])
+        else:
+            sections.append(
+                "_(No content defined for this skill. "
+                "Use the `skill_view` tool if available.)_"
+            )
+        sections.append("")  # blank-line separator
+
+    return "\n".join(sections)
+
 @frappe.whitelist()
 def get_messages(chat_id, limit=50, start=0):
     """Load display messages for a chat — paginated.
@@ -218,26 +311,49 @@ def chat(message, chat_id=None, attachments=None):
 
 def process_agent_chat(message, chat_id, attachments, user):
     """Background Job: Executes the agent loop."""
-    agent_message = message
+    # ── Extract slash-command skill invocations ──
+    skill_slugs, cleaned_message = _extract_skill_commands(message)
+    invoked_skills, not_found = _load_invoked_skills(skill_slugs)
+
+    # Use cleaned message; fall back to original if slash commands
+    # were the entire message (e.g. user typed only "/summarize")
+    agent_message = cleaned_message if cleaned_message else message
+
+    # If some skills weren't found, append a note so the model
+    # can inform the user rather than silently ignoring
+    if not_found:
+        missing = ", ".join(f"/{s}" for s in not_found)
+        agent_message = f"{agent_message}\n\n[Skills not found: {missing}]"
+
     if attachments:
         file_lines = "\n".join(
             f"- {a.get('file_name', 'file')}: {a.get('file_url', '')}"
             for a in attachments
         )
-        agent_message = f"{message}\n\n[Attached files]\n{file_lines}".strip()
+        agent_message = f"{agent_message}\n\n[Attached files]\n{file_lines}".strip()
 
     conversation = Conversation(session_id=chat_id, user=user)
 
     try:
-        # Instantiate the standalone agent and run it
         agent = Agent()
+
+        # Inject skill content as a per-turn system message,
+        # positioned right before the user message in the child table.
+        # This is separate from the global system prompt (set by Agent
+        # via conversation.set_system) and won't be overwritten.
+        if invoked_skills:
+            skill_injection = _build_skill_injection(invoked_skills)
+            if skill_injection:
+                conversation.add_system_message(skill_injection)
+
         conversation.add_user_message(agent_message)
+        
 
         final_response = asyncio.run(
             agent.run(
-                conversation, 
-                on_token=conversation.emit_token, 
-                on_reasoning=conversation.emit_reasoning
+                conversation,
+                on_token=conversation.emit_token,
+                on_reasoning=conversation.emit_reasoning,
             )
         )
 

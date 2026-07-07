@@ -30,7 +30,7 @@ class Agent:
         self,
         max_turns: int = 40,
         max_retries: int = 2,
-        max_context_chars: int = 32000,
+        max_context_chars: int = 1000000,
     ):
         # 1. Bootstrap internal dependencies via setup.py
         self.registry = get_tool_registry()
@@ -71,7 +71,6 @@ class Agent:
                 )
 
                 if not tool_calls:
-                    frappe.log_error(response, "Agent Final Response")
                     return response.get("content", "")
 
                 fp = (tool_calls[0].function.name, tool_calls[0].function.arguments)
