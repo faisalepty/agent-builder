@@ -1,8 +1,6 @@
 {
  "actions": [],
  "allow_bulk_edit": 1,
- "allow_rename": 1,
- "autoname": "UUID",
  "creation": "2026-06-29 15:36:16.745553",
  "default_view": "List",
  "doctype": "DocType",
@@ -78,11 +76,11 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-07-02 09:08:10.039781",
+ "modified": "2026-07-08 14:08:17.616280",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Agent session",
- "naming_rule": "Expression",
+ "naming_rule": "By script",
  "owner": "Administrator",
  "permissions": [
   {
