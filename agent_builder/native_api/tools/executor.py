@@ -2,12 +2,14 @@
 #
 # ToolExecutor — dispatches tool calls from the LLM to their executors.
 #
+# Supports parallel execution when called with multiple tool calls.
+#
 import asyncio
 import inspect
 import json
 import logging
 import random
-from typing import Any
+from typing import Any, List
 
 from agent_builder.native_api.tools.decorator import ToolRegistry
 from agent_builder.native_api.agent.conversation import Conversation
@@ -25,12 +27,29 @@ class ToolExecutor:
     async def execute_calls(
         self, tool_calls: Any, conversation: Conversation
     ) -> None:
-        for tool_call in tool_calls:
-            func_name: str = tool_call.function.name
-            result = await self._dispatch(func_name, tool_call.function.arguments)
-            conversation.add_tool_result(tool_call.id, func_name, result)
+        """
+        Execute tool calls concurrently.
+        
+        This method maintains backward compatibility but now executes
+        all tool calls in parallel using asyncio.gather for improved
+        performance when the model returns multiple independent tool calls.
+        """
+        async def execute_single(tc: Any) -> None:
+            """Execute a single tool call."""
+            func_name: str = tc.function.name
+            result = await self._dispatch(func_name, tc.function.arguments)
+            conversation.add_tool_result(tc.id, func_name, result)
+        
+        # Execute all tool calls in parallel
+        await asyncio.gather(*[execute_single(tc) for tc in tool_calls])
 
     async def _dispatch(self, func_name: str, raw_args: str) -> str:
+        """
+        Dispatch a single tool call to its executor function.
+        
+        This method is thread-safe and can be called concurrently
+        from multiple coroutines (when using parallel tool calls).
+        """
         try:
             func_args: dict = json.loads(raw_args)
         except json.JSONDecodeError as e:

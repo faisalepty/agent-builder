@@ -11,12 +11,16 @@
  "label": "Omnis Agent",
  "link_to": "Omnis Agent",
  "link_type": "Workspace Sidebar",
- "modified": "2026-06-19 09:46:02.182056",
+ "modified": "2026-07-08 07:57:05.477205",
  "modified_by": "Administrator",
  "name": "Omnis Agent",
  "owner": "Administrator",
  "restrict_removal": 0,
- "roles": [],
+ "roles": [
+  {
+   "role": "Omnis User"
+  }
+ ],
  "sidebar": "Omnis Agent",
  "standard": 1
 }

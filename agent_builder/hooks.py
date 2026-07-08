@@ -236,6 +236,10 @@ app_license = "mit"
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
+
+fixtures = [
+     {"dt": "Role", "filters": [["name", "=", "Omnis User"]]}
+]
 app_include_js = [
     "/assets/agent_builder/js/chat_list.js",
     "/assets/agent_builder/js/chat_messages.js",

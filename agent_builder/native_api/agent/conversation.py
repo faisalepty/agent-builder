@@ -33,8 +33,20 @@ class Conversation:
 
     # ── History reconstruction ───────────────────────────
 
-    def get_messages(self):
-        """Rebuild the OpenAI-style message list from the two normalized tables."""
+    def get_messages(self, reasoning_replay=None):
+        """Rebuild the OpenAI-style message list from the two normalized tables.
+
+        reasoning_replay: optional callable(meta, had_tool_calls, msg) — see
+        OpenAIProvider.replay_reasoning. When given, it decides how (or
+        whether) each assistant row's stored reasoning_meta gets reattached
+        to the outgoing message for this specific provider/model. When
+        omitted, falls back to the old universal behavior of merging
+        buffered plain-text reasoning into a <think> block inside content —
+        safe for simple open-weight deployments, but NOT correct for
+        providers with strict replay requirements (DeepSeek V4, OpenRouter
+        reasoning models with tool calls). Always pass the provider's bound
+        replay_reasoning when one is available.
+        """
         messages = []
         if self.system_prompt:
             messages.append({"role": "system", "content": self.system_prompt})
@@ -44,32 +56,35 @@ class Conversation:
         for tc in self.doc.tool_calls:
             tool_calls_by_parent.setdefault(tc.parent_message, []).append(tc)
 
-        # Buffer to accumulate reasoning so we can attach it to the next assistant turn
+        # Buffer to accumulate reasoning so we can attach it to the next
+        # assistant turn — only used in the no-strategy fallback path.
         pending_reasoning = []
 
         for row in self.doc.messages:
             if row.role == "reasoning":
-                if row.content:
+                if reasoning_replay is None and row.content:
                     pending_reasoning.append(row.content.strip())
                 continue
 
             if row.role == "assistant":
                 content = row.content or ""
                 tc_rows = tool_calls_by_parent.get(row.message_id, [])
+                had_tool_calls = bool(tc_rows)
 
-                # Re-attach preceding reasoning into the assistant's content block.
-                # Wrapping it in <think> tags is the industry standard for OpenRouter 
-                # and open-weight reasoning models (like DeepSeek-R1).
-                if pending_reasoning:
-                    reasoning_text = "\n\n".join(pending_reasoning)
-                    if content:
-                        content = f"<think>\n{reasoning_text}\n</think>\n\n{content}"
-                    else:
-                        # Even if content is empty (e.g. only tool calls), pass the reasoning
-                        content = f"<think>\n{reasoning_text}\n</think>"
-                    pending_reasoning = []
-                if content:
-                    msg = {"role": "assistant", "content": content}
+                if reasoning_replay is None:
+                    # Fallback: re-attach preceding reasoning into the
+                    # assistant's content block as a <think> tag. Fine for
+                    # providers that just want text; not correct for
+                    # providers with structural replay requirements.
+                    if pending_reasoning:
+                        reasoning_text = "\n\n".join(pending_reasoning)
+                        if content:
+                            content = f"<think>\n{reasoning_text}\n</think>\n\n{content}"
+                        else:
+                            content = f"<think>\n{reasoning_text}\n</think>"
+                        pending_reasoning = []
+
+                msg = {"role": "assistant", "content": content}
 
                 if tc_rows:
                     msg["tool_calls"] = [
@@ -85,21 +100,42 @@ class Conversation:
                     ]
                 messages.append(msg)
 
-                # Synthesize one tool-role message per *completed* tool call,
-                # immediately after the assistant turn that requested it.
+                if reasoning_replay is not None:
+                    reasoning_meta = None
+                    stored = getattr(row, "reasoning_meta", None)
+                    if stored:
+                        try:
+                            reasoning_meta = json.loads(stored)
+                        except (TypeError, ValueError):
+                            reasoning_meta = None
+                    reasoning_replay(reasoning_meta, had_tool_calls, msg)
+
+                # OpenAI's Chat Completions API strictly requires that every
+                # tool_call_id in an assistant message be immediately followed
+                # by a matching tool-role reply — with NO exceptions, unlike
+                # OpenRouter/NVIDIA which tolerate gaps. If a tool call got
+                # stuck in "pending"/"running" (crash, restart, interrupted
+                # turn) and never resolved, we must still emit a synthetic
+                # tool reply for it, or every subsequent request to OpenAI
+                # will 400 with "did not have response messages: call_xxx".
                 for tc in tc_rows:
-                    if tc.status not in ("success", "error"):
-                        continue
+                    if tc.status in ("success", "error"):
+                        result_content = (tc.error if tc.status == "error"
+                                          else tc.result) or ""
+                    else:
+                        result_content = (
+                            "Error: tool execution was interrupted and no "
+                            "result was recorded."
+                        )
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.call_id,
                         "name": tc.tool_name,
-                        "content": (tc.error if tc.status == "error"
-                                    else tc.result) or "",
+                        "content": result_content,
                     })
             else:
                 # For User or System messages, clear reasoning buffer if out of order
-                pending_reasoning = [] 
+                pending_reasoning = []
                 messages.append({"role": row.role, "content": row.content or ""})
 
         return messages
@@ -108,6 +144,26 @@ class Conversation:
 
     def set_system(self, text):
         self.system_prompt = text
+
+    def add_system_message(self, text):
+        """Append a system-scoped message at this point in the conversation.
+
+        Unlike set_system() — which sets the global session-level prompt that
+        gets prepended as the very first message — this inserts a system
+        message inline, right before the next user/assistant message.
+
+        Used for per-turn skill injections: when a user types /skill-name,
+        the skill's content is loaded and inserted here so the agent sees
+        it as contextual instructions scoped to that specific request.
+        """
+        msg_id = _gen_id()
+        self.doc.append("messages", {
+            "message_id": msg_id,
+            "role": "system",
+            "content": text,
+            "timestamp": now_datetime(),
+        })
+        self._last_message_id = msg_id
 
     def add_user_message(self, text):
         if not self.doc.title:
@@ -127,6 +183,20 @@ class Conversation:
 
         content = message_obj.get("content") or ""
         tool_calls = message_obj.get("tool_calls") or []
+        reasoning_meta = message_obj.get("reasoning_meta")
+        reasoning_text = message_obj.get("reasoning")
+
+        # If this call wasn't streamed, reasoning text never went through
+        # emit_reasoning()/_flush_reasoning() above, so it would otherwise
+        # be silently dropped. Persist it now as its own reasoning-role row
+        # so UI/timeline reconstruction still works for non-streamed turns.
+        if reasoning_text and not streamed:
+            self.doc.append("messages", {
+                "message_id": _gen_id(),
+                "role": "reasoning",
+                "content": reasoning_text,
+                "timestamp": now_datetime(),
+            })
 
         msg_id = _gen_id()
         self.doc.append("messages", {
@@ -134,6 +204,11 @@ class Conversation:
             "role": "assistant",
             "content": content,
             "is_error": bool(message_obj.get("is_error")),
+            # Raw, provider-specific reasoning payload (reasoning_details,
+            # signatures, etc.) — kept verbatim so it can be replayed back
+            # correctly later. Requires a "reasoning_meta" Long Text/JSON
+            # field on the Agent Message child table.
+            "reasoning_meta": json.dumps(reasoning_meta) if reasoning_meta else None,
             "timestamp": now_datetime(),
         })
         self._last_message_id = msg_id
