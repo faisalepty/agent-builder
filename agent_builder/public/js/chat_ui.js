@@ -11,6 +11,11 @@
  */
  $(document).ready(function () {
 
+     if (!frappe.user.has_role('Omnis User')) {
+        // User does not have the role, stop executing the script.
+        return; 
+    }
+
     if (!window.marked) {
         const s = document.createElement('script');
         s.src = 'https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js';

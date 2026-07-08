@@ -5,7 +5,7 @@ import logging
 import random
 import time
 import frappe
-from typing import Callable, Optional, Tuple
+from typing import Callable, Optional, Tuple, List, Any
 
 from agent_builder.native_api.agent.conversation import Conversation
 from agent_builder.native_api.agent.setup import get_tool_registry, get_system_prompt
@@ -25,6 +25,9 @@ class Agent:
     
     Handles its own tool loading, system prompt generation, and provider setup
     internally via setup.py. The caller only needs to provide the model name.
+    
+    Supports parallel tool calling: when the model returns multiple tool calls
+    in a single response, they are executed concurrently for improved performance.
     """
     def __init__(
         self,
@@ -61,7 +64,9 @@ class Agent:
         try:
             while turns < self.max_turns:
                 turns += 1
-                messages = self._trim_context(conversation.get_messages())
+                messages = self._trim_context(
+                    conversation.get_messages(reasoning_replay=self.provider.replay_reasoning)
+                )
 
                 response, tool_calls = await self._retry_llm(
                     messages, available_tools, on_token=on_token, on_reasoning=on_reasoning
@@ -71,8 +76,10 @@ class Agent:
                 )
 
                 if not tool_calls:
+                    frappe.log_error(response, "Agent: No tool calls returned")
                     return response.get("content", "")
 
+                # Loop detection: check the first tool call pattern
                 fp = (tool_calls[0].function.name, tool_calls[0].function.arguments)
                 if fp == last_fp:
                     loop_strikes += 1
@@ -82,25 +89,48 @@ class Agent:
                     last_fp = fp
                     loop_strikes = 0
 
-                for tc in tool_calls:
-                    name = tc.function.name
-                    try:
-                        args = json.loads(tc.function.arguments)
-                    except json.JSONDecodeError:
-                        args = tc.function.arguments
-
-                    conversation.emit_tool_start(tc.id, name, args)
-
-                    t0 = time.monotonic()
-                    result = await self.executor._dispatch(name, tc.function.arguments)
-                    elapsed_ms = int((time.monotonic() - t0) * 1000)
-
-                    conversation.add_tool_result(tc.id, name, result, elapsed_ms=elapsed_ms)
+                # Execute all tool calls in parallel
+                await self._execute_tool_calls_parallel(tool_calls, conversation)
 
             raise MaxTurnsError(f"Exceeded {self.max_turns}-turn budget.")
 
         finally:
             conversation.save()
+
+    async def _execute_tool_calls_parallel(
+        self, 
+        tool_calls: List[Any], 
+        conversation: Conversation
+    ) -> None:
+        """
+        Execute multiple tool calls concurrently using asyncio.gather.
+        
+        This provides significant performance improvements when the model
+        returns multiple independent tool calls (e.g., fetching data from
+        multiple sources simultaneously).
+        """
+        async def execute_single_tool(tc: Any) -> None:
+            """Execute a single tool call with proper event emission."""
+            name = tc.function.name
+            try:
+                args = json.loads(tc.function.arguments)
+            except json.JSONDecodeError:
+                args = tc.function.arguments
+
+            # Emit tool start event
+            conversation.emit_tool_start(tc.id, name, args)
+
+            # Execute the tool and measure time
+            t0 = time.monotonic()
+            result = await self.executor._dispatch(name, tc.function.arguments)
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+
+            # Add result to conversation
+            conversation.add_tool_result(tc.id, name, result, elapsed_ms=elapsed_ms)
+
+        # Execute all tool calls concurrently
+        # gather() will run them in parallel and wait for all to complete
+        await asyncio.gather(*[execute_single_tool(tc) for tc in tool_calls])
 
     async def _retry_llm(self, messages, tools, on_token=None, on_reasoning=None):
         last_err = None

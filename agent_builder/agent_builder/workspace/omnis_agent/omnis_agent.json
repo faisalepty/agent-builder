@@ -15,8 +15,8 @@
  "label": "Omnis Agent",
  "link_type": "DocType",
  "links": [],
- "modified": "2026-07-03 07:33:31.653379",
- "modified_by": "Administrator",
+ "modified": "2026-07-08 07:41:39.249448",
+ "modified_by": "faisalimali1@gmail.com",
  "module": "Agent Builder",
  "name": "Omnis Agent",
  "number_cards": [],
@@ -24,7 +24,11 @@
  "parent_page": "",
  "public": 1,
  "quick_lists": [],
- "roles": [],
+ "roles": [
+  {
+   "role": "Omnis User"
+  }
+ ],
  "sequence_id": 29.0,
  "shortcuts": [
   {
