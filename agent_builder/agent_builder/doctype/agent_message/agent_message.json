@@ -2,17 +2,24 @@
  "actions": [],
  "allow_bulk_edit": 1,
  "allow_rename": 1,
- "creation": "2026-06-29 12:41:36.497266",
+ "creation": "2026-07-08 15:11:18.142181",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "message_id",
   "role",
   "content",
   "timestamp",
   "attachments",
-  "is_error"
+  "is_error",
+  "message_id",
+  "turn_index",
+  "model",
+  "input_tokens",
+  "output_tokens",
+  "cached_tokens",
+  "reasoning_tokens",
+  "latency_ms"
  ],
  "fields": [
   {
@@ -53,13 +60,53 @@
    "label": "Message ID",
    "length": 16,
    "read_only": 1
+  },
+  {
+   "description": "Sequential turn number within the session, assistant messages only",
+   "fieldname": "turn_index",
+   "fieldtype": "Int",
+   "label": "Turn Index"
+  },
+  {
+   "description": "e.g. gpt-4.1, claude-sonnet-5 \u2014 only set on assistant rows",
+   "fieldname": "model",
+   "fieldtype": "Data",
+   "label": "Model"
+  },
+  {
+   "fieldname": "input_tokens",
+   "fieldtype": "Int",
+   "label": "Input Tokens"
+  },
+  {
+   "fieldname": "output_tokens",
+   "fieldtype": "Int",
+   "label": "Output Tokens"
+  },
+  {
+   "description": "Prompt cache hits, if provider reports them",
+   "fieldname": "cached_tokens",
+   "fieldtype": "Int",
+   "label": "Cached Tokens"
+  },
+  {
+   "description": "For providers that bill/report reasoning separately (o-series, etc.)",
+   "fieldname": "reasoning_tokens",
+   "fieldtype": "Int",
+   "label": "Reasoning Tokens"
+  },
+  {
+   "description": "Time from request sent to full response/stream complete for this turn",
+   "fieldname": "latency_ms",
+   "fieldtype": "Int",
+   "label": "Latency (ms)"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-07-02 09:02:38.372859",
+ "modified": "2026-07-08 15:11:18.142181",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Agent Message",

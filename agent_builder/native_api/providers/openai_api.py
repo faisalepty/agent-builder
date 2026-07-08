@@ -459,6 +459,14 @@ class OpenAIProvider:
 
         message_dict: Message = {k: v for k, v in raw_dict.items()
                                   if k in _STANDARD_MESSAGE_KEYS}
+
+        # Token usage + resolved model, for Agent Message telemetry fields.
+        # response.model may differ from the requested self.model (provider
+        # can resolve aliases/snapshots), so prefer what actually ran.
+        message_dict["model"] = getattr(response, "model", None) or self.model
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            message_dict["usage"] = usage.model_dump(exclude_none=True)
         # Some providers (OpenRouter unified, DeepSeek-style vLLM deployments)
         # put chain-of-thought on a non-standard field; normalize the two
         # known field names into a single "reasoning" key for display/UI
@@ -479,10 +487,15 @@ class OpenAIProvider:
         on_token: Optional[Callable[[str], Any]],
         on_reasoning: Optional[Callable[[str], Any]] = None,
     ) -> Tuple[Message, Any]:
-        stream = await self.client.chat.completions.create(**kwargs, stream=True)
+        stream = await self.client.chat.completions.create(
+            **kwargs, stream=True,
+            stream_options={"include_usage": True},
+        )
 
         content_parts: List[str] = []
         reasoning_parts: List[str] = []
+        usage_dict: Optional[Dict[str, Any]] = None
+        resolved_model: Optional[str] = None
         # Best-effort capture of structured reasoning metadata (OpenRouter's
         # reasoning_details array, Gemini-style thought signatures). Unlike
         # plain text deltas, providers don't standardize how these fragment
@@ -498,6 +511,15 @@ class OpenAIProvider:
         role = "assistant"
 
         async for chunk in stream:
+            if getattr(chunk, "model", None):
+                resolved_model = chunk.model
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage is not None:
+                # The include_usage final chunk carries usage and typically
+                # has an empty choices list — must capture it here, before
+                # the choices-empty check below would otherwise skip it.
+                usage_dict = chunk_usage.model_dump(exclude_none=True)
+
             if not chunk.choices:
                 continue
             choice = chunk.choices[0]
@@ -589,6 +611,9 @@ class OpenAIProvider:
         if tool_call_frags:
             message_dict["tool_calls"] = [tc.copy() for tc in
                                            [tool_call_frags[i] for i in sorted(tool_call_frags)]]
+        message_dict["model"] = resolved_model or self.model
+        if usage_dict is not None:
+            message_dict["usage"] = usage_dict
         message_dict = {k: v for k, v in message_dict.items() if v is not None}
 
         return message_dict, tool_calls

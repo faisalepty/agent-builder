@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_bulk_edit": 1,
+ "autoname": "hash",
  "creation": "2026-06-29 15:36:16.745553",
  "default_view": "List",
  "doctype": "DocType",
@@ -14,7 +15,14 @@
   "status",
   "last_active",
   "message_count",
-  "tool_call_count"
+  "tool_call_count",
+  "model",
+  "total_input_tokens",
+  "total_output_tokens",
+  "estimated_cost",
+  "turn_count",
+  "ended_reason",
+  "skill_invoked"
  ],
  "fields": [
   {
@@ -72,15 +80,56 @@
    "fieldtype": "Int",
    "label": "Tool Call Count",
    "read_only": 1
+  },
+  {
+   "description": "Denormalized from first assistant message, for fast filtering/grouping",
+   "fieldname": "model",
+   "fieldtype": "Data",
+   "label": "Primary Model"
+  },
+  {
+   "fieldname": "total_input_tokens",
+   "fieldtype": "Int",
+   "label": "Total Input Tokens"
+  },
+  {
+   "fieldname": "total_output_tokens",
+   "fieldtype": "Int",
+   "label": "Total Output Tokens"
+  },
+  {
+   "description": "Computed from token totals against a model pricing table",
+   "fieldname": "estimated_cost",
+   "fieldtype": "Currency",
+   "label": "Estimated Cost"
+  },
+  {
+   "description": "Distinct from message_count \u2014 counts LLM round-trips, not rows",
+   "fieldname": "turn_count",
+   "fieldtype": "Int",
+   "label": "Turn Count"
+  },
+  {
+   "description": "Set in Agent.run()'s finally/except paths \u2014 currently these just raise/log and get lost",
+   "fieldname": "ended_reason",
+   "fieldtype": "Select",
+   "label": "Ended Reason",
+   "options": "\nCompleted\nMaxTurnsError\nLoopDetected\nError\nAbandoned"
+  },
+  {
+   "description": "Slash-command skill name if the session started with one, for adoption reporting",
+   "fieldname": "skill_invoked",
+   "fieldtype": "Data",
+   "label": "Skill Invoked"
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-07-08 14:08:17.616280",
+ "modified": "2026-07-08 15:19:16.042485",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Agent session",
- "naming_rule": "By script",
+ "naming_rule": "Random",
  "owner": "Administrator",
  "permissions": [
   {

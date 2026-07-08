@@ -60,6 +60,7 @@ class Agent:
         last_fp: Optional[Tuple[str, str]] = None
         loop_strikes = 0
         turns = 0
+        ended_reason = "Completed"
 
         try:
             while turns < self.max_turns:
@@ -68,11 +69,14 @@ class Agent:
                     conversation.get_messages(reasoning_replay=self.provider.replay_reasoning)
                 )
 
+                t0 = time.monotonic()
                 response, tool_calls = await self._retry_llm(
                     messages, available_tools, on_token=on_token, on_reasoning=on_reasoning
                 )
+                latency_ms = int((time.monotonic() - t0) * 1000)
                 conversation.add_assistant_message(
-                    response, streamed=on_token is not None or on_reasoning is not None
+                    response, streamed=on_token is not None or on_reasoning is not None,
+                    latency_ms=latency_ms,
                 )
 
                 if not tool_calls:
@@ -81,26 +85,40 @@ class Agent:
 
                 # Loop detection: check the first tool call pattern
                 fp = (tool_calls[0].function.name, tool_calls[0].function.arguments)
-                if fp == last_fp:
+                is_loop_strike = fp == last_fp
+                if is_loop_strike:
                     loop_strikes += 1
                     if loop_strikes >= 3:
+                        ended_reason = "LoopDetected"
                         raise MaxTurnsError(f"Stuck calling '{fp[0]}'")
                 else:
                     last_fp = fp
                     loop_strikes = 0
 
-                # Execute all tool calls in parallel
-                await self._execute_tool_calls_parallel(tool_calls, conversation)
+                # Execute all tool calls in parallel. Only the fingerprinted
+                # call (tool_calls[0]) is flagged as the loop strike here —
+                # the other calls in this same batch aren't what's being
+                # detected as stuck.
+                await self._execute_tool_calls_parallel(
+                    tool_calls, conversation, is_loop_strike=is_loop_strike
+                )
 
+            ended_reason = "MaxTurnsError"
             raise MaxTurnsError(f"Exceeded {self.max_turns}-turn budget.")
 
+        except MaxTurnsError:
+            raise
+        except Exception:
+            ended_reason = "Error"
+            raise
         finally:
-            conversation.save()
+            conversation.save(ended_reason=ended_reason)
 
     async def _execute_tool_calls_parallel(
-        self, 
-        tool_calls: List[Any], 
-        conversation: Conversation
+        self,
+        tool_calls: List[Any],
+        conversation: Conversation,
+        is_loop_strike: bool = False,
     ) -> None:
         """
         Execute multiple tool calls concurrently using asyncio.gather.
@@ -109,7 +127,7 @@ class Agent:
         returns multiple independent tool calls (e.g., fetching data from
         multiple sources simultaneously).
         """
-        async def execute_single_tool(tc: Any) -> None:
+        async def execute_single_tool(tc: Any, flag_as_strike: bool) -> None:
             """Execute a single tool call with proper event emission."""
             name = tc.function.name
             try:
@@ -125,12 +143,19 @@ class Agent:
             result = await self.executor._dispatch(name, tc.function.arguments)
             elapsed_ms = int((time.monotonic() - t0) * 1000)
 
-            # Add result to conversation
-            conversation.add_tool_result(tc.id, name, result, elapsed_ms=elapsed_ms)
+            # Add result to conversation. Only the fingerprinted call (index 0,
+            # the one run.py's loop-detection actually matched against
+            # last_fp) is marked was_loop_strike=True.
+            conversation.add_tool_result(
+                tc.id, name, result, elapsed_ms=elapsed_ms, was_loop_strike=flag_as_strike
+            )
 
         # Execute all tool calls concurrently
         # gather() will run them in parallel and wait for all to complete
-        await asyncio.gather(*[execute_single_tool(tc) for tc in tool_calls])
+        await asyncio.gather(*[
+            execute_single_tool(tc, is_loop_strike and idx == 0)
+            for idx, tc in enumerate(tool_calls)
+        ])
 
     async def _retry_llm(self, messages, tools, on_token=None, on_reasoning=None):
         last_err = None

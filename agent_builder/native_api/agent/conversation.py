@@ -178,13 +178,25 @@ class Conversation:
         self._last_message_id = msg_id
         self._emit("user", text)
 
-    def add_assistant_message(self, message_obj, streamed=False):
+    def add_assistant_message(self, message_obj, streamed=False, latency_ms=None):
         self._flush_reasoning()
 
         content = message_obj.get("content") or ""
         tool_calls = message_obj.get("tool_calls") or []
         reasoning_meta = message_obj.get("reasoning_meta")
         reasoning_text = message_obj.get("reasoning")
+        # Populated by OpenAIProvider.generate() — see openai_api.py. Handles
+        # both Chat Completions (prompt_tokens/completion_tokens) and
+        # Anthropic/Responses-style (input_tokens/output_tokens) usage shapes
+        # so this layer stays provider-agnostic.
+        usage = message_obj.get("usage") or {}
+        model = message_obj.get("model")
+        input_tokens = usage.get("prompt_tokens") or usage.get("input_tokens") or 0
+        output_tokens = usage.get("completion_tokens") or usage.get("output_tokens") or 0
+        cached_tokens = (usage.get("prompt_tokens_details") or {}).get("cached_tokens")
+        reasoning_tokens = (usage.get("completion_tokens_details") or {}).get("reasoning_tokens")
+
+        self._turn_index = getattr(self, "_turn_index", 0) + 1
 
         # If this call wasn't streamed, reasoning text never went through
         # emit_reasoning()/_flush_reasoning() above, so it would otherwise
@@ -209,9 +221,24 @@ class Conversation:
             # correctly later. Requires a "reasoning_meta" Long Text/JSON
             # field on the Agent Message child table.
             "reasoning_meta": json.dumps(reasoning_meta) if reasoning_meta else None,
+            "turn_index": self._turn_index,
+            "model": model,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cached_tokens": cached_tokens,
+            "reasoning_tokens": reasoning_tokens,
+            "latency_ms": latency_ms,
             "timestamp": now_datetime(),
         })
         self._last_message_id = msg_id
+
+        # Denormalize onto the session doc for cheap dashboard queries —
+        # avoids a child-table aggregation just to plot cost/turns per session.
+        if model and not self.doc.model:
+            self.doc.model = model
+        self.doc.total_input_tokens = (self.doc.total_input_tokens or 0) + input_tokens
+        self.doc.total_output_tokens = (self.doc.total_output_tokens or 0) + output_tokens
+        self.doc.turn_count = self._turn_index
 
         for tc in tool_calls:
             fn = tc.get("function", {})
@@ -267,7 +294,7 @@ class Conversation:
             "call_id": tool_call_id,
         })
 
-    def add_tool_result(self, tool_call_id, name, content, elapsed_ms=None):
+    def add_tool_result(self, tool_call_id, name, content, elapsed_ms=None, was_loop_strike=False):
         is_error = isinstance(content, str) and content.startswith("Error:")
         now = now_datetime()
 
@@ -277,6 +304,7 @@ class Conversation:
 
             tc.status = "error" if is_error else "success"
             tc.completed_at = now
+            tc.was_loop_strike = was_loop_strike
 
             if is_error:
                 tc.error = content
@@ -317,11 +345,13 @@ class Conversation:
 
     # ── Persistence ──────────────────────────────────────
 
-    def save(self):
+    def save(self, ended_reason=None):
         self._flush_reasoning()
         self.doc.last_active = now_datetime()
         self.doc.message_count = len(self.doc.messages)
         self.doc.tool_call_count = len(self.doc.tool_calls)
+        if ended_reason:
+            self.doc.ended_reason = ended_reason
         self.doc.save(ignore_permissions=True)
         frappe.db.commit()
 
