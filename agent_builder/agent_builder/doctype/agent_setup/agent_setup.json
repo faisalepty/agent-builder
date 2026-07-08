@@ -9,7 +9,8 @@
   "api_key",
   "provider",
   "model",
-  "allowed_role"
+  "allowed_role",
+  "agent_name"
  ],
  "fields": [
   {
@@ -39,6 +40,13 @@
    "label": "Allowed Role",
    "options": "Role",
    "description": "If set, only users with this role will see the chat widget. Leave blank to allow all users."
+  },
+  {
+   "fieldname": "agent_name",
+   "fieldtype": "Data",
+   "label": "Agent Name",
+   "default": "Omnis",
+   "description": "The name of the AI agent displayed in the chat interface."
   }
  ],
  "grid_page_length": 50,

@@ -140,3 +140,26 @@ LIST_SKILLS = {
         "required": [],
     },
 }
+
+FRAPPE_EXECUTE_REPORT = {
+    "name": "frappe_execute_report",
+    "description": (
+        "Execute a Frappe Report (Standard or Custom). "
+        "Use this to get aggregated data, financials, or analytics like Profit and Loss, Sales, or Outstanding Balances. "
+        "Returns the report's result rows and columns."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "report_name": {
+                "type": "string",
+                "description": "The name of the Report e.g. 'Profit and Loss Statement', 'Accounts Receivable'",
+            },
+            "filters": {
+                "type": "object",
+                "description": "Key-value filters to apply to the report (e.g. {\"company\": \"My Company\", \"from_date\": \"2023-01-01\"}). If the user does not specify dates or company, leave this empty or omit the filters, and the system will automatically use the current fiscal year and default company.",
+            },
+        },
+        "required": ["report_name"],
+    },
+}

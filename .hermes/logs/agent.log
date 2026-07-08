@@ -3105,3 +3105,306 @@ We need to use tools: frappe_get_list for Companies, Fiscal Year, Bank Accounts 
 2026-07-04 11:05:04,747 INFO [20260704_110457_a0a777] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=1/90 budget=1/90 tool_turns=0 last_msg_role=assistant response_len=73 session=20260704_110457_a0a777
 2026-07-04 11:05:04,758 INFO [20260704_110457_a0a777] rq.worker: home-frappe-benches-school:short: Job OK (school.local::1c5c2316-5b9f-4659-b24b-e86cb2871004)
 2026-07-04 11:05:04,758 INFO [20260704_110457_a0a777] rq.worker: Result is kept for 600 seconds
+2026-07-08 11:15:03,781 INFO agent.auxiliary_client: Auxiliary auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:15:04,092 INFO run_agent: OpenAI client created (agent_init, shared=True) thread=MainThread:137175848775808 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:15:05,743 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:15:05,811 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:15:09,218 INFO agent.context_compressor: Context compressor initialized: model=gpt-4o context_length=128000 threshold=64000 (50%) target_ratio=20% tail_budget=12800 provider=none base_url=https://api.openai.com/v1/
+2026-07-08 11:15:09,238 INFO [20260708_111505_ec5cc7] agent.turn_context: conversation turn: session=20260708_111505_ec5cc7 model=gpt-4o provider=unknown platform=frappe history=0 msg='hi, who are you?'
+2026-07-08 11:15:10,914 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:15:15,469 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:15:15,470 INFO [20260708_111505_ec5cc7] agent.conversation_loop: API call #1: model=gpt-4o provider=unknown in=7919 out=56 total=7975 latency=4.6s
+2026-07-08 11:15:16,895 INFO [20260708_111505_ec5cc7] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=1/90 budget=1/90 tool_turns=0 last_msg_role=assistant response_len=235 session=20260708_111505_ec5cc7
+2026-07-08 11:15:16,914 INFO [20260708_111505_ec5cc7] rq.worker: home-frappe-benches-school:short: Job OK (school.local::6d37d19b-2fb2-4086-8d22-004c4dc816f6)
+2026-07-08 11:15:16,915 INFO [20260708_111505_ec5cc7] rq.worker: Result is kept for 600 seconds
+2026-07-08 11:18:27,567 INFO agent.auxiliary_client: Auxiliary auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:18:27,657 INFO run_agent: OpenAI client created (agent_init, shared=True) thread=MainThread:137175848775808 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:18:27,931 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:18:27,998 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:18:29,361 INFO agent.context_compressor: Context compressor initialized: model=gpt-4o context_length=128000 threshold=64000 (50%) target_ratio=20% tail_budget=12800 provider=none base_url=https://api.openai.com/v1/
+2026-07-08 11:18:29,385 INFO [20260708_111828_c9cabe] agent.turn_context: conversation turn: session=20260708_111828_c9cabe model=gpt-4o provider=unknown platform=frappe history=2 msg='give me a graph of the paid and unpaid sales invoice amounts'
+2026-07-08 11:18:30,653 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:18:32,821 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:18:32,824 INFO [20260708_111828_c9cabe] agent.conversation_loop: API call #1: model=gpt-4o provider=unknown in=7994 out=29 total=8023 latency=2.2s cache=7936/7994 (99%)
+2026-07-08 11:18:34,339 INFO [20260708_111828_c9cabe] agent.tool_executor: tool frappe_get_list completed (0.03s, 240 chars)
+2026-07-08 11:18:34,508 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:18:37,568 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:18:37,570 INFO [20260708_111828_c9cabe] agent.conversation_loop: API call #2: model=gpt-4o provider=unknown in=8134 out=173 total=8307 latency=3.2s cache=7936/8134 (98%)
+2026-07-08 11:18:37,591 INFO [20260708_111828_c9cabe] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=2/90 budget=2/90 tool_turns=1 last_msg_role=assistant response_len=676 session=20260708_111828_c9cabe
+2026-07-08 11:18:37,640 INFO [20260708_111828_c9cabe] rq.worker: home-frappe-benches-school:short: Job OK (school.local::85cd6d59-dff9-48f5-b36b-c38b4b471872)
+2026-07-08 11:18:37,642 INFO [20260708_111828_c9cabe] rq.worker: Result is kept for 600 seconds
+2026-07-08 11:19:45,626 INFO agent.auxiliary_client: Auxiliary auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:19:45,718 INFO run_agent: OpenAI client created (agent_init, shared=True) thread=MainThread:137175848775808 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:19:46,004 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:19:46,086 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:19:47,015 INFO agent.context_compressor: Context compressor initialized: model=gpt-4o context_length=128000 threshold=64000 (50%) target_ratio=20% tail_budget=12800 provider=none base_url=https://api.openai.com/v1/
+2026-07-08 11:19:47,054 INFO [20260708_111946_2e8ca6] agent.turn_context: conversation turn: session=20260708_111946_2e8ca6 model=gpt-4o provider=unknown platform=frappe history=6 msg='give me the profit and loss'
+2026-07-08 11:19:48,442 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:19:50,272 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:19:50,274 INFO [20260708_111946_2e8ca6] agent.conversation_loop: API call #1: model=gpt-4o provider=unknown in=8320 out=21 total=8341 latency=1.9s cache=8192/8320 (98%)
+2026-07-08 11:19:51,678 WARNING [20260708_111946_2e8ca6] agent.tool_executor: Tool frappe_execute_report returned error (0.01s): {"error": "module 'frappe.desk' has no attribute 'query_report'"}
+2026-07-08 11:19:51,902 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:19:59,256 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:19:59,260 INFO [20260708_111946_2e8ca6] agent.conversation_loop: API call #2: model=gpt-4o provider=unknown in=8370 out=158 total=8528 latency=7.6s cache=8320/8370 (99%)
+2026-07-08 11:19:59,278 INFO [20260708_111946_2e8ca6] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=2/90 budget=2/90 tool_turns=2 last_msg_role=assistant response_len=783 session=20260708_111946_2e8ca6
+2026-07-08 11:19:59,333 INFO [20260708_111946_2e8ca6] rq.worker: home-frappe-benches-school:short: Job OK (school.local::d0eaa4e3-7342-4531-8839-7c8b16249ed6)
+2026-07-08 11:19:59,336 INFO [20260708_111946_2e8ca6] rq.worker: Result is kept for 600 seconds
+2026-07-08 11:27:22,837 INFO agent.auxiliary_client: Auxiliary auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:27:22,932 INFO run_agent: OpenAI client created (agent_init, shared=True) thread=MainThread:137175848775808 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:27:23,211 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:27:23,290 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:27:24,435 INFO agent.context_compressor: Context compressor initialized: model=gpt-4o context_length=128000 threshold=64000 (50%) target_ratio=20% tail_budget=12800 provider=none base_url=https://api.openai.com/v1/
+2026-07-08 11:27:24,463 INFO [20260708_112723_737f78] agent.turn_context: conversation turn: session=20260708_112723_737f78 model=gpt-4o provider=unknown platform=frappe history=10 msg='give me the profit and loss'
+2026-07-08 11:27:25,723 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:27:27,742 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:27:27,745 INFO [20260708_112723_737f78] agent.conversation_loop: API call #1: model=gpt-4o provider=unknown in=8541 out=21 total=8562 latency=2.1s
+2026-07-08 11:27:34,887 WARNING [20260708_112723_737f78] agent.tool_executor: Tool frappe_execute_report returned error (0.01s): {"error": "module 'frappe.desk' has no attribute 'query_report'"}
+2026-07-08 11:27:35,109 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:27:38,110 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:27:38,112 INFO [20260708_112723_737f78] agent.conversation_loop: API call #2: model=gpt-4o provider=unknown in=8591 out=143 total=8734 latency=3.2s cache=8448/8591 (98%)
+2026-07-08 11:27:38,129 INFO [20260708_112723_737f78] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=2/90 budget=2/90 tool_turns=3 last_msg_role=assistant response_len=730 session=20260708_112723_737f78
+2026-07-08 11:27:38,178 INFO [20260708_112723_737f78] rq.worker: home-frappe-benches-school:short: Job OK (school.local::5add1b90-1bcc-4255-a4cc-37485a36012d)
+2026-07-08 11:27:38,180 INFO [20260708_112723_737f78] rq.worker: Result is kept for 600 seconds
+2026-07-08 11:32:07,367 INFO agent.auxiliary_client: Auxiliary auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:32:07,459 INFO run_agent: OpenAI client created (agent_init, shared=True) thread=MainThread:137175848775808 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:32:07,715 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:32:07,779 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:32:09,173 INFO agent.context_compressor: Context compressor initialized: model=gpt-4o context_length=128000 threshold=64000 (50%) target_ratio=20% tail_budget=12800 provider=none base_url=https://api.openai.com/v1/
+2026-07-08 11:32:09,200 INFO [20260708_113207_78974e] agent.turn_context: conversation turn: session=20260708_113207_78974e model=gpt-4o provider=unknown platform=frappe history=14 msg='give me the profit and loss'
+2026-07-08 11:32:10,420 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:32:12,487 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:32:12,490 INFO [20260708_113207_78974e] agent.conversation_loop: API call #1: model=gpt-4o provider=unknown in=8790 out=78 total=8868 latency=2.1s cache=4864/8790 (55%)
+2026-07-08 11:32:14,068 WARNING [20260708_113207_78974e] agent.tool_executor: Tool clarify returned error (0.00s): {"error": "Clarify tool is not available in this execution context."}
+2026-07-08 11:32:14,150 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:32:17,910 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:32:17,911 INFO [20260708_113207_78974e] agent.conversation_loop: API call #2: model=gpt-4o provider=unknown in=8892 out=156 total=9048 latency=3.8s cache=8704/8892 (98%)
+2026-07-08 11:32:17,919 INFO [20260708_113207_78974e] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=2/90 budget=2/90 tool_turns=4 last_msg_role=assistant response_len=832 session=20260708_113207_78974e
+2026-07-08 11:32:17,939 INFO [20260708_113207_78974e] rq.worker: home-frappe-benches-school:short: Job OK (school.local::5192e76c-34e5-4663-968c-234adacf47df)
+2026-07-08 11:32:17,939 INFO [20260708_113207_78974e] rq.worker: Result is kept for 600 seconds
+2026-07-08 11:33:36,952 INFO agent.auxiliary_client: Auxiliary auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:33:37,051 INFO run_agent: OpenAI client created (agent_init, shared=True) thread=MainThread:137175848775808 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:33:37,352 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:33:37,423 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:33:38,895 INFO agent.context_compressor: Context compressor initialized: model=gpt-4o context_length=128000 threshold=64000 (50%) target_ratio=20% tail_budget=12800 provider=none base_url=https://api.openai.com/v1/
+2026-07-08 11:33:38,916 INFO [20260708_113337_5ef2b7] agent.turn_context: conversation turn: session=20260708_113337_5ef2b7 model=gpt-4o provider=unknown platform=frappe history=0 msg='give me the profit and loss'
+2026-07-08 11:33:40,297 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:33:42,759 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:33:42,763 INFO [20260708_113337_5ef2b7] agent.conversation_loop: API call #1: model=gpt-4o provider=unknown in=7962 out=66 total=8028 latency=2.5s cache=6912/7962 (87%)
+2026-07-08 11:33:43,850 INFO [20260708_113337_5ef2b7] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=1/90 budget=1/90 tool_turns=0 last_msg_role=assistant response_len=311 session=20260708_113337_5ef2b7
+2026-07-08 11:33:43,904 INFO [20260708_113337_5ef2b7] rq.worker: home-frappe-benches-school:short: Job OK (school.local::bdf9c48e-83c9-429f-8d10-6ded9c1e984f)
+2026-07-08 11:33:43,905 INFO [20260708_113337_5ef2b7] rq.worker: Result is kept for 600 seconds
+2026-07-08 11:34:53,317 INFO agent.auxiliary_client: Auxiliary auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:34:53,503 INFO run_agent: OpenAI client created (agent_init, shared=True) thread=MainThread:137175848775808 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:34:53,775 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:34:53,840 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:34:54,835 INFO agent.context_compressor: Context compressor initialized: model=gpt-4o context_length=128000 threshold=64000 (50%) target_ratio=20% tail_budget=12800 provider=none base_url=https://api.openai.com/v1/
+2026-07-08 11:34:54,854 INFO [20260708_113453_cc28c5] agent.turn_context: conversation turn: session=20260708_113453_cc28c5 model=gpt-4o provider=unknown platform=frappe history=2 msg='Makueni Boys High School, for date filters give in the last one year'
+2026-07-08 11:34:56,110 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:35:02,185 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:35:02,188 INFO [20260708_113453_cc28c5] agent.conversation_loop: API call #1: model=gpt-4o provider=unknown in=8051 out=52 total=8103 latency=6.2s cache=7936/8051 (99%)
+2026-07-08 11:35:03,753 WARNING [20260708_113453_cc28c5] agent.tool_executor: Tool frappe_execute_report returned error (0.00s): {"error": "module 'frappe.desk' has no attribute 'query_report'"}
+2026-07-08 11:35:03,855 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:35:12,899 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:35:12,902 INFO [20260708_113453_cc28c5] agent.conversation_loop: API call #2: model=gpt-4o provider=unknown in=8133 out=129 total=8262 latency=9.1s cache=8064/8133 (99%)
+2026-07-08 11:35:12,919 INFO [20260708_113453_cc28c5] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=2/90 budget=2/90 tool_turns=1 last_msg_role=assistant response_len=639 session=20260708_113453_cc28c5
+2026-07-08 11:35:12,973 INFO [20260708_113453_cc28c5] rq.worker: home-frappe-benches-school:short: Job OK (school.local::f86b2ef3-85d7-4cf9-afb5-1940b89e6864)
+2026-07-08 11:35:12,974 INFO [20260708_113453_cc28c5] rq.worker: Result is kept for 600 seconds
+2026-07-08 11:43:32,890 INFO agent.auxiliary_client: Auxiliary auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:43:32,980 INFO run_agent: OpenAI client created (agent_init, shared=True) thread=MainThread:137175848775808 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:43:33,243 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:43:33,315 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:43:34,949 INFO agent.context_compressor: Context compressor initialized: model=gpt-4o context_length=128000 threshold=64000 (50%) target_ratio=20% tail_budget=12800 provider=none base_url=https://api.openai.com/v1/
+2026-07-08 11:43:34,970 INFO [20260708_114333_bdb14c] agent.turn_context: conversation turn: session=20260708_114333_bdb14c model=gpt-4o provider=unknown platform=frappe history=6 msg='give me the profit and loss'
+2026-07-08 11:43:36,252 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:43:40,202 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:43:40,204 INFO [20260708_114333_bdb14c] agent.conversation_loop: API call #1: model=gpt-4o provider=unknown in=8275 out=147 total=8422 latency=4.0s cache=8192/8275 (99%)
+2026-07-08 11:43:41,604 WARNING [20260708_114333_bdb14c] agent.tool_executor: Tool frappe_execute_report returned error (0.00s): {"error": "module 'frappe.desk' has no attribute 'query_report'"}
+2026-07-08 11:43:41,675 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:43:45,692 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:43:45,694 INFO [20260708_114333_bdb14c] agent.conversation_loop: API call #2: model=gpt-4o provider=unknown in=8455 out=199 total=8654 latency=4.1s cache=8320/8455 (98%)
+2026-07-08 11:43:45,700 INFO [20260708_114333_bdb14c] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=2/90 budget=2/90 tool_turns=2 last_msg_role=assistant response_len=1048 session=20260708_114333_bdb14c
+2026-07-08 11:43:45,747 INFO [20260708_114333_bdb14c] rq.worker: home-frappe-benches-school:short: Job OK (school.local::c5b87a09-b924-4ce3-b343-86be7c1b11f4)
+2026-07-08 11:43:45,748 INFO [20260708_114333_bdb14c] rq.worker: Result is kept for 600 seconds
+2026-07-08 11:44:19,208 INFO agent.auxiliary_client: Auxiliary auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:44:19,309 INFO run_agent: OpenAI client created (agent_init, shared=True) thread=MainThread:137175848775808 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:44:19,589 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:44:19,654 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:44:20,552 INFO agent.context_compressor: Context compressor initialized: model=gpt-4o context_length=128000 threshold=64000 (50%) target_ratio=20% tail_budget=12800 provider=none base_url=https://api.openai.com/v1/
+2026-07-08 11:44:20,573 INFO [20260708_114419_a2985a] agent.turn_context: conversation turn: session=20260708_114419_a2985a model=gpt-4o provider=unknown platform=frappe history=0 msg='give me the profit and loss'
+2026-07-08 11:44:21,764 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:44:28,102 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:44:28,107 INFO [20260708_114419_a2985a] agent.conversation_loop: API call #1: model=gpt-4o provider=unknown in=7962 out=84 total=8046 latency=6.4s cache=7936/7962 (100%)
+2026-07-08 11:44:29,376 INFO [20260708_114419_a2985a] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=1/90 budget=1/90 tool_turns=0 last_msg_role=assistant response_len=312 session=20260708_114419_a2985a
+2026-07-08 11:44:29,399 INFO [20260708_114419_a2985a] rq.worker: home-frappe-benches-school:short: Job OK (school.local::4d146de1-5f0b-41b1-b99d-c2c2f2a19fe9)
+2026-07-08 11:44:29,400 INFO [20260708_114419_a2985a] rq.worker: Result is kept for 600 seconds
+2026-07-08 11:45:43,116 INFO agent.auxiliary_client: Auxiliary auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:45:43,215 INFO run_agent: OpenAI client created (agent_init, shared=True) thread=MainThread:137175848775808 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:45:43,503 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:45:43,579 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:45:45,227 INFO agent.context_compressor: Context compressor initialized: model=gpt-4o context_length=128000 threshold=64000 (50%) target_ratio=20% tail_budget=12800 provider=none base_url=https://api.openai.com/v1/
+2026-07-08 11:45:45,278 INFO [20260708_114543_7872b9] agent.turn_context: conversation turn: session=20260708_114543_7872b9 model=gpt-4o provider=unknown platform=frappe history=2 msg='give the profit and loss statement for the current year'
+2026-07-08 11:45:46,611 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:45:48,371 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:45:48,372 INFO [20260708_114543_7872b9] agent.conversation_loop: API call #1: model=gpt-4o provider=unknown in=8063 out=43 total=8106 latency=1.8s cache=7936/8063 (98%)
+2026-07-08 11:45:49,775 WARNING [20260708_114543_7872b9] agent.tool_executor: Tool frappe_execute_report returned error (0.01s): {"error": "module 'frappe.desk' has no attribute 'query_report'"}
+2026-07-08 11:45:49,981 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:45:52,513 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:45:52,515 INFO [20260708_114543_7872b9] agent.conversation_loop: API call #2: model=gpt-4o provider=unknown in=8136 out=104 total=8240 latency=2.7s cache=8064/8136 (99%)
+2026-07-08 11:45:52,531 INFO [20260708_114543_7872b9] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=2/90 budget=2/90 tool_turns=1 last_msg_role=assistant response_len=549 session=20260708_114543_7872b9
+2026-07-08 11:45:52,574 INFO [20260708_114543_7872b9] rq.worker: home-frappe-benches-school:short: Job OK (school.local::a5a9d434-0066-49a8-b748-1f140c1b4aed)
+2026-07-08 11:45:52,575 INFO [20260708_114543_7872b9] rq.worker: Result is kept for 600 seconds
+2026-07-08 11:46:24,412 INFO agent.auxiliary_client: Auxiliary auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:46:24,515 INFO run_agent: OpenAI client created (agent_init, shared=True) thread=MainThread:137175848775808 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:46:24,807 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:46:24,882 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:46:26,150 INFO agent.context_compressor: Context compressor initialized: model=gpt-4o context_length=128000 threshold=64000 (50%) target_ratio=20% tail_budget=12800 provider=none base_url=https://api.openai.com/v1/
+2026-07-08 11:46:26,170 INFO [20260708_114624_de21dc] agent.turn_context: conversation turn: session=20260708_114624_de21dc model=gpt-4o provider=unknown platform=frappe history=6 msg='what is the profit for the current year?'
+2026-07-08 11:46:27,497 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:46:34,017 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:46:34,020 INFO [20260708_114624_de21dc] agent.conversation_loop: API call #1: model=gpt-4o provider=unknown in=8256 out=44 total=8300 latency=6.6s cache=8192/8256 (99%)
+2026-07-08 11:46:35,330 WARNING [20260708_114624_de21dc] agent.tool_executor: Tool frappe_execute_report returned error (0.01s): {"error": "module 'frappe.desk' has no attribute 'query_report'"}
+2026-07-08 11:46:35,490 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:46:38,202 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:46:38,205 INFO [20260708_114624_de21dc] agent.conversation_loop: API call #2: model=gpt-4o provider=unknown in=8329 out=113 total=8442 latency=2.9s cache=8192/8329 (98%)
+2026-07-08 11:46:38,226 INFO [20260708_114624_de21dc] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=2/90 budget=2/90 tool_turns=2 last_msg_role=assistant response_len=612 session=20260708_114624_de21dc
+2026-07-08 11:46:38,278 INFO [20260708_114624_de21dc] rq.worker: home-frappe-benches-school:short: Job OK (school.local::bcd465f5-ebb2-4952-b658-c138cde65c41)
+2026-07-08 11:46:38,280 INFO [20260708_114624_de21dc] rq.worker: Result is kept for 600 seconds
+2026-07-08 11:46:57,513 INFO agent.auxiliary_client: Auxiliary auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:46:57,633 INFO run_agent: OpenAI client created (agent_init, shared=True) thread=MainThread:137175848775808 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:46:57,988 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:46:58,082 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:46:58,949 INFO agent.context_compressor: Context compressor initialized: model=gpt-4o context_length=128000 threshold=64000 (50%) target_ratio=20% tail_budget=12800 provider=none base_url=https://api.openai.com/v1/
+2026-07-08 11:46:58,977 INFO [20260708_114658_33d71e] agent.turn_context: conversation turn: session=20260708_114658_33d71e model=gpt-4o provider=unknown platform=frappe history=10 msg='give me the sales for this month'
+2026-07-08 11:47:00,507 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:47:02,503 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:47:02,505 INFO [20260708_114658_33d71e] agent.conversation_loop: API call #1: model=gpt-4o provider=unknown in=8456 out=41 total=8497 latency=2.1s cache=8320/8456 (98%)
+2026-07-08 11:47:03,832 WARNING [20260708_114658_33d71e] agent.tool_executor: Tool frappe_execute_report returned error (0.01s): {"error": "module 'frappe.desk' has no attribute 'query_report'"}
+2026-07-08 11:47:04,042 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:47:06,632 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:47:06,634 INFO [20260708_114658_33d71e] agent.conversation_loop: API call #2: model=gpt-4o provider=unknown in=8527 out=118 total=8645 latency=2.8s cache=8448/8527 (99%)
+2026-07-08 11:47:06,650 INFO [20260708_114658_33d71e] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=2/90 budget=2/90 tool_turns=3 last_msg_role=assistant response_len=598 session=20260708_114658_33d71e
+2026-07-08 11:47:06,695 INFO [20260708_114658_33d71e] rq.worker: home-frappe-benches-school:short: Job OK (school.local::0013dcf5-0d94-43d4-98d0-bd906922f0ad)
+2026-07-08 11:47:06,699 INFO [20260708_114658_33d71e] rq.worker: Result is kept for 600 seconds
+2026-07-08 11:52:10,663 INFO agent.auxiliary_client: Auxiliary auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:52:10,768 INFO run_agent: OpenAI client created (agent_init, shared=True) thread=MainThread:137175848775808 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:52:11,048 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:52:11,121 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:52:12,976 INFO agent.context_compressor: Context compressor initialized: model=gpt-4o context_length=128000 threshold=64000 (50%) target_ratio=20% tail_budget=12800 provider=none base_url=https://api.openai.com/v1/
+2026-07-08 11:52:12,996 INFO [20260708_115211_abc1a1] agent.turn_context: conversation turn: session=20260708_115211_abc1a1 model=gpt-4o provider=unknown platform=frappe history=14 msg='give me the sales for this month'
+2026-07-08 11:52:14,300 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:52:15,989 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:52:15,991 INFO [20260708_115211_abc1a1] agent.conversation_loop: API call #1: model=gpt-4o provider=unknown in=8659 out=65 total=8724 latency=1.8s cache=8576/8659 (99%)
+2026-07-08 11:52:17,524 INFO [20260708_115211_abc1a1] agent.tool_executor: tool frappe_get_list completed (0.09s, 114 chars)
+2026-07-08 11:52:17,730 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:52:19,434 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:52:19,438 INFO [20260708_115211_abc1a1] agent.conversation_loop: API call #2: model=gpt-4o provider=unknown in=8769 out=103 total=8872 latency=1.9s cache=8576/8769 (98%)
+2026-07-08 11:52:19,458 INFO [20260708_115211_abc1a1] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=2/90 budget=2/90 tool_turns=4 last_msg_role=assistant response_len=313 session=20260708_115211_abc1a1
+2026-07-08 11:52:19,492 INFO [20260708_115211_abc1a1] rq.worker: home-frappe-benches-school:short: Job OK (school.local::10b63a0c-6127-4f23-b134-f9f6524ba4d1)
+2026-07-08 11:52:19,492 INFO [20260708_115211_abc1a1] rq.worker: Result is kept for 600 seconds
+2026-07-08 11:52:53,810 INFO agent.auxiliary_client: Auxiliary auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:52:53,910 INFO run_agent: OpenAI client created (agent_init, shared=True) thread=MainThread:137175848775808 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:52:54,212 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:52:54,286 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:52:54,929 INFO agent.context_compressor: Context compressor initialized: model=gpt-4o context_length=128000 threshold=64000 (50%) target_ratio=20% tail_budget=12800 provider=none base_url=https://api.openai.com/v1/
+2026-07-08 11:52:54,950 INFO [20260708_115254_9a0457] agent.turn_context: conversation turn: session=20260708_115254_9a0457 model=gpt-4o provider=unknown platform=frappe history=18 msg='give me the profit and loss'
+2026-07-08 11:52:56,318 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:52:58,782 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:52:58,784 INFO [20260708_115254_9a0457] agent.conversation_loop: API call #1: model=gpt-4o provider=unknown in=8885 out=108 total=8993 latency=2.6s cache=8832/8885 (99%)
+2026-07-08 11:53:00,009 INFO [20260708_115254_9a0457] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=1/90 budget=1/90 tool_turns=4 last_msg_role=assistant response_len=624 session=20260708_115254_9a0457
+2026-07-08 11:53:00,057 INFO [20260708_115254_9a0457] rq.worker: home-frappe-benches-school:short: Job OK (school.local::c7942faf-8323-44c8-b18e-3540f74a10a0)
+2026-07-08 11:53:00,058 INFO [20260708_115254_9a0457] rq.worker: Result is kept for 600 seconds
+2026-07-08 11:53:40,848 INFO agent.auxiliary_client: Auxiliary auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:53:40,940 INFO run_agent: OpenAI client created (agent_init, shared=True) thread=MainThread:137175848775808 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:53:41,215 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:53:41,286 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:53:42,107 INFO agent.context_compressor: Context compressor initialized: model=gpt-4o context_length=128000 threshold=64000 (50%) target_ratio=20% tail_budget=12800 provider=none base_url=https://api.openai.com/v1/
+2026-07-08 11:53:42,131 INFO [20260708_115341_4b9984] agent.turn_context: conversation turn: session=20260708_115341_4b9984 model=gpt-4o provider=unknown platform=frappe history=20 msg='calculate the profit for the current year'
+2026-07-08 11:53:43,448 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:53:47,079 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:53:47,080 INFO [20260708_115341_4b9984] agent.conversation_loop: API call #1: model=gpt-4o provider=unknown in=9007 out=135 total=9142 latency=3.7s cache=8960/9007 (99%)
+2026-07-08 11:53:48,512 INFO [20260708_115341_4b9984] agent.tool_executor: tool frappe_get_list completed (0.02s, 52 chars)
+2026-07-08 11:53:49,518 WARNING [20260708_115341_4b9984] agent.tool_executor: Tool frappe_get_list returned error (0.00s): {"error": "DocType Expense Claim not found"}
+2026-07-08 11:53:49,570 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:53:52,080 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-3 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:53:52,081 INFO [20260708_115341_4b9984] agent.conversation_loop: API call #2: model=gpt-4o provider=unknown in=9157 out=136 total=9293 latency=2.6s cache=8960/9157 (98%)
+2026-07-08 11:53:52,086 INFO [20260708_115341_4b9984] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=2/90 budget=2/90 tool_turns=5 last_msg_role=assistant response_len=679 session=20260708_115341_4b9984
+2026-07-08 11:53:52,104 INFO [20260708_115341_4b9984] rq.worker: home-frappe-benches-school:short: Job OK (school.local::a271daba-f5d0-4b56-a78d-36c2dfd806e2)
+2026-07-08 11:53:52,104 INFO [20260708_115341_4b9984] rq.worker: Result is kept for 600 seconds
+2026-07-08 11:56:06,096 INFO agent.auxiliary_client: Auxiliary auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:56:06,197 INFO run_agent: OpenAI client created (agent_init, shared=True) thread=MainThread:137175848775808 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:56:06,464 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:56:06,530 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:56:08,274 INFO agent.context_compressor: Context compressor initialized: model=gpt-4o context_length=128000 threshold=64000 (50%) target_ratio=20% tail_budget=12800 provider=none base_url=https://api.openai.com/v1/
+2026-07-08 11:56:08,299 INFO [20260708_115606_59cfaa] agent.turn_context: conversation turn: session=20260708_115606_59cfaa model=gpt-4o provider=unknown platform=frappe history=0 msg='give me the profit and loss'
+2026-07-08 11:56:09,503 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:56:11,810 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:56:11,812 INFO [20260708_115606_59cfaa] agent.conversation_loop: API call #1: model=gpt-4o provider=unknown in=7962 out=67 total=8029 latency=2.4s cache=7936/7962 (100%)
+2026-07-08 11:56:13,207 INFO [20260708_115606_59cfaa] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=1/90 budget=1/90 tool_turns=0 last_msg_role=assistant response_len=324 session=20260708_115606_59cfaa
+2026-07-08 11:56:13,256 INFO [20260708_115606_59cfaa] rq.worker: home-frappe-benches-school:short: Job OK (school.local::da145470-4b8d-4a44-bdee-53c0c3a10ac4)
+2026-07-08 11:56:13,257 INFO [20260708_115606_59cfaa] rq.worker: Result is kept for 600 seconds
+2026-07-08 11:57:41,943 INFO agent.auxiliary_client: Auxiliary auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:57:42,053 INFO run_agent: OpenAI client created (agent_init, shared=True) thread=MainThread:137175848775808 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:57:42,418 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:57:42,515 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:57:47,011 INFO agent.context_compressor: Context compressor initialized: model=gpt-4o context_length=128000 threshold=64000 (50%) target_ratio=20% tail_budget=12800 provider=none base_url=https://api.openai.com/v1/
+2026-07-08 11:57:47,041 INFO [20260708_115742_885c85] agent.turn_context: conversation turn: session=20260708_115742_885c85 model=gpt-4o provider=unknown platform=frappe history=2 msg='01-07-2026, 30-06-2027, company is Makueni Boys High School'
+2026-07-08 11:57:48,652 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:57:50,554 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:57:50,558 INFO [20260708_115742_885c85] agent.conversation_loop: API call #1: model=gpt-4o provider=unknown in=8059 out=52 total=8111 latency=2.0s cache=7936/8059 (98%)
+2026-07-08 11:57:52,432 WARNING [20260708_115742_885c85] agent.tool_executor: Tool frappe_execute_report returned error (0.56s): {"error": "From Date and To Date are mandatory Hint: Financial reports often require 'company', 'from_date' (YYYY-MM-DD) and 'to_date' (YYYY-MM-DD) in filters."}
+2026-07-08 11:57:52,484 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-4 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:57:54,446 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-4 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:57:54,447 INFO [20260708_115742_885c85] agent.conversation_loop: API call #2: model=gpt-4o provider=unknown in=8165 out=123 total=8288 latency=2.0s cache=8064/8165 (99%)
+2026-07-08 11:57:54,548 WARNING [20260708_115742_885c85] agent.tool_executor: Tool frappe_execute_report returned error (0.09s): {"error": "From Date and To Date are mandatory Hint: Financial reports often require 'company', 'from_date' (YYYY-MM-DD) and 'to_date' (YYYY-MM-DD) in filters."}
+
+[Tool loop warning: repeated_exact_fa
+2026-07-08 11:57:54,697 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-6 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:57:57,328 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-6 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:57:57,331 INFO [20260708_115742_885c85] agent.conversation_loop: API call #3: model=gpt-4o provider=unknown in=8389 out=116 total=8505 latency=2.8s cache=8192/8389 (98%)
+2026-07-08 11:57:57,340 INFO [20260708_115742_885c85] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=3/90 budget=3/90 tool_turns=2 last_msg_role=assistant response_len=636 session=20260708_115742_885c85
+2026-07-08 11:57:57,396 INFO [20260708_115742_885c85] rq.worker: home-frappe-benches-school:short: Job OK (school.local::db431606-327e-4563-9b3e-5f57646f5b59)
+2026-07-08 11:57:57,397 INFO [20260708_115742_885c85] rq.worker: Result is kept for 600 seconds
+2026-07-08 11:58:54,098 INFO agent.auxiliary_client: Auxiliary auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:58:54,190 INFO run_agent: OpenAI client created (agent_init, shared=True) thread=MainThread:137175848775808 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:58:54,475 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:58:54,556 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 11:58:55,365 INFO agent.context_compressor: Context compressor initialized: model=gpt-4o context_length=128000 threshold=64000 (50%) target_ratio=20% tail_budget=12800 provider=none base_url=https://api.openai.com/v1/
+2026-07-08 11:58:55,387 INFO [20260708_115854_8c8b03] agent.turn_context: conversation turn: session=20260708_115854_8c8b03 model=gpt-4o provider=unknown platform=frappe history=8 msg='2026-7-01, 2027-07-31, company is Makueni Boys High School'
+2026-07-08 11:58:56,613 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:58:58,406 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:58:58,409 INFO [20260708_115854_8c8b03] agent.conversation_loop: API call #1: model=gpt-4o provider=unknown in=8535 out=53 total=8588 latency=1.9s cache=8448/8535 (99%)
+2026-07-08 11:59:00,164 WARNING [20260708_115854_8c8b03] agent.tool_executor: Tool frappe_execute_report returned error (0.65s): {"error": "From Date and To Date are mandatory Hint: Financial reports often require 'company', 'from_date' (YYYY-MM-DD) and 'to_date' (YYYY-MM-DD) in filters."}
+2026-07-08 11:59:00,215 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-4 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:59:02,590 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-4 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 11:59:02,593 INFO [20260708_115854_8c8b03] agent.conversation_loop: API call #2: model=gpt-4o provider=unknown in=8641 out=135 total=8776 latency=2.4s cache=8576/8641 (99%)
+2026-07-08 11:59:02,608 INFO [20260708_115854_8c8b03] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=2/90 budget=2/90 tool_turns=3 last_msg_role=assistant response_len=751 session=20260708_115854_8c8b03
+2026-07-08 11:59:02,639 INFO [20260708_115854_8c8b03] rq.worker: home-frappe-benches-school:short: Job OK (school.local::af9467a6-ca8d-413e-b80e-8ca1ed6d0c88)
+2026-07-08 11:59:02,640 INFO [20260708_115854_8c8b03] rq.worker: Result is kept for 600 seconds
+2026-07-08 12:08:34,101 INFO agent.auxiliary_client: Auxiliary auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 12:08:34,199 INFO run_agent: OpenAI client created (agent_init, shared=True) thread=MainThread:137175848775808 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 12:08:34,464 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 12:08:34,532 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 12:08:35,904 INFO agent.context_compressor: Context compressor initialized: model=gpt-4o context_length=128000 threshold=64000 (50%) target_ratio=20% tail_budget=12800 provider=none base_url=https://api.openai.com/v1/
+2026-07-08 12:08:35,941 INFO [20260708_120834_a33675] agent.turn_context: conversation turn: session=20260708_120834_a33675 model=gpt-4o provider=unknown platform=frappe history=0 msg='give me the profit and loss'
+2026-07-08 12:08:37,308 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 12:08:39,791 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 12:08:39,794 INFO [20260708_120834_a33675] agent.conversation_loop: API call #1: model=gpt-4o provider=unknown in=7962 out=64 total=8026 latency=2.6s cache=7936/7962 (100%)
+2026-07-08 12:08:41,248 INFO [20260708_120834_a33675] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=1/90 budget=1/90 tool_turns=0 last_msg_role=assistant response_len=338 session=20260708_120834_a33675
+2026-07-08 12:08:41,295 INFO [20260708_120834_a33675] rq.worker: home-frappe-benches-school:short: Job OK (school.local::72ea9479-17a5-4bb2-9d60-8fc57c178737)
+2026-07-08 12:08:41,297 INFO [20260708_120834_a33675] rq.worker: Result is kept for 600 seconds
+2026-07-08 12:11:57,375 INFO agent.auxiliary_client: Auxiliary auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 12:11:57,472 INFO run_agent: OpenAI client created (agent_init, shared=True) thread=MainThread:137175848775808 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 12:11:57,772 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 12:11:57,843 INFO agent.auxiliary_client: Vision auto-detect: using main provider openai-api (gpt-4o)
+2026-07-08 12:11:59,575 INFO agent.context_compressor: Context compressor initialized: model=gpt-4o context_length=128000 threshold=64000 (50%) target_ratio=20% tail_budget=12800 provider=none base_url=https://api.openai.com/v1/
+2026-07-08 12:11:59,595 INFO [20260708_121157_d66708] agent.turn_context: conversation turn: session=20260708_121157_d66708 model=gpt-4o provider=unknown platform=frappe history=0 msg='give me the profit and loss'
+2026-07-08 12:12:00,833 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 12:12:02,596 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-2 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 12:12:02,598 INFO [20260708_121157_d66708] agent.conversation_loop: API call #1: model=gpt-4o provider=unknown in=7952 out=21 total=7973 latency=1.9s cache=4864/7952 (61%)
+2026-07-08 12:12:04,170 INFO [20260708_121157_d66708] agent.tool_executor: tool frappe_execute_report completed (0.41s, 2502 chars)
+2026-07-08 12:12:04,232 INFO run_agent: OpenAI client created (chat_completion_stream_request, shared=False) thread=Thread-4 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 12:12:07,682 INFO run_agent: OpenAI client closed (stream_request_complete, shared=False, tcp_force_closed=0) thread=Thread-4 (_call):137175765087936 provider= base_url=https://api.openai.com/v1/ model=gpt-4o
+2026-07-08 12:12:07,686 INFO [20260708_121157_d66708] agent.conversation_loop: API call #2: model=gpt-4o provider=unknown in=8838 out=222 total=9060 latency=3.5s cache=7936/8838 (90%)
+2026-07-08 12:12:07,701 INFO [20260708_121157_d66708] agent.conversation_loop: Turn ended: reason=text_response(finish_reason=stop) model=gpt-4o api_calls=2/90 budget=2/90 tool_turns=1 last_msg_role=assistant response_len=743 session=20260708_121157_d66708
+2026-07-08 12:12:07,741 INFO [20260708_121157_d66708] rq.worker: home-frappe-benches-school:short: Job OK (school.local::34aba2f5-a2d1-4210-8ee4-d68f018c707a)
+2026-07-08 12:12:07,742 INFO [20260708_121157_d66708] rq.worker: Result is kept for 600 seconds

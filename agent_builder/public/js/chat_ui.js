@@ -21,6 +21,7 @@ $(document).ready(function () {
         callback: function (r) {
             const access = r && r.message;
             if (access && access.has_access) {
+                window.ab_agent_name = access.agent_name || "Omnis";
                 _initChatWidget();
             }
             // If no access or call failed silently — nothing is rendered.
@@ -90,7 +91,7 @@ $(document).ready(function () {
 
     // ── SOTA DOM Structure Injection ───────────────────────────
     $('body').append(`
-        <button id="ab-launcher" title="Omnis — click to open, drag to reposition">
+        <button id="ab-launcher" title="${escapeHtml(window.ab_agent_name)} — click to open, drag to reposition">
             <span class="ab-launcher-icon ab-launcher-icon-chat">${ICONS.launcherChat}</span>
             <span id="ab-badge"></span>
         </button>
@@ -100,7 +101,7 @@ $(document).ready(function () {
                 <button id="ab-back" class="ab-hbtn" title="Back">${ICONS.back}</button>
                 <div id="ab-header-avatar">${ICONS.bot}</div>
                 <div id="ab-header-info">
-                    <div id="ab-header-name">Omnis</div>
+                    <div id="ab-header-name">${escapeHtml(window.ab_agent_name)}</div>
                     <div id="ab-header-status">
                         <div id="ab-status-dot"></div>
                         <span id="ab-status-text">Online</span>
@@ -133,7 +134,7 @@ $(document).ready(function () {
                         <div id="ab-input-box">
                             <div id="ab-attachments-row"></div>
 
-                            <textarea id="ab-input" rows="1" placeholder="Ask Omnis anything…"></textarea>
+                            <textarea id="ab-input" rows="1" placeholder="Ask ${escapeHtml(window.ab_agent_name)} anything…"></textarea>
 
                             <button id="ab-plus-btn" class="ab-input-icon-btn" title="Add files or a skill" type="button">${ICONS.plus}</button>
 
@@ -265,7 +266,7 @@ $(document).ready(function () {
         $('#ab-window').removeClass('view-conv');
         $('#ab-back').hide();
         $('#ab-new-chat').show();
-        $('#ab-header-name').text('Omnis');
+        $('#ab-header-name').text(window.ab_agent_name);
         setStatus('Online', false);
         ChatList.load();
     }
@@ -489,7 +490,7 @@ $(document).ready(function () {
     }
     function handleThinkingTimeout() {
         if (!isThinking) return;
-        try { ChatMessages.onDone('Omnis seems to have lost connection mid-response. Please try again.', true); }
+        try { ChatMessages.onDone(`${window.ab_agent_name} seems to have lost connection mid-response. Please try again.`, true); }
         catch (err) { console.error(err); }
         setInputState(false);
         setStatus('Timed out', false, true);

@@ -2,6 +2,7 @@
 
 import json
 import frappe
+import frappe.desk.query_report
 
 def frappe_get_doc(args: dict, **kwargs) -> str:
     try:
@@ -196,5 +197,72 @@ def list_skills(args: dict, **kwargs) -> str:
 
     except frappe.PermissionError:
         return json.dumps({"error": "No permission to list skills"})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+def frappe_execute_report(args: dict, **kwargs) -> str:
+    try:
+        report_name = args.get("report_name")
+        filters = args.get("filters") or {}
+        
+        if not report_name:
+            return json.dumps({"error": "report_name is required"})
+            
+        # Try to inject sensible defaults for missing filters (especially for ERPNext)
+        try:
+            if "company" not in filters:
+                default_company = frappe.defaults.get_user_default("Company")
+                if default_company:
+                    filters["company"] = default_company
+            
+            # Map from_date / to_date to period_start_date / period_end_date for financial reports
+            if "from_date" in filters and "period_start_date" not in filters:
+                filters["period_start_date"] = filters["from_date"]
+                filters.setdefault("filter_based_on", "Date Range")
+            if "to_date" in filters and "period_end_date" not in filters:
+                filters["period_end_date"] = filters["to_date"]
+            
+            # If dates/periods aren't provided at all, default to current fiscal year
+            if "from_date" not in filters and "period_start_date" not in filters and "from_fiscal_year" not in filters:
+                # We do this safely without assuming erpnext is installed
+                if frappe.get_all("Fiscal Year", limit=1):
+                    # We can use frappe.utils to get today, then find the fiscal year that covers it
+                    today = frappe.utils.today()
+                    fiscal_years = frappe.db.sql("""
+                        select name, year_start_date, year_end_date 
+                        from `tabFiscal Year` 
+                        where %s between year_start_date and year_end_date
+                        order by year_start_date desc limit 1
+                    """, (today,), as_dict=True)
+                    
+                    if fiscal_years:
+                        fy = fiscal_years[0]
+                        filters.setdefault("from_fiscal_year", fy.name)
+                        filters.setdefault("to_fiscal_year", fy.name)
+                        filters.setdefault("period_start_date", fy.year_start_date)
+                        filters.setdefault("period_end_date", fy.year_end_date)
+                        filters.setdefault("from_date", fy.year_start_date)
+                        filters.setdefault("to_date", fy.year_end_date)
+                        filters.setdefault("filter_based_on", "Fiscal Year")
+                        filters.setdefault("periodicity", "Yearly")
+            
+            # Ensure periodicity is set if filter_based_on is Date Range or Fiscal Year
+            if filters.get("filter_based_on") in ("Date Range", "Fiscal Year"):
+                filters.setdefault("periodicity", "Yearly")
+        except Exception:
+            pass # Ignore default injection failures
+
+        result = frappe.desk.query_report.run(report_name, filters=filters)
+        
+        # Result format is usually {"result": [...], "columns": [...]}
+        # We need to serialize this cleanly for the LLM
+        return json.dumps(result, default=str)
+
+    except frappe.PermissionError:
+        return json.dumps({"error": f"No permission to run report '{args.get('report_name')}'"})
+    except frappe.ValidationError as e:
+        error_msg = str(e)
+        if not error_msg:
+            error_msg = "Validation Error"
+        return json.dumps({"error": error_msg})
     except Exception as e:
         return json.dumps({"error": str(e)})

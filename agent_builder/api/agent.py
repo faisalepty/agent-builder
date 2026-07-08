@@ -63,6 +63,26 @@ def setup_environment():
 
         with open(config_path, "w") as f:
             _yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
+            
+        # Synchronize agent name into SOUL.md
+        agent_name = agent_setup.get("agent_name") or "Omnis"
+        soul_path = hermes_home / "SOUL.md"
+        if soul_path.exists():
+            with open(soul_path, "r") as f:
+                soul_content = f.read()
+                
+            import re
+            # Match "You are <Name>, an embedded Frappe"
+            new_soul_content = re.sub(
+                r"(You are )[^,]+(, an embedded Frappe/ERPNext)", 
+                rf"\g<1>{agent_name}\g<2>", 
+                soul_content
+            )
+            
+            if new_soul_content != soul_content:
+                with open(soul_path, "w") as f:
+                    f.write(new_soul_content)
+
     except Exception as e:
         frappe.log_error(title="Hermes Config Write Failed", message=str(e))
    
@@ -129,7 +149,7 @@ def _slugify(value):
    
     return re.sub(r"[^a-z0-9]+", "-", str(value).strip().lower()).strip("-")
 
-def build_skills_system_prompt() -> str:
+def build_skills_system_prompt(agent_name="Omnis") -> str:
     """
     Build the <available_skills> block for the agent system prompt.
     Similar to Hermes' build_skills_system_prompt().
@@ -148,6 +168,7 @@ def build_skills_system_prompt() -> str:
     
     # Add operation guardrails first
     lines.append("<operation_guardrails>")
+    lines.append(f"You are a helpful assistant named {agent_name}.")
     lines.append("CRITICAL RESTRICTIONS - You MUST follow these rules:")
     lines.append("")
     lines.append("1. DELETION: You are NOT capable of deleting records from the system.")
@@ -171,6 +192,11 @@ def build_skills_system_prompt() -> str:
     lines.append("")
     lines.append("3. WORKAROUNDS: Never attempt workarounds for restricted operations.")
     lines.append("   If you cannot perform an action directly, explain alternatives but DO NOT execute them.")
+    lines.append("")
+    lines.append("4. CHARTS AND GRAPHS: When a user asks you to plot or render a graph/chart:")
+    lines.append("   - Do NOT just provide a markdown table or textual summary.")
+    lines.append("   - You MUST output the chart configuration in a ```chart_json block.")
+    lines.append("   - The JSON should follow Frappe Charts structure (e.g. {\"data\": {\"labels\": [...], \"datasets\": [{\"values\": [...]}]}, \"type\": \"bar\"}).")
     lines.append("")
     lines.append("</operation_guardrails>")
     lines.append("")
@@ -211,13 +237,15 @@ def check_chat_access():
         agent_setup = frappe.get_doc("Agent Setup")
         allowed_role = agent_setup.get("allowed_role")
 
+        agent_name = agent_setup.get("agent_name") or "Omnis"
+
         if not allowed_role:
             # No restriction configured — everyone has access
-            return {"has_access": True}
+            return {"has_access": True, "agent_name": agent_name}
 
         user_roles = frappe.get_roles(frappe.session.user)
         has_access = allowed_role in user_roles
-        return {"has_access": has_access, "required_role": allowed_role}
+        return {"has_access": has_access, "required_role": allowed_role, "agent_name": agent_name}
 
     except Exception:
         frappe.log_error(title="Chat Access Check Failed", message=frappe.get_traceback())
@@ -380,13 +408,15 @@ def process_agent_chat(message, chat_id, attachments, user):
         frappe.get_doc(doc).insert(ignore_permissions=True)
 
     try:
+        agent_setup = frappe.get_doc("Agent Setup")
+        agent_name = agent_setup.get("agent_name") or "Omnis"
+
         save_chat_message(
             "user", message,
             {"attachments": json.dumps(attachments)} if attachments else None
         )
-        skills_prompt = build_skills_system_prompt()
+        skills_prompt = build_skills_system_prompt(agent_name=agent_name)
 
-        agent_setup = frappe.get_doc("Agent Setup")
         provider = (agent_setup.provider or "openrouter").strip().lower()
         _provider_defaults = {
             "openai":      "gpt-4o-mini",

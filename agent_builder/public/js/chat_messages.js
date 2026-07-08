@@ -241,6 +241,7 @@ window.ChatMessages = (function () {
         frappe_save_doc: 'edit',
         web_search: 'search',
         execute_code: 'terminal',
+        frappe_execute_report: 'barChart',
     };
 
     // Builds { icon, args, running, done } for a tool call. "running" and
@@ -260,6 +261,7 @@ window.ChatMessages = (function () {
             },
             web_search: () => { const q = (args.query || '').slice(0, 48); return [`Searching the web for "${q}"`, `Searched the web for "${q}"`]; },
             execute_code: () => { const lang = args.language || 'script'; return [`Running ${lang}`, `Ran ${lang}`]; },
+            frappe_execute_report: () => { const r = args.report_name || 'report'; return [`Running ${r}`, `Ran ${r}`]; },
         };
 
         let running, done;
@@ -446,16 +448,28 @@ window.ChatMessages = (function () {
 
     function _renderContentWithArtifacts(text) {
         if (!text) return '';
-        const htmlBlockRegex = /```html\s*\n([\s\S]*?)```/g;
+        const blockRegex = /```(html|chart_json)\s*\n([\s\S]*?)```/g;
         let lastIndex = 0, match, parts = [];
-        while ((match = htmlBlockRegex.exec(text)) !== null) {
+        while ((match = blockRegex.exec(text)) !== null) {
             if (match.index > lastIndex) parts.push({ type: 'md', content: text.slice(lastIndex, match.index) });
-            parts.push({ type: 'html', id: _nextId(), content: match[1].trim() });
+            parts.push({ type: match[1], id: _nextId(), content: match[2].trim() });
             lastIndex = match.index + match[0].length;
         }
         if (lastIndex < text.length) parts.push({ type: 'md', content: text.slice(lastIndex) });
         if (!parts.length || (parts.length === 1 && parts[0].type === 'md')) return _md(text);
-        return parts.map(p => p.type === 'md' ? _md(p.content) : _createArtifactHTML(p.id, p.content)).join('');
+        return parts.map(p => {
+            if (p.type === 'md') return _md(p.content);
+            if (p.type === 'html') return _createArtifactHTML(p.id, p.content);
+            if (p.type === 'chart_json') return _createChartHTML(p.id, p.content);
+        }).join('');
+    }
+
+    function _createChartHTML(id, jsonContent) {
+        _artifactStore.set(id, jsonContent);
+        return `
+            <div class="ab-artifact ab-chart-artifact" data-chart-id="${id}" style="margin: 15px 0; background: var(--bg-surface); padding: 10px; border-radius: 8px;">
+                <div class="ab-chart-container" id="chart-${id}"></div>
+            </div>`;
     }
 
     function _createArtifactHTML(id, htmlContent) {
@@ -476,11 +490,30 @@ window.ChatMessages = (function () {
 
     function _mountAllArtifacts() {
         document.querySelectorAll('.ab-artifact').forEach(artifactDiv => {
-            const id = artifactDiv.dataset.artifactId;
-            const frame = artifactDiv.querySelector('.ab-artifact-frame');
-            if (!id || !frame || frame.querySelector('iframe')) return;
-            const html = _artifactStore.get(id);
-            if (html) _mountSingleArtifact(frame, html);
+            if (artifactDiv.dataset.artifactId) {
+                const id = artifactDiv.dataset.artifactId;
+                const frame = artifactDiv.querySelector('.ab-artifact-frame');
+                if (!id || !frame || frame.querySelector('iframe')) return;
+                const html = _artifactStore.get(id);
+                if (html) _mountSingleArtifact(frame, html);
+            } else if (artifactDiv.dataset.chartId) {
+                const id = artifactDiv.dataset.chartId;
+                const container = artifactDiv.querySelector('.ab-chart-container');
+                if (!id || !container || container.innerHTML) return;
+                const jsonStr = _artifactStore.get(id);
+                if (jsonStr) {
+                    try {
+                        const data = JSON.parse(jsonStr);
+                        if (window.frappe && window.frappe.Chart) {
+                            new frappe.Chart(container, data);
+                        } else {
+                            container.innerHTML = "<div class='ab-bubble-error'>Frappe Chart library is not available.</div>";
+                        }
+                    } catch (e) {
+                        container.innerHTML = "<div class='ab-bubble-error'>Invalid chart configuration format.</div>";
+                    }
+                }
+            }
         });
     }
 

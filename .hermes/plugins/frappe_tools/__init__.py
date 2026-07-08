@@ -40,6 +40,12 @@ def register(ctx):
         schema=schemas.LIST_SKILLS,
         handler=tools.list_skills,
     )
+    ctx.register_tool(
+        name="frappe_execute_report",
+        toolset="frappe_tools",
+        schema=schemas.FRAPPE_EXECUTE_REPORT,
+        handler=tools.frappe_execute_report,
+    )
 
     # Bundle the skill
     # skills_dir = Path(__file__).parent / "skills"
