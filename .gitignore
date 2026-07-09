@@ -63,3 +63,4 @@ jspm_packages/
 .hermes/memories
 .hermes/sessions
 .hermes/sandboxes
+.hermes/cache/
