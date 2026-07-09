@@ -253,6 +253,23 @@ def frappe_execute_report(args: dict, **kwargs) -> str:
 
         result = frappe.desk.query_report.run(report_name, filters=filters)
         
+        # Try to get system currency
+        try:
+            system_currency = frappe.defaults.get_user_default("Currency") or frappe.db.get_default("currency") or "KES"
+            result["system_currency"] = system_currency
+        except Exception:
+            pass
+
+        # Head & Tail truncation for large result sets
+        if isinstance(result.get("result"), list):
+            data = result["result"]
+            if len(data) > 50:
+                head = data[:20]
+                tail = data[-20:]
+                omitted_count = len(data) - 40
+                truncated_data = head + [{"_omitted": f"... [{omitted_count} rows omitted] ..."}] + tail
+                result["result"] = truncated_data
+
         # Result format is usually {"result": [...], "columns": [...]}
         # We need to serialize this cleanly for the LLM
         return json.dumps(result, default=str)
