@@ -251,6 +251,26 @@ def frappe_execute_report(args: dict, **kwargs) -> str:
         except Exception:
             pass # Ignore default injection failures
 
+        # Check if report exists
+        if not frappe.db.exists("Report", report_name):
+            words = report_name.split()
+            suggestions = []
+            for word in words:
+                if len(word) > 3:
+                    matches = frappe.get_all("Report", filters={"name": ["like", f"%{word}%"]}, limit=5, pluck="name")
+                    suggestions.extend(matches)
+            
+            suggestions = list(set(suggestions))
+            if suggestions:
+                return json.dumps({
+                    "error": f"Report '{report_name}' not found. Did you mean one of these reports?",
+                    "suggestions": suggestions
+                })
+            else:
+                return json.dumps({
+                    "error": f"Report '{report_name}' not found and no similar reports exist. Please use the 'frappe_get_list' tool to query the raw data from the relevant DocType directly."
+                })
+
         result = frappe.desk.query_report.run(report_name, filters=filters)
         
         # Try to get system currency
