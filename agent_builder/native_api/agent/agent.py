@@ -80,7 +80,7 @@ class Agent:
                 )
 
                 if not tool_calls:
-                    frappe.log_error(response, "Agent: No tool calls returned")
+                    
                     return response.get("content", "")
 
                 # Loop detection: check the first tool call pattern
