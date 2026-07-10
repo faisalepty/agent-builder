@@ -144,8 +144,8 @@ def frappe_execute_action(args: dict, **kwargs) -> str:
         active_workflow = frappe.get_all("Workflow", filters={"document_type": doctype, "is_active": 1})
         
         if active_workflow:
-            import frappe.model.workflow
-            frappe.model.workflow.apply_workflow(doc, action)
+            from frappe.model.workflow import apply_workflow
+            apply_workflow(doc, action)
             frappe.db.commit()
             return json.dumps({"doctype": doctype, "name": name, "status": "action_executed", "action": action})
         else:
@@ -253,6 +253,12 @@ def frappe_execute_report(args: dict, **kwargs) -> str:
 
         # Check if report exists
         if not frappe.db.exists("Report", report_name):
+            error_msg = f"Report '{report_name}' not found."
+            
+            # Check if it might actually be a DocType
+            if frappe.db.exists("DocType", report_name):
+                error_msg += f" However, a DocType named '{report_name}' DOES exist! Please use the 'frappe_get_list' tool to query this DocType directly."
+            
             words = report_name.split()
             suggestions = []
             for word in words:
@@ -263,12 +269,12 @@ def frappe_execute_report(args: dict, **kwargs) -> str:
             suggestions = list(set(suggestions))
             if suggestions:
                 return json.dumps({
-                    "error": f"Report '{report_name}' not found. Did you mean one of these reports?",
+                    "error": error_msg + " Did you mean one of these reports?",
                     "suggestions": suggestions
                 })
             else:
                 return json.dumps({
-                    "error": f"Report '{report_name}' not found and no similar reports exist. Please use the 'frappe_get_list' tool to query the raw data from the relevant DocType directly."
+                    "error": error_msg + " Please use the 'frappe_get_list' tool to query the raw data from the relevant DocType directly."
                 })
 
         result = frappe.desk.query_report.run(report_name, filters=filters)
