@@ -300,6 +300,22 @@ def frappe_execute_report(args: dict, **kwargs) -> str:
         error_msg = str(e)
         if not error_msg:
             error_msg = "Validation Error"
+            
+        report_name = args.get("report_name")
+        if report_name and frappe.db.exists("Report", report_name):
+            ref_doctype = frappe.db.get_value("Report", report_name, "ref_doctype")
+            if ref_doctype:
+                error_msg += f" Note: This report is based on the '{ref_doctype}' DocType. You can use frappe_get_list or SQL to query it directly."
+                return json.dumps({"error": error_msg, "ref_doctype": ref_doctype})
+                
         return json.dumps({"error": error_msg})
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        error_msg = str(e)
+        report_name = args.get("report_name")
+        if report_name and frappe.db.exists("Report", report_name):
+            ref_doctype = frappe.db.get_value("Report", report_name, "ref_doctype")
+            if ref_doctype:
+                error_msg += f" Note: This report is based on the '{ref_doctype}' DocType. You can use frappe_get_list or SQL to query it directly."
+                return json.dumps({"error": error_msg, "ref_doctype": ref_doctype})
+                
+        return json.dumps({"error": error_msg})
