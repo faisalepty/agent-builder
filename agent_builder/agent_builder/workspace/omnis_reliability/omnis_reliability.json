@@ -1,0 +1,110 @@
+{
+ "app": "agent_builder",
+ "charts": [
+  {
+   "chart_name": "Ended Reason Breakdown Over Time",
+   "label": "Ended Reason Breakdown"
+  },
+  {
+   "chart_name": "Error Rate by Tool Name",
+   "label": "Error Rate By Tool"
+  },
+  {
+   "chart_name": "Tool Latency (avg elapsed_ms) by Tool",
+   "label": "Tool Latency Distribution"
+  }
+ ],
+ "content": "[{\"id\":\"h1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Reliability</span>\",\"col\":12}},{\"id\":\"nc1\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Tool Call Error Rate 24h\",\"col\":3}},{\"id\":\"nc2\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Stuck Tool Calls\",\"col\":3}},{\"id\":\"zED6JurhEU\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Loop Detected Session This Week\",\"col\":3}},{\"id\":\"xq54NSpdhI\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"MaxTurnError Session This Week\",\"col\":3}},{\"id\":\"SCK939Dydq\",\"type\":\"chart\",\"data\":{\"chart_name\":\"Ended Reason Breakdown\",\"col\":12}},{\"id\":\"lre19DrPjv\",\"type\":\"chart\",\"data\":{\"chart_name\":\"Error Rate By Tool\",\"col\":12}},{\"id\":\"LwRtddRHDr\",\"type\":\"chart\",\"data\":{\"chart_name\":\"Tool Latency Distribution\",\"col\":12}},{\"id\":\"h2\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Your Shortcuts</span>\",\"col\":12}},{\"id\":\"card1\",\"type\":\"card\",\"data\":{\"card_name\":\"Reliability Reports\",\"col\":4}}]",
+ "creation": "2026-07-10 11:06:45.428059",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "hide_custom": 0,
+ "icon": "shield",
+ "idx": 0,
+ "indicator_color": "green",
+ "is_hidden": 0,
+ "label": "Omnis Reliability",
+ "link_type": "DocType",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Reliability Reports",
+   "link_count": 0,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Failed Tool Calls Detail",
+   "link_count": 0,
+   "link_to": "Failed Tool Calls Detail",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Stuck Tool Calls Detail",
+   "link_count": 0,
+   "link_to": "Stuck Tool Calls Detail",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Loop Strike Sessions",
+   "link_count": 0,
+   "link_to": "Loop Strike Sessions",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Sessions Near Timeout",
+   "link_count": 0,
+   "link_to": "Sessions Near Timeout",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-07-10 12:15:32.191364",
+ "modified_by": "Administrator",
+ "module": "Agent Builder",
+ "name": "Omnis Reliability",
+ "number_cards": [
+  {
+   "label": "Loop Detected Session This Week",
+   "number_card_name": "Loop-Detected Sessions (7d)"
+  },
+  {
+   "label": "Tool Call Error Rate 24h",
+   "number_card_name": "Tool Call Error Rate 24h"
+  },
+  {
+   "label": "MaxTurnError Session This Week",
+   "number_card_name": "MaxTurnsError Sessions (7d)"
+  },
+  {
+   "label": "Stuck Tool Calls",
+   "number_card_name": "Stuck Tool Calls"
+  }
+ ],
+ "owner": "Administrator",
+ "public": 1,
+ "quick_lists": [],
+ "roles": [],
+ "sequence_id": 3.0,
+ "shortcuts": [],
+ "title": "Omnis Reliability",
+ "type": "Workspace"
+}

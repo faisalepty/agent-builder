@@ -22,7 +22,11 @@
   "estimated_cost",
   "turn_count",
   "ended_reason",
-  "skill_invoked"
+  "skill_invoked",
+  "skill_content_hash",
+  "user_feedback",
+  "user_feedback_note",
+  "outcome"
  ],
  "fields": [
   {
@@ -121,11 +125,34 @@
    "fieldname": "skill_invoked",
    "fieldtype": "Data",
    "label": "Skill Invoked"
+  },
+  {
+   "description": "SHA-256 (16 char) of the skill content active when invoked \u2014 joins eval scores back to the exact skill version",
+   "fieldname": "skill_content_hash",
+   "fieldtype": "Data",
+   "label": "Skill Content Hash"
+  },
+  {
+   "fieldname": "user_feedback",
+   "fieldtype": "Select",
+   "label": "User Feedback",
+   "options": "\n\ud83d\udc4d\n\ud83d\udc4e\nnone"
+  },
+  {
+   "fieldname": "user_feedback_note",
+   "fieldtype": "Small Text",
+   "label": "Feedback Note"
+  },
+  {
+   "fieldname": "outcome",
+   "fieldtype": "Select",
+   "label": "Outcome",
+   "options": "\nSuccess\nPartial\nFailure\nUnclear"
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-07-08 15:19:16.042485",
+ "modified": "2026-07-10 07:49:50.198372",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Agent session",

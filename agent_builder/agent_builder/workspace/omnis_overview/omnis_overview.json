@@ -1,0 +1,89 @@
+{
+ "app": "agent_builder",
+ "charts": [
+  {
+   "chart_name": "Sessions Over Time",
+   "label": "Sessions Over Time"
+  }
+ ],
+ "content": "[{\"id\":\"h1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Omnis Overview</span>\",\"col\":12}},{\"id\":\"nc1\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Active Sessions\",\"col\":3}},{\"id\":\"nc2\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Sessions Today\",\"col\":3}},{\"id\":\"nc5\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Tool Call Error Rate 24h\",\"col\":4}},{\"id\":\"LGYPeOVM89\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Avg Turn per Session\",\"col\":4}},{\"id\":\"SZbfWcLH2D\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Total Cost Today\",\"col\":4}},{\"id\":\"7FInwFJFLO\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Loop Detected Session(7d)\",\"col\":4}},{\"id\":\"nc6\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Sessions Near Timeout\",\"col\":4}},{\"id\":\"c1\",\"type\":\"chart\",\"data\":{\"chart_name\":\"Sessions Over Time\",\"col\":12}},{\"id\":\"h2\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Your Shortcuts</span>\",\"col\":12}},{\"id\":\"s1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Omnis Cost and Usage\",\"col\":3}},{\"id\":\"s2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Omnis Reliability\",\"col\":3}},{\"id\":\"s3\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Omnis Evals\",\"col\":3}},{\"id\":\"s4\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Omnis Adoption\",\"col\":3}}]",
+ "creation": "2026-07-10 11:12:38.854609",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "hide_custom": 0,
+ "icon": "dashboard",
+ "idx": 0,
+ "indicator_color": "green",
+ "is_hidden": 0,
+ "label": "Omnis Overview",
+ "link_type": "DocType",
+ "links": [],
+ "modified": "2026-07-10 11:39:23.324945",
+ "modified_by": "Administrator",
+ "module": "Agent Builder",
+ "name": "Omnis Overview",
+ "number_cards": [
+  {
+   "label": "Active Sessions",
+   "number_card_name": "Active Sessions"
+  },
+  {
+   "label": "Avg Turn per Session",
+   "number_card_name": "Avg Turns per Session"
+  },
+  {
+   "label": "Sessions Today",
+   "number_card_name": "Sessions Today"
+  },
+  {
+   "label": "Total Cost Today",
+   "number_card_name": "Total Cost Today (USD)"
+  },
+  {
+   "label": "Loop Detected Session(7d)",
+   "number_card_name": "Loop-Detected Sessions (7d)"
+  },
+  {
+   "label": "Tool Call Error Rate 24h",
+   "number_card_name": "Tool Call Error Rate 24h"
+  },
+  {
+   "label": "Sessions Near Timeout",
+   "number_card_name": "Sessions Near Timeout"
+  }
+ ],
+ "owner": "Administrator",
+ "public": 1,
+ "quick_lists": [],
+ "roles": [],
+ "sequence_id": 1.0,
+ "shortcuts": [
+  {
+   "doc_view": "List",
+   "label": "Omnis Cost and Usage",
+   "link_to": "Agent session",
+   "type": "DocType"
+  },
+  {
+   "doc_view": "List",
+   "label": "Omnis Reliability",
+   "link_to": "Agent Tool Call",
+   "type": "DocType"
+  },
+  {
+   "doc_view": "List",
+   "label": "Omnis Evals",
+   "link_to": "Agent Eval Run",
+   "type": "DocType"
+  },
+  {
+   "doc_view": "List",
+   "label": "Omnis Adoption",
+   "link_to": "Agent session",
+   "type": "DocType"
+  }
+ ],
+ "title": "Omnis Overview",
+ "type": "Workspace"
+}

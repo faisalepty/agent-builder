@@ -1,11 +1,50 @@
 # omnis_hermes/agent/conversation.py
+import hashlib
 import json
+from typing import Optional
 
 import frappe
 from frappe.utils import now_datetime
 from frappe.realtime import get_user_room
 
 SESSION_DOCTYPE = "Agent session"
+
+# Simple process-lifetime cache — pricing rows change rarely, and hitting the
+# DB on every single assistant message would be wasteful. Call
+# _invalidate_pricing_cache() from a Model Pricing on_update hook if you want
+# changes to take effect without a worker restart.
+_pricing_cache: dict[str, dict] = {}
+
+
+def _get_pricing(model: str) -> Optional[dict]:
+    if not model:
+        return None
+    if model not in _pricing_cache:
+        row = frappe.db.get_value(
+            "Model Pricing", model,
+            ["input_price_per_million", "output_price_per_million", "cached_price_per_million"],
+            as_dict=True,
+        )
+        _pricing_cache[model] = row or {}
+    return _pricing_cache[model] or None
+
+
+def _invalidate_pricing_cache():
+    _pricing_cache.clear()
+
+
+def _compute_cost(model: str, input_tokens: int, output_tokens: int, cached_tokens: int = 0) -> Optional[float]:
+    pricing = _get_pricing(model)
+    if not pricing:
+        return None
+    # Cached tokens are billed at the cheaper cached rate and should not
+    # also be double-counted at the full input rate.
+    billable_input = max((input_tokens or 0) - (cached_tokens or 0), 0)
+    cost = 0.0
+    cost += billable_input * (pricing.get("input_price_per_million") or 0) / 1_000_000
+    cost += (output_tokens or 0) * (pricing.get("output_price_per_million") or 0) / 1_000_000
+    cost += (cached_tokens or 0) * (pricing.get("cached_price_per_million") or 0) / 1_000_000
+    return round(cost, 6)
 
 
 def _gen_id() -> str:
@@ -145,7 +184,7 @@ class Conversation:
     def set_system(self, text):
         self.system_prompt = text
 
-    def add_system_message(self, text):
+    def add_system_message(self, text, skill_name: Optional[str] = None):
         """Append a system-scoped message at this point in the conversation.
 
         Unlike set_system() — which sets the global session-level prompt that
@@ -155,6 +194,12 @@ class Conversation:
         Used for per-turn skill injections: when a user types /skill-name,
         the skill's content is loaded and inserted here so the agent sees
         it as contextual instructions scoped to that specific request.
+
+        skill_name: pass the invoking skill's name (e.g. from the slash
+        command) to stamp skill_invoked + skill_content_hash on the session.
+        The hash lets eval scores be joined back to the exact skill content
+        version that was active, so a later content edit doesn't silently
+        get credited/blamed for an older run's score.
         """
         msg_id = _gen_id()
         self.doc.append("messages", {
@@ -164,6 +209,11 @@ class Conversation:
             "timestamp": now_datetime(),
         })
         self._last_message_id = msg_id
+
+        if skill_name:
+            if not self.doc.skill_invoked:
+                self.doc.skill_invoked = skill_name
+            self.doc.skill_content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
     def add_user_message(self, text):
         if not self.doc.title:
@@ -195,6 +245,7 @@ class Conversation:
         output_tokens = usage.get("completion_tokens") or usage.get("output_tokens") or 0
         cached_tokens = (usage.get("prompt_tokens_details") or {}).get("cached_tokens")
         reasoning_tokens = (usage.get("completion_tokens_details") or {}).get("reasoning_tokens")
+        turn_cost = _compute_cost(model, input_tokens, output_tokens, cached_tokens or 0)
 
         self._turn_index = getattr(self, "_turn_index", 0) + 1
 
@@ -228,6 +279,7 @@ class Conversation:
             "cached_tokens": cached_tokens,
             "reasoning_tokens": reasoning_tokens,
             "latency_ms": latency_ms,
+            "estimated_cost": turn_cost,
             "timestamp": now_datetime(),
         })
         self._last_message_id = msg_id
@@ -239,6 +291,8 @@ class Conversation:
         self.doc.total_input_tokens = (self.doc.total_input_tokens or 0) + input_tokens
         self.doc.total_output_tokens = (self.doc.total_output_tokens or 0) + output_tokens
         self.doc.turn_count = self._turn_index
+        if turn_cost is not None:
+            self.doc.estimated_cost = (self.doc.estimated_cost or 0) + turn_cost
 
         for tc in tool_calls:
             fn = tc.get("function", {})
@@ -342,6 +396,51 @@ class Conversation:
             message={"session_id": self.session_id, "response": error_text},
             room=self.room,
         )
+
+    # ── Feedback & eval-adjacent fields ──────────────────
+
+    def set_user_feedback(self, feedback: str, note: Optional[str] = None):
+        """feedback: '👍' | '👎' | 'none'. Called from the Hermes frontend
+        when a user reacts to a reply — the highest-signal, lowest-cost
+        quality data you can collect, since it's real users rather than an
+        LLM judge or manual review.
+        """
+        if feedback not in ("👍", "👎", "none"):
+            frappe.throw(f"Invalid feedback value: {feedback}")
+        self.doc.user_feedback = feedback
+        if note:
+            self.doc.user_feedback_note = note
+        self.doc.save(ignore_permissions=True)
+        frappe.db.commit()
+
+    def set_outcome(self, outcome: str):
+        """outcome: 'Success' | 'Partial' | 'Failure' | 'Unclear'. Distinct
+        from ended_reason — ended_reason is the technical exit path
+        (Completed/Error/LoopDetected/MaxTurnsError), outcome is a
+        human/judge call on whether the user's actual goal was met.
+        """
+        valid = {"Success", "Partial", "Failure", "Unclear"}
+        if outcome not in valid:
+            frappe.throw(f"Invalid outcome: {outcome}. Must be one of {valid}")
+        self.doc.outcome = outcome
+        self.doc.save(ignore_permissions=True)
+        frappe.db.commit()
+
+    @staticmethod
+    def set_user_feedback_by_session_id(session_id: str, feedback: str, note: Optional[str] = None):
+        """Lightweight path for the frontend's thumbs up/down handler —
+        avoids reconstructing a full Conversation (and its message history)
+        just to flip one field.
+        """
+        if feedback not in ("👍", "👎", "none"):
+            frappe.throw(f"Invalid feedback value: {feedback}")
+        if not frappe.db.exists(SESSION_DOCTYPE, session_id):
+            frappe.throw(f"No such session: {session_id}")
+        updates = {"user_feedback": feedback}
+        if note:
+            updates["user_feedback_note"] = note
+        frappe.db.set_value(SESSION_DOCTYPE, session_id, updates)
+        frappe.db.commit()
 
     # ── Persistence ──────────────────────────────────────
 

@@ -19,7 +19,8 @@
   "output_tokens",
   "cached_tokens",
   "reasoning_tokens",
-  "latency_ms"
+  "latency_ms",
+  "estimated_cost"
  ],
  "fields": [
   {
@@ -100,13 +101,18 @@
    "fieldname": "latency_ms",
    "fieldtype": "Int",
    "label": "Latency (ms)"
+  },
+  {
+   "fieldname": "estimated_cost",
+   "fieldtype": "Currency",
+   "label": "Estimated Cost"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-07-08 15:11:18.142181",
+ "modified": "2026-07-10 07:51:01.993626",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Agent Message",
