@@ -84,6 +84,37 @@ TASK_COMPLETION = (
     "one. Do not stop after writing a stub or a single command. Keep working "
     "until you have actually produced the requested result."
 )
+CHART_INSTRUCTIONS = """\
+# Charts
+
+When a chart would answer the question better than a table or prose (trends, \
+comparisons, distributions, proportions), emit a fenced ```chart block \
+containing ONLY valid JSON — no comments, no trailing commas, nothing before \
+or after the fence. The JSON is passed directly to frappe.Chart, so it must \
+match that constructor's options object:
+
+```chart
+{
+  "title": "Revenue by Region",
+  "type": "bar",
+  "data": {
+    "labels": ["Nairobi", "Mombasa", "Kisumu"],
+    "datasets": [{ "name": "Q2 2026", "values": [420000, 210000, 98000] }]
+  }
+}
+```
+
+Rules:
+- `type` must be one of: bar, line, scatter, pie, percentage, axis-mixed, heatmap.
+- Pull labels/values from real tool output (frappe_get_list / frappe_get_doc) — \
+never invent numbers to fill a chart.
+- One ```chart block per chart. For multiple charts, use multiple blocks with \
+prose between them.
+- Never wrap the block in ```json — it must be ```chart exactly, or it will \
+render as a code sample instead of a live chart.
+- If the data has too many series or points to read as a chart (e.g. >12 \
+categories), prefer a table instead.\
+"""
 
 SKILLS_INDEX_INTRO = (
     "Below is an index of available skills. Use `skill_view` to read a "
@@ -113,6 +144,7 @@ def build_system_prompt_parts(
     stable = "\n\n".join([
         IDENTITY,
         TOOL_USE_ENFORCEMENT,
+        CHART_INSTRUCTIONS,
         TASK_COMPLETION,
         f"{SKILLS_INDEX_INTRO}\n\n{skills_text}",
     ])

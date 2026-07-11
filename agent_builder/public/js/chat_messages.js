@@ -75,6 +75,12 @@ window.ChatMessages = (function () {
         $('#ab-messages').empty();
         _artifactStore.clear();
         _artifactAnchors.clear();
+        _chartStore.forEach(function (_, id) {
+            var inst = _chartInstances.get(id);
+            if (inst && inst.destroy) inst.destroy();
+        });
+        _chartStore.clear();
+        _chartInstances.clear();
         _resetStreamState();
         _resetThinkingState();
         _stopped = false;
@@ -823,19 +829,105 @@ window.ChatMessages = (function () {
         hideTyping();
     }
 
+    // Matches ```html ...``` OR ```chart ...``` fenced blocks, in document order.
+    var _blockFenceRegex = /```(html|chart)\s*\n([\s\S]*?)```/g;
+
     function _renderContentWithArtifacts(text) {
         if (!text) return '';
-        var htmlBlockRegex = /```html\s*\n([\s\S]*?)```/g;
         var lastIndex = 0, match, parts = [];
-        while ((match = htmlBlockRegex.exec(text)) !== null) {
+        _blockFenceRegex.lastIndex = 0;
+        while ((match = _blockFenceRegex.exec(text)) !== null) {
             if (match.index > lastIndex) parts.push({ type: 'md', content: text.slice(lastIndex, match.index) });
-            parts.push({ type: 'html', id: _nextId(), content: match[1].trim() });
+            if (match[1] === 'chart') {
+                parts.push({ type: 'chart', id: _nextId(), content: match[2].trim() });
+            } else {
+                parts.push({ type: 'html', id: _nextId(), content: match[2].trim() });
+            }
             lastIndex = match.index + match[0].length;
         }
         if (lastIndex < text.length) parts.push({ type: 'md', content: text.slice(lastIndex) });
         if (!parts.length || (parts.length === 1 && parts[0].type === 'md')) return _md(text);
-        return parts.map(function (p) { return p.type === 'md' ? _md(p.content) : _createArtifactHTML(p.id, p.content); }).join('');
+        return parts.map(function (p) {
+            if (p.type === 'md') return _md(p.content);
+            if (p.type === 'chart') return _createChartHTML(p.id, p.content);
+            return _createArtifactHTML(p.id, p.content);
+        }).join('');
     }
+
+    // ── Charts (frappe.Chart) ──────────────────────────────────────────
+    // The model emits a ```chart fenced block containing JSON matching the
+    // frappe.Chart constructor's options object, e.g.:
+    //   { "title": "Revenue", "type": "bar",
+    //     "data": { "labels": [...], "datasets": [{ "name": "...", "values": [...] }] } }
+    // We render it natively (no iframe) since frappe.Chart is already loaded
+    // in Desk — far cheaper than a sandboxed iframe per chart, and it
+    // inherits Desk's theme for free.
+    var _chartStore = new Map();
+    var _chartInstances = new Map();
+
+    function _createChartHTML(id, rawJson) {
+        _chartStore.set(id, rawJson);
+        return '<div class="ab-chart" data-chart-id="' + id + '">' +
+                '<div class="ab-artifact-bar">' +
+                    '<div class="ab-artifact-dot"></div>' +
+                    '<span class="ab-artifact-label">Chart</span>' +
+                    '<div class="ab-artifact-actions">' +
+                        '<button class="ab-artifact-bar-btn ab-chart-reload" data-chart="' + id + '" title="Reload">' + _icons.reload + '</button>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="ab-chart-canvas"></div>' +
+            '</div>';
+    }
+
+    function _mountAllCharts() {
+        document.querySelectorAll('.ab-chart').forEach(function (chartDiv) {
+            var id = chartDiv.dataset.chartId;
+            var canvas = chartDiv.querySelector('.ab-chart-canvas');
+            if (!id || !canvas || canvas.dataset.mounted) return;
+            _mountSingleChart(chartDiv, canvas, id);
+        });
+    }
+
+    function _mountSingleChart(chartDiv, canvas, id) {
+        var raw = _chartStore.get(id);
+        if (!raw) return;
+        canvas.dataset.mounted = '1';
+        canvas.innerHTML = '';
+
+        var spec;
+        try {
+            spec = JSON.parse(raw);
+        } catch (e) {
+            canvas.innerHTML = '<div class="ab-chart-error">Couldn\'t parse chart data.</div>';
+            return;
+        }
+        if (typeof frappe === 'undefined' || !frappe.Chart) {
+            canvas.innerHTML = '<div class="ab-chart-error">Chart library not available.</div>';
+            return;
+        }
+        try {
+            var old = _chartInstances.get(id);
+            if (old && old.destroy) old.destroy();
+            var instance = new frappe.Chart(canvas, Object.assign({
+                height: 240,
+                colors: ['#7cd6fd', '#743ee2', '#5e64ff', '#00c30e', '#ff7300']
+            }, spec));
+            _chartInstances.set(id, instance);
+        } catch (e) {
+            canvas.innerHTML = '<div class="ab-chart-error">Couldn\'t render chart: ' + (e && e.message ? e.message : 'unknown error') + '</div>';
+        }
+    }
+
+    function reloadChart(chartId) {
+        var chartDiv = document.querySelector('.ab-chart[data-chart-id="' + chartId + '"]');
+        if (!chartDiv) return;
+        var canvas = chartDiv.querySelector('.ab-chart-canvas');
+        if (canvas) { delete canvas.dataset.mounted; _mountSingleChart(chartDiv, canvas, chartId); }
+    }
+
+    $(document).on('click', '.ab-chart-reload', function () {
+        reloadChart(this.dataset.chart);
+    });
 
     function _createArtifactHTML(id, htmlContent) {
         _artifactStore.set(id, htmlContent);
@@ -860,6 +952,7 @@ window.ChatMessages = (function () {
             var html = _artifactStore.get(id);
             if (html) _mountSingleArtifact(frame, html);
         });
+        _mountAllCharts();
     }
 
     function _mountSingleArtifact(frame, htmlContent) {

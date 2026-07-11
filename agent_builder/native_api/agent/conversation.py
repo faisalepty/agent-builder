@@ -480,6 +480,6 @@ class Conversation:
     def _publish_event(self, payload):
         frappe.publish_realtime(
             event="agent_event",
-            message=payload,
+            message={"session_id": self.session_id, **payload},
             room=self.room,
         )

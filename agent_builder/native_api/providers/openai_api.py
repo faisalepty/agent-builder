@@ -158,8 +158,8 @@ def _replay_inline_think_text(meta: Optional[Dict[str, Any]], had_tool_calls: bo
     if not text:
         return
     existing = msg.get("content") or ""
-    msg["content"] = (f"💭\n{text}\n✨\n\n{existing}" if existing
-                       else f"💭\n{text}\n✨")
+    msg["content"] = (f"{text}\n\n{existing}" if existing
+                       else f"{text}")
 
 
 # ── Reasoning-effort strategies ─────────────────────────────────────
