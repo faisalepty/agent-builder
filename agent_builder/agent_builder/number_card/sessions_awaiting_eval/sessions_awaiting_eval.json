@@ -1,0 +1,23 @@
+{
+ "creation": "2026-07-10 08:32:20.211631",
+ "currency": "",
+ "docstatus": 0,
+ "doctype": "Number Card",
+ "document_type": "Agent session",
+ "filters_json": "[[\"Agent session\",\"status\",\"=\",\"Archived\"]]",
+ "function": "Count",
+ "idx": 0,
+ "is_public": 1,
+ "is_standard": 1,
+ "label": "Sessions Awaiting Eval",
+ "modified": "2026-07-11 07:38:46.376630",
+ "modified_by": "Administrator",
+ "module": "Agent Builder",
+ "name": "Sessions Awaiting Eval",
+ "owner": "Administrator",
+ "report_function": "Sum",
+ "show_full_number": 0,
+ "show_percentage_stats": 1,
+ "stats_time_interval": "Daily",
+ "type": "Document Type"
+}

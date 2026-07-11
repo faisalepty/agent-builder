@@ -1,0 +1,23 @@
+{
+ "creation": "2026-07-10 07:58:38.968356",
+ "currency": "",
+ "docstatus": 0,
+ "doctype": "Number Card",
+ "document_type": "Agent session",
+ "filters_json": "[[\"Agent session\",\"status\",\"=\",\"Active\"]]",
+ "function": "Count",
+ "idx": 0,
+ "is_public": 1,
+ "is_standard": 1,
+ "label": "Active Sessions",
+ "modified": "2026-07-11 07:45:05.047055",
+ "modified_by": "Administrator",
+ "module": "Agent Builder",
+ "name": "Active Sessions",
+ "owner": "Administrator",
+ "report_function": "Sum",
+ "show_full_number": 0,
+ "show_percentage_stats": 0,
+ "stats_time_interval": "Daily",
+ "type": "Document Type"
+}

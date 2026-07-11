@@ -82,6 +82,7 @@ window.ChatList = (function () {
     function _dateKey(d) { return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; }
 
     function prepend(chat) {
+        _allChats = _allChats.filter(c => c.name !== chat.chat_id);
         _allChats.unshift({ name: chat.chat_id, title: chat.title, last_active: new Date().toISOString(), preview: '' });
         _render();
         setActive(chat.chat_id);
@@ -89,7 +90,7 @@ window.ChatList = (function () {
 
     function setActive(chatId) {
         $('.ab-chat-item').removeClass('active');
-        $(`.ab-chat-item[data-id="${chatId}"]`).addClass('active');
+        $('.ab-chat-item').filter(function () { return $(this).data('id') === chatId; }).addClass('active');
     }
 
     function _bindEvents() {

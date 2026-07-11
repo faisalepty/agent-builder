@@ -1,0 +1,23 @@
+{
+ "creation": "2026-07-10 07:58:39.060257",
+ "currency": "",
+ "docstatus": 0,
+ "doctype": "Number Card",
+ "document_type": "Agent session",
+ "filters_json": "[[\"Agent session\",\"creation\",\"Timespan\",\"today\"]]",
+ "function": "Count",
+ "idx": 1,
+ "is_public": 1,
+ "is_standard": 1,
+ "label": "Sessions Today",
+ "modified": "2026-07-11 07:44:29.487194",
+ "modified_by": "Administrator",
+ "module": "Agent Builder",
+ "name": "Sessions Today",
+ "owner": "Administrator",
+ "report_function": "Sum",
+ "show_full_number": 0,
+ "show_percentage_stats": 1,
+ "stats_time_interval": "Daily",
+ "type": "Document Type"
+}

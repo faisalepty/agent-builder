@@ -1,0 +1,23 @@
+{
+ "creation": "2026-07-10 08:32:20.199417",
+ "currency": "",
+ "docstatus": 0,
+ "doctype": "Number Card",
+ "document_type": "Agent Eval Run",
+ "filters_json": "[[\"Agent Eval Run\",\"pass_fail\",\"=\",\"Pass\"],[\"Agent Eval Run\",\"creation\",\"Timespan\",\"this month\"]]",
+ "function": "Count",
+ "idx": 0,
+ "is_public": 1,
+ "is_standard": 1,
+ "label": "Eval Pass Rate (This Month) %",
+ "modified": "2026-07-11 07:39:26.382402",
+ "modified_by": "Administrator",
+ "module": "Agent Builder",
+ "name": "Eval Pass Rate (This Month) %",
+ "owner": "Administrator",
+ "report_function": "Sum",
+ "show_full_number": 0,
+ "show_percentage_stats": 1,
+ "stats_time_interval": "Daily",
+ "type": "Document Type"
+}

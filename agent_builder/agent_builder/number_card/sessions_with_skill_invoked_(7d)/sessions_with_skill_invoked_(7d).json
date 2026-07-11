@@ -1,0 +1,23 @@
+{
+ "creation": "2026-07-10 08:32:20.223942",
+ "currency": "",
+ "docstatus": 0,
+ "doctype": "Number Card",
+ "document_type": "Agent session",
+ "filters_json": "[[\"Agent session\",\"skill_invoked\",\"is\",\"set\"],[\"Agent session\",\"creation\",\"Timespan\",\"this week\"]]",
+ "function": "Count",
+ "idx": 0,
+ "is_public": 1,
+ "is_standard": 1,
+ "label": "Sessions With Skill Invoked (7d)",
+ "modified": "2026-07-11 07:38:28.092547",
+ "modified_by": "Administrator",
+ "module": "Agent Builder",
+ "name": "Sessions With Skill Invoked (7d)",
+ "owner": "Administrator",
+ "report_function": "Sum",
+ "show_full_number": 0,
+ "show_percentage_stats": 1,
+ "stats_time_interval": "Daily",
+ "type": "Document Type"
+}
