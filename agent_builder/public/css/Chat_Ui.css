@@ -1,17 +1,13 @@
 /**
- * Omnis Chat UI v4.5 — SOTA Agent Interface
- * v4.5: Premium light-mode code block aesthetics, fully operational status 
- * orchestration, and pixel-perfect twin-layer border matching.
- * v4.4: twin-layer input highlight (transparent textarea + mirror <div>
- * with .ab-skill-token spans), #ab-input-wrap container for the overlay
- * pair, slash-command autocomplete triggers on / anywhere in text.
- * v4.3: bigger condensed/expanded window, redesigned launcher (60px,
- * in-place icon crossfade, one-time entrance pop, .ab-fully-closed
- * hardening), a true viewport-relative fullscreen artifact overlay +
- * backdrop (artifact is now portaled to <body> in chat_messages.js, so it
- * no longer renders inside #ab-window's transformed — and therefore
- * size-constrained — containing block), and a fully reworked per-tool
- * agent-actions list with a click-to-expand detail panel.
+ * Omnis Chat UI v4.6.1 — Refined charts + streaming artifact placeholders
+ * v4.6.1: .ab-chart gets a thin grey border with subtle shadow for a
+ *   modern framed look. Default chart height bumped to 300px. New
+ *   .ab-artifact-placeholder with shimmer animation for the streaming
+ *   mask that replaces raw chart/html code during generation.
+ * v4.6: Stop button hover turns red; borderless charts (now reverted to
+ *   thin-border style per user feedback).
+ * v4.5: Premium light-mode code block aesthetics, status indicator,
+ *   twin-layer border matching.
  */
 
 /* ── Custom Properties ── */
@@ -314,7 +310,6 @@
 }
 .ab-row.user .ab-avatar { display: none; }
 
-.ab-msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; margin-bottom: 6px; max-width: 80%; }
 .ab-msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; margin-bottom: 6px; max-width: 80%; }
 .ab-msg-attachment {
     display: flex; align-items: center; gap: 6px; background: var(--control-bg);
@@ -692,11 +687,67 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 
 @keyframes ab-artifact-pop { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
 
-/* Charts (frappe.Chart, mounted directly — no iframe) */
-.ab-chart { margin: 16px 0; border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; background: var(--bg-color); box-shadow: var(--ab-shadow-sm); }
-.ab-chart-canvas { width: 100%; min-height: 100px; padding: 8px 4px; background: var(--bg-color); }
+/* ── Streaming Artifact Placeholder ─────────────────────────────
+   Shown while the LLM is generating ```chart or ```html content.
+   Replaced in one frame when onDone fires — the user never sees
+   raw JSON or HTML code streaming in.                             */
+.ab-artifact-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin: 20px 0;
+    padding: 40px 20px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--border-color) 20%, var(--bg-color));
+    border: 1px dashed color-mix(in srgb, var(--border-color) 60%, transparent);
+}
+.ab-artifact-placeholder-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--primary) 10%, var(--bg-color));
+    color: var(--primary);
+    flex-shrink: 0;
+}
+.ab-artifact-placeholder-icon svg {
+    width: 15px;
+    height: 15px;
+}
+.ab-artifact-placeholder-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+}
+
+/* ── Charts (frappe.Chart) — thin modern border ─────────────────
+   Clean container with a subtle grey border and light shadow.
+   No heavy chrome bar — just the chart itself in a refined frame.  */
+.ab-chart {
+    margin: 16px 0;
+    border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--bg-color);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+.ab-chart-canvas {
+    width: 100%;
+    min-height: 120px;
+    padding: 12px 8px 8px;
+    background: var(--bg-color);
+}
 .ab-chart-canvas .chart-container { margin: 0 auto; }
-.ab-chart-error { padding: 20px 16px; font-size: 12px; color: var(--text-muted); text-align: center; }
+.ab-chart-error {
+    padding: 20px 16px;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: center;
+}
+
 @keyframes ab-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
 /* ── Input Area (SOTA Unified Box) ────────────────────────────── */
@@ -712,10 +763,7 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
     box-shadow: 0 4px 16px color-mix(in srgb, var(--primary) 10%, transparent);
 }
 
-/* ── Twin-layer input highlight ─────────────────────────────────
-   #ab-input-wrap is a positioned container holding two stacked
-   elements: the highlight div (bottom) and the textarea (top).
-   ─────────────────────────────────────────────────────────────── */
+/* ── Twin-layer input highlight ───────────────────────────────── */
 #ab-input-wrap {
     position: relative;
     flex: 1;
@@ -760,15 +808,12 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
     caret-color: var(--text-color);
 }
 
-/* When the highlight layer is active, make textarea text fully
-   transparent so only the styled version shows through. */
 #ab-input.ab-has-highlight {
     color: transparent;
     -webkit-text-fill-color: transparent;
     caret-color: var(--text-color);
 }
 
-/* Skill token styling in the highlight layer */
 .ab-skill-token {
     color: var(--primary);
     font-weight: 500;
@@ -784,7 +829,7 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
     -webkit-text-fill-color: var(--text-muted);
 }
 
-/* Staged file attachments, shown above the textarea */
+/* Staged file attachments */
 #ab-attachments-row { display: none; flex-wrap: wrap; gap: 6px; padding: 10px 16px 0; }
 #ab-attachments-row.visible { display: flex; }
 .ab-attachment-chip {
@@ -828,9 +873,18 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 #ab-send:disabled { opacity: 0.4; cursor: not-allowed; }
 #ab-send svg { width: 16px; height: 16px; }
 
-#ab-stop { background: var(--control-bg); color: var(--text-color); border: 1px solid var(--border-color); display: none; }
+#ab-stop {
+    background: var(--control-bg);
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+    display: none;
+}
 #ab-stop.visible { display: flex; }
-#ab-stop:hover { border-color: #ef4444; color: #ef4444; }
+#ab-stop:hover {
+    border-color: #ef4444;
+    color: #ef4444;
+    background: color-mix(in srgb, #ef4444 8%, var(--control-bg));
+}
 #ab-stop svg { width: 14px; height: 14px; }
 
 /* ── "+" popover & "/" slash-command popover ─────────────────── */

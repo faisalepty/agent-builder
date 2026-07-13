@@ -7,7 +7,7 @@ import time
 import frappe
 from typing import Callable, Optional, Tuple, List, Any
 
-from agent_builder.native_api.agent.conversation import Conversation
+from agent_builder.native_api.agent.conversation import Conversation, StoppedByUser
 from agent_builder.native_api.agent.setup import get_tool_registry, get_system_prompt
 from agent_builder.native_api.tools.executor import ToolExecutor
 from agent_builder.native_api.providers.openai_api import OpenAIProvider
@@ -65,6 +65,11 @@ class Agent:
         try:
             while turns < self.max_turns:
                 turns += 1
+
+                if conversation.is_stop_requested():
+                    ended_reason = "EndedByUser"
+                    raise StoppedByUser()
+
                 messages = self._trim_context(
                     conversation.get_messages(reasoning_replay=self.provider.replay_reasoning)
                 )
@@ -80,7 +85,6 @@ class Agent:
                 )
 
                 if not tool_calls:
-                    frappe.log_error(response, "Agent: No tool calls returned")
                     return response.get("content", "")
 
                 # Loop detection: check the first tool call pattern
@@ -99,6 +103,10 @@ class Agent:
                 # call (tool_calls[0]) is flagged as the loop strike here —
                 # the other calls in this same batch aren't what's being
                 # detected as stuck.
+                if conversation.is_stop_requested():
+                    ended_reason = "EndedByUser"
+                    raise StoppedByUser()
+
                 await self._execute_tool_calls_parallel(
                     tool_calls, conversation, is_loop_strike=is_loop_strike
                 )
@@ -107,6 +115,8 @@ class Agent:
             raise MaxTurnsError(f"Exceeded {self.max_turns}-turn budget.")
 
         except MaxTurnsError:
+            raise
+        except StoppedByUser:
             raise
         except Exception:
             ended_reason = "Error"

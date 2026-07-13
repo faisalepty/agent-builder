@@ -1,19 +1,15 @@
 /**
- * Chat_Ui.js v4.5 — SOTA Omnis Orchestrator (Fully Orchestrated)
- * v4.5: Clean light-mode code block aesthetics, fully operational status 
- * indicator system, and synchronized border properties for twin-layer alignment.
- * v4.4: twin-layer input highlight for skill tokens (transparent textarea
- * over a mirrored <div> that wraps /known-skill in colored spans — no
- * contenteditable, no input paradigm change). Slash-command autocomplete
- * now triggers on / anywhere in the text, not just at position 0, and
- * replaces the /query fragment at cursor position instead of wiping the
- * whole input. Skill filter uses startsWith for tighter autocomplete.
+ * Chat_Ui.js v4.6 — Stop button kills background job
+ * v4.6: Stop button calls backend stop_chat to cancel the RQ job and
+ *   set a Redis abort flag. Job ID tracked from enqueue response.
+ * v4.5: Clean light-mode code block aesthetics, status indicator system,
+ *   synchronized border properties for twin-layer alignment.
+ * v4.4: twin-layer input highlight, slash-command autocomplete on / anywhere.
  */
  $(document).ready(function () {
 
      if (!frappe.user.has_role('Omnis User')) {
-        // User does not have the role, stop executing the script.
-        return; 
+        return;
     }
 
     if (!window.marked) {
@@ -126,7 +122,6 @@
                                 <button id="ab-send" title="Send">${ICONS.send}</button>
                             </div>
 
-                            <!-- "+" popover: upload files / browse skills -->
                             <div id="ab-plus-menu" class="ab-popover">
                                 <button class="ab-plus-menu-item" data-action="upload" type="button">
                                     <span class="ab-plus-menu-icon">${ICONS.paperclip}</span>
@@ -149,7 +144,6 @@
                                 </div>
                             </div>
 
-                            <!-- "/" slash-command skill autocomplete -->
                             <div id="ab-slash-menu" class="ab-popover">
                                 <div class="ab-flyout-header"><span>Skills</span><span id="ab-slash-count"></span></div>
                                 <div id="ab-slash-list" class="ab-flyout-list"></div>
@@ -208,8 +202,9 @@
 
     // State
     let isOpen = false, isThinking = false, currentChatId = null, currentView = 'list', isExpanded = false;
+    let _currentJobId = null;
 
-    // Skills cache (shared by the "+" flyout and the "/" autocomplete)
+    // Skills cache
     let _skills = [], _skillsLoaded = false, _skillsLoading = false, _skillsWaiters = [];
     let _skillSlugSet = new Set();
 
@@ -217,7 +212,7 @@
     let _slashFiltered = [], _slashActiveIndex = -1, _slashStartPos = -1;
     let _slashBlurTimeout = null;
 
-    // Staged file attachments for the next message
+    // Staged file attachments
     let _pendingFiles = [];
 
     // Portal overlays to <body>
@@ -238,6 +233,7 @@
         onStatusChange: (text, thinking) => { resetThinkingWatchdog(); setStatus(text, thinking); },
         onDone: (data) => {
             clearThinkingWatchdog();
+            _currentJobId = null;
             try { ChatMessages.onDone((data && data.response) || '', false); }
             catch (err) { console.error('ChatMessages.onDone failed', err); }
             setInputState(false);
@@ -246,6 +242,7 @@
         },
         onError: (data) => {
             clearThinkingWatchdog();
+            _currentJobId = null;
             const resp = (data && data.response) || 'Sorry, something went wrong.';
             try { ChatMessages.onDone(resp, true); }
             catch (err) { console.error('ChatMessages.onDone failed', err); }
@@ -278,6 +275,7 @@
 
     function openConversation(chatId, title) {
         currentChatId = chatId;
+        _currentJobId = null;
         ChatRealtime.setActiveSession(chatId);
         ChatList.setActive(chatId);
         _pendingFiles = [];
@@ -292,6 +290,7 @@
 
     function startNewChat() {
         currentChatId = null;
+        _currentJobId = null;
         ChatRealtime.setActiveSession(null);
         _pendingFiles = [];
         renderAttachmentChips();
@@ -453,16 +452,11 @@
     function setStatus(text, thinking, isError) {
         const $dot = $('#ab-status-dot');
         const $text = $('#ab-status-text');
-        if ($text.length) {
-            $text.text(text || 'Online');
-        }
+        if ($text.length) { $text.text(text || 'Online'); }
         if ($dot.length) {
             $dot.removeClass('thinking error');
-            if (thinking) {
-                $dot.addClass('thinking');
-            } else if (isError) {
-                $dot.addClass('error');
-            }
+            if (thinking) { $dot.addClass('thinking'); }
+            else if (isError) { $dot.addClass('error'); }
         }
     }
 
@@ -492,10 +486,23 @@
         if (disabled) resetThinkingWatchdog(); else clearThinkingWatchdog();
     }
 
+    // ── STOP BUTTON: kills the backend background job ───────────
     $(document).on('click', '#ab-stop', function () {
         ChatMessages.onStop();
         setInputState(false);
         setStatus('Stopped', false);
+
+        if (currentChatId) {
+            frappe.call({
+                method: 'agent_builder.native_api.verify.stop_chat',
+                args: {
+                    chat_id: currentChatId,
+                    job_id: _currentJobId || '',
+                },
+                error: function () {},
+            });
+        }
+        _currentJobId = null;
     });
 
     // ── Skills Loader ──────────────────────────────────────────
@@ -938,6 +945,7 @@
             callback(r) {
                 if (r.message && r.message.chat_id) {
                     currentChatId = r.message.chat_id;
+                    _currentJobId = r.message.job_id || null;
                     ChatRealtime.setActiveSession(currentChatId);
 
                     if (isFirstMessage) {
@@ -948,6 +956,7 @@
                 }
             },
             error() {
+                _currentJobId = null;
                 setInputState(false);
                 setStatus('Error', false, true);
                 try { ChatMessages.onDone("Sorry, I couldn't send that. Please try again.", true); } catch (err) { console.error(err); }

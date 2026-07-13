@@ -125,6 +125,15 @@ FRAPPE_GET_LIST = {
                 "items": {"type": "string"},
                 "description": "Fields to retrieve, e.g. ['name', 'customer_name']. Defaults to ['name', 'creation', 'modified'].",
             },
+            "parent_doctype": {
+                "type": "string",
+                "description": (
+                    "Required when doctype is a child table (e.g. 'Agent Tool Call'). Without it, "
+                    "Frappe's permission layer silently returns only the 'name' field for every "
+                    "row. If unsure whether a doctype is a child table, check frappe_get_doctype_info "
+                    "first — it reports is_child_table."
+                ),
+            },
             "limit": {
                 "type": "integer",
                 "default": 20,
@@ -210,7 +219,12 @@ FRAPPE_GENERATE_REPORT = {
         "Execute a Frappe Query Report or Script Report and return its data. "
         "Missing filters are auto-defaulted (fiscal-year dates, default company) which "
         "often returns 0 rows — pass explicit filters when known. Prepared/slow reports "
-        "are queued and polled automatically. Report Builder reports are not supported."
+        "are queued and polled automatically. Report Builder reports are not supported. "
+        "NOTE: financial-statement reports (Balance Sheet, Profit and Loss, Gross and Net "
+        "Profit, Cash Flow, etc.) often require 'filter_based_on': 'Date Range' in "
+        "addition to from_date/to_date. If you encounter 'mandatory' errors, the tool will "
+        "return the exact filters it passed. If it still fails, use frappe_get_list on the "
+        "underlying doctype (e.g., GL Entry) to fetch data directly."
     ),
     "parameters": {
         "type": "object",
@@ -222,7 +236,11 @@ FRAPPE_GENERATE_REPORT = {
             "filters": {
                 "type": "object",
                 "default": {},
-                "description": "Filter key-value pairs, e.g. {\"company\": \"Omnis\", \"from_date\": \"2026-01-01\"}.",
+                "description": (
+                    "Filter key-value pairs, e.g. {\"company\": \"your company name\", \"from_date\": \"2026-01-01\", "
+                    "\"to_date\": \"2026-12-31\"}. Financial reports may also need "
+                    "\"filter_based_on\": \"Date Range\" — check frappe_get_report_filters if unsure."
+                ),
             },
         },
         "required": ["report_name"],

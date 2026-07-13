@@ -8,26 +8,34 @@ from agent_builder.native_api.tools.decorator import tool
 
 
 def _default_filters(filters: dict) -> dict:
-    """Fill in from_date/to_date (fiscal year, falling back to trailing 12 months)
-    and default company if missing — the two defaults that actually prevent
-    'MandatoryError'-style report failures often enough to be worth keeping."""
     filters = {k: v for k, v in filters.items() if v is not None}
 
-    if not filters.get("from_date") and not filters.get("to_date"):
+    # ERPNext's shared financial_statements.py (P&L, Balance Sheet, Cash Flow,
+    # Gross and Net Profit, etc.) reads period_start_date/period_end_date and
+    # from_fiscal_year/to_fiscal_year — NOT from_date/to_date/fiscal_year.
+    # Source: erpnext/accounts/report/balance_sheet/balance_sheet.py execute()
+    if not filters.get("period_start_date") and filters.get("from_date"):
+        filters["period_start_date"] = filters["from_date"]
+    if not filters.get("period_end_date") and filters.get("to_date"):
+        filters["period_end_date"] = filters["to_date"]
+
+    if not filters.get("period_start_date") and not filters.get("period_end_date"):
         fy = frappe.db.get_value(
-            "Fiscal Year", {"disabled": 0}, ["year_start_date", "year_end_date"],
+            "Fiscal Year", {"disabled": 0}, ["name", "year_start_date", "year_end_date"],
             order_by="year_start_date desc",
         )
         if fy:
-            filters["from_date"], filters["to_date"] = str(fy[0]), str(fy[1])
+            filters["period_start_date"] = str(fy[1])
+            filters["period_end_date"] = str(fy[2])
+            filters.setdefault("from_fiscal_year", fy[0])
+            filters.setdefault("to_fiscal_year", fy[0])
         else:
             today = getdate()
-            filters["to_date"] = str(today)
-            filters["from_date"] = str(add_months(today, -12))
-    elif filters.get("from_date") and not filters.get("to_date"):
-        filters["to_date"] = str(getdate())
-    elif filters.get("to_date") and not filters.get("from_date"):
-        filters["from_date"] = str(add_months(getdate(filters["to_date"]), -12))
+            filters["period_end_date"] = str(today)
+            filters["period_start_date"] = str(add_months(today, -12))
+
+    filters.setdefault("filter_based_on", "Date Range")
+    filters.setdefault("periodicity", "Yearly")
 
     if "company" not in filters:
         default_company = frappe.db.get_single_value("Global Defaults", "default_company")
@@ -88,10 +96,26 @@ def _run_prepared_or_direct(report_doc, filters: dict, max_wait: int = 120) -> d
 
 
 @tool(schema_name="frappe_generate_report")
-def frappe_generate_report(args: dict, **kwargs) -> str:
+def frappe_generate_report(args: dict = None, **kwargs) -> str:
     """Execute a Query Report or Script Report."""
-    report_name = args.get("report_name")
-    filters = args.get("filters", {})
+    # Robust argument extraction to handle different MCP framework behaviors
+    if not isinstance(args, dict):
+        args = kwargs.get("args", {})
+        
+    report_name = args.get("report_name") or kwargs.get("report_name")
+    filters = args.get("filters") or kwargs.get("filters") or {}
+    
+    # If filters is still empty, maybe the framework flattened the arguments
+    if not filters and isinstance(args, dict) and args:
+        filters = {k: v for k, v in args.items() if k != "report_name"}
+    if not filters and kwargs:
+        filters = {k: v for k, v in kwargs.items() if k not in ["report_name", "args"]}
+        
+    if not isinstance(filters, dict):
+        try:
+            filters = json.loads(filters)
+        except:
+            filters = {}
 
     if not report_name:
         return json.dumps({"error": "report_name is required"})
@@ -113,8 +137,48 @@ def frappe_generate_report(args: dict, **kwargs) -> str:
 
         user_keys = set(filters.keys())
         effective_filters = _default_filters(dict(filters))
+        
+        # Crucial for reports that read from frappe.form_dict instead of the filters arg
+        frappe.local.form_dict.update(effective_filters)
 
-        result = _run_prepared_or_direct(report_doc, effective_filters)
+        # GUARDRAIL: Prevent infinite agent loops on empty financial data
+        financial_reports = ["Profit and Loss Statement", "Balance Sheet",
+                              "Gross and Net Profit Report", "Cash Flow", "Trial Balance"]
+        if report_name in financial_reports:
+            company = effective_filters.get("company")
+            gl_exists = frappe.db.exists("GL Entry", {"company": company, "is_cancelled": 0})
+            if not gl_exists:
+                fy = frappe.db.get_value(
+                    "Fiscal Year", {"disabled": 0}, ["name", "year_start_date", "year_end_date"],
+                    order_by="year_start_date desc",
+                )
+                return json.dumps({
+                    "error": "no_financial_data",
+                    "report_name": report_name,
+                    "company": company,
+                    "current_fiscal_year": fy[0] if fy else None,
+                    "fiscal_year_range": [str(fy[1]), str(fy[2])] if fy else None,
+                    "message": (
+                        f"No submitted accounting entries exist for company '{company}'. "
+                        f"This is a data-completeness issue, not a filter or tool problem — "
+                        f"do not retry with different filters or re-check Sales/Purchase "
+                        f"Invoice; GL Entry is authoritative and is confirmed empty. "
+                        f"Report this to the user as-is."
+                    ),
+                }, default=str)
+
+        try:
+            result = _run_prepared_or_direct(report_doc, effective_filters)
+        except Exception as e:
+            error_str = str(e)
+            if "mandatory" in error_str.lower():
+                return json.dumps({
+                    "error": error_str,
+                    "report_name": report_name,
+                    "hint": f"The report script received these exact filters: {effective_filters}. If it still claims fields are mandatory, the report may be reading from a different source. Use 'frappe_get_list' on 'GL Entry' to fetch data directly."
+                })
+            raise
+
         rows = [dict(r) if isinstance(r, dict) else r for r in result.get("result", [])]
         auto_added = {k: v for k, v in effective_filters.items() if k not in user_keys}
 
@@ -131,10 +195,11 @@ def frappe_generate_report(args: dict, **kwargs) -> str:
         if not rows:
             payload["suggestion"] = (
                 "Report returned 0 rows — auto-defaulted filters may not match your data. "
-                "Retry with explicit filters."
+                "Retry with explicit filters. If you are checking financial data, verify "
+                "underlying GL Entries or Sales Invoices exist for this period using frappe_get_list."
             )
 
-        return json.dumps(payload)
+        return json.dumps(payload, default=str)
 
     except frappe.PermissionError:
         return json.dumps({"error": f"No permission to access report '{report_name}'"})

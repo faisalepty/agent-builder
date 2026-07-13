@@ -4,7 +4,7 @@ import re
 import frappe
 import asyncio
 
-from agent_builder.native_api.agent.conversation import Conversation
+from agent_builder.native_api.agent.conversation import Conversation, StoppedByUser
 from agent_builder.native_api.agent.agent import Agent, MaxTurnsError
 
 
@@ -295,7 +295,9 @@ def chat(message, chat_id=None, attachments=None):
     if not chat_id:
         chat_id = Conversation(user=user).session_id
 
-    frappe.enqueue(
+    Conversation.clear_stop_flag(chat_id)
+
+    job = frappe.enqueue(
         method="agent_builder.native_api.verify.process_agent_chat",
         queue="short",
         timeout=300,
@@ -306,7 +308,29 @@ def chat(message, chat_id=None, attachments=None):
         user=user
     )
 
-    return {"status": "queued", "chat_id": chat_id}
+    # frappe.enqueue returns the RQ Job object (None in `now=True` sync-test
+    # mode, since there's nothing to cancel by then anyway).
+    job_id = getattr(job, "id", None)
+
+    return {"status": "queued", "chat_id": chat_id, "job_id": job_id}
+
+
+@frappe.whitelist()
+def stop_chat(chat_id, job_id=None):
+    """Signal the running background job for this chat to stop.
+
+    See Conversation.request_stop for the two-layer mechanism (cooperative
+    Redis flag + best-effort RQ interrupt).
+    """
+    if not chat_id:
+        frappe.throw("chat_id required")
+
+    user = frappe.db.get_value("Agent session", chat_id, "user")
+    if user != frappe.session.user:
+        frappe.throw("Not authorised", frappe.PermissionError)
+
+    Conversation.request_stop(chat_id, job_id)
+    return {"status": "stopping"}
 
 
 def process_agent_chat(message, chat_id, attachments, user):
@@ -364,6 +388,16 @@ def process_agent_chat(message, chat_id, attachments, user):
         frappe.db.commit()
         conversation.emit_error("Agent took too long.")
         frappe.log_error("Agent Max Turns", str(e))
+
+    except StoppedByUser:
+        # Frontend already finalized the bubble locally in onStop() (see
+        # chat_messages.js) and set its own _stopped flag, so we deliberately
+        # emit_done with an empty string here rather than any real content —
+        # onDone() treats an empty response as a no-op (no new bubble
+        # appended). We still commit so partial tool-call rows / assistant
+        # content written before the interrupt aren't lost.
+        frappe.db.commit()
+        conversation.emit_done("")
 
     except Exception as e:
         frappe.db.commit()
