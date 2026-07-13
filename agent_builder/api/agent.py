@@ -443,7 +443,11 @@ def process_agent_chat(message, chat_id, attachments, user):
             user_message=agent_message,
             conversation_history=agent_context
         )
-        final_response = result["final_response"]
+
+        if result.get("failed"):
+            raise Exception(result.get("error") or result.get("final_response") or "Unknown Agent error")
+
+        final_response = result.get("final_response") or ""
 
         save_chat_message(
             "assistant", final_response,
@@ -466,11 +470,7 @@ def process_agent_chat(message, chat_id, attachments, user):
             if entry.get("status") == "running":
                 entry["status"] = "interrupted"
 
-        error_text = (
-            f"Sorry, something went wrong: {e}"
-            if frappe.conf.get("developer_mode")
-            else "Sorry, something went wrong while processing that request. Please try again."
-        )
+        error_text = "Sorry, something went wrong while processing that request. Please try again."
 
         try:
             error_extras = {"is_error": 1}
