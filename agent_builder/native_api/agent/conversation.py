@@ -6,8 +6,19 @@ from typing import Optional
 import frappe
 from frappe.utils import now_datetime
 from frappe.realtime import get_user_room
+from frappe.utils.background_jobs import get_redis_conn
 
 SESSION_DOCTYPE = "Agent session"
+
+_STOP_FLAG_PREFIX = "agent_stop:"
+_STOP_FLAG_TTL = 600  # seconds — well beyond any realistic single-turn runtime
+
+
+class StoppedByUser(Exception):
+    """Raised inside Agent.run()'s loop when a user-initiated stop is
+    detected via Conversation.is_stop_requested()."""
+    pass
+
 
 # Simple process-lifetime cache — pricing rows change rarely, and hitting the
 # DB on every single assistant message would be wasteful. Call
@@ -184,6 +195,22 @@ class Conversation:
     def set_system(self, text):
         self.system_prompt = text
 
+    def _checkpoint(self):
+        """Persist whatever's accumulated in memory right now.
+
+        Called after each completed unit of work (an assistant turn, a
+        finished tool call) rather than relying solely on the one big
+        save() at the end of Agent.run(). This is what makes a stop (or any
+        hard kill) safe — everything up to the last completed step is
+        already in the DB, so only the currently in-flight step is ever at
+        risk of being lost, not the whole session.
+        """
+        self.doc.last_active = now_datetime()
+        self.doc.message_count = len(self.doc.messages)
+        self.doc.tool_call_count = len(self.doc.tool_calls)
+        self.doc.save(ignore_permissions=True)
+        frappe.db.commit()
+
     def add_system_message(self, text, skill_name: Optional[str] = None):
         """Append a system-scoped message at this point in the conversation.
 
@@ -308,6 +335,8 @@ class Conversation:
         if content and not streamed:
             self._emit("assistant", content)
 
+        self._checkpoint()
+
     # ── Streaming hooks ──────────────────────────────────
 
     def emit_token(self, delta):
@@ -380,6 +409,7 @@ class Conversation:
             content[:500] if is_error else str(content)[:500]
         )
         self._publish_event(payload)
+        self._checkpoint()
 
     # ── Terminal events ──────────────────────────────────
 
@@ -442,17 +472,47 @@ class Conversation:
         frappe.db.set_value(SESSION_DOCTYPE, session_id, updates)
         frappe.db.commit()
 
+    # ── Stop control ──────────────────────────────────────
+
+    @staticmethod
+    def request_stop(session_id: str, job_id: Optional[str] = None):
+        """Lightweight path for the Stop button — no need to reconstruct a
+        full Conversation just to signal an interrupt.
+
+        Sets a Redis flag that Agent.run() checks cooperatively before each
+        LLM turn and before each batch of tool calls. Deliberately NOT using
+        RQ's send_stop_job_command here: that sends a hard kill signal that
+        can terminate the work-horse process at any arbitrary point —
+        including mid-write — which bypasses save() entirely and is why
+        stopped sessions were losing reasoning/tool-call/content data.
+        The cooperative flag plus per-step checkpointing (see _checkpoint)
+        means a stop typically lands within one in-flight LLM call or tool
+        call — a few seconds at worst — with everything up to that point
+        already durable in the DB.
+
+        job_id is accepted for forward-compatibility (e.g. a future "force
+        kill after N seconds of an unresponsive job" fallback) but isn't
+        used yet.
+        """
+        conn = get_redis_conn()
+        conn.set(f"{_STOP_FLAG_PREFIX}{session_id}", "1", ex=_STOP_FLAG_TTL)
+
+    @staticmethod
+    def clear_stop_flag(session_id: str):
+        get_redis_conn().delete(f"{_STOP_FLAG_PREFIX}{session_id}")
+
+    def is_stop_requested(self) -> bool:
+        """Cooperative check — call at loop boundaries (before a new LLM
+        turn, before dispatching a tool call), not per-token."""
+        return bool(get_redis_conn().get(f"{_STOP_FLAG_PREFIX}{self.session_id}"))
+
     # ── Persistence ──────────────────────────────────────
 
     def save(self, ended_reason=None):
         self._flush_reasoning()
-        self.doc.last_active = now_datetime()
-        self.doc.message_count = len(self.doc.messages)
-        self.doc.tool_call_count = len(self.doc.tool_calls)
         if ended_reason:
             self.doc.ended_reason = ended_reason
-        self.doc.save(ignore_permissions=True)
-        frappe.db.commit()
+        self._checkpoint()
 
     # ── Private ──────────────────────────────────────────
 

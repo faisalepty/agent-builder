@@ -1,45 +1,26 @@
 /**
- * chat_messages.js v4.3.6 — SOTA DOM structure update
- * Generates cleaner HTML for bubbles to perfectly match the new CSS.
- * v4.3: artifact "fullscreen" now portals to <body> so it's a true
- * viewport-relative overlay regardless of the chat window's condensed vs.
- * expanded state; a backdrop + Escape/click-outside to exit; tool-call
- * steps rewritten with per-tool icons, running→done label tense changes,
- * and a click-to-expand detail panel (raw tool name + arguments).
- * v4.2: persisted tool-call steps reconstructed on history reload, error-
- * styled bubbles with a Retry action, icon-only message actions, a real
- * "Edit" action that doesn't auto-send, and a redesigned thinking/typing
- * indicator.
- * v4.3.1: FIX — historical tool calls no longer show as errors (was
- * comparing against "done" but backend persists "success"/"error"); FIX —
- * reasoning (chain-of-thought) now renders on session reload.
- * v4.3.2: FIX — multiple reasoning/tool segments within a single episode
- * are correctly grouped into ONE thinking container on reload.
- * v4.3.3: All elapsed-time displays removed from tool steps and reasoning.
- *   Labels unified: "Thinking" while reasoning streams, "Thought Process"
- *   when finalized; "Working" while tools execute.
- * v4.3.4: FIX — empty assistant bubbles no longer appear during live
- *   streaming (e.g. when the LLM emits whitespace before reasoning or
- *   tool calls). Ghost rows are now removed from the DOM instead of
- *   being frozen with no visible content.
- * v4.3.5: FIX — multiple "Thought Process" blocks no longer appear during
- *   multi-turn tool loops. The thinking container is only finalized when
- *   actual visible text arrives; whitespace-only tokens are buffered
- *   silently. A safety merge in onDone consolidates any adjacent
- *   finalized containers that slipped through.
- * v4.3.6: FIX — first tokens of text between thinking containers are no
- *   longer lost. _ensureStreamBubble() no longer resets _streamBuffer,
- *   which was destroying content that onToken had just accumulated before
- *   the bubble DOM element existed. The buffer is now only reset by
- *   _freezeStreamBubble() and _resetStreamState(), both of which run
- *   after the content has been consumed.
+ * chat_messages.js v4.5.0 — Streaming artifact masking + refined charts
+ * v4.5.0: During streaming, ```chart and ```html fenced blocks are
+ *   replaced with shimmer placeholders so the user never sees raw
+ *   JSON/code being generated. The placeholder is swapped for the
+ *   real chart/artifact when onDone fires. Charts get a thin modern
+ *   border with subtle shadow (no heavy chrome bar). Chart default
+ *   height bumped to 300px.
+ * v4.4.0: Charts render borderless.
+ * v4.3.6: FIX — first tokens between thinking containers no longer lost.
+ * v4.3.5: FIX — multiple "Thought Process" blocks in multi-turn loops.
+ * v4.3.4: FIX — empty assistant bubbles removed during live streaming.
+ * v4.3.3: All elapsed-time displays removed.
+ * v4.3.2: FIX — multiple reasoning/tool segments grouped correctly on reload.
+ * v4.3.1: FIX — historical tool calls status fix; reasoning renders on reload.
+ * v4.3: artifact fullscreen portals to <body>; backdrop + Escape exit;
+ *   tool-call steps with per-tool icons, click-to-expand detail panel.
+ * v4.2: persisted tool-call steps, error bubbles with Retry, Edit action.
  */
 window.ChatMessages = (function () {
 
     var _icons = {};
     var _CLOCK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>';
-    // Used for reasoning/"Thought Process" steps, both while live and once
-    // finalized — swapped in for the old clock glyph.
     var _BRAIN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3.5a2.5 2.5 0 00-2.5 2.5v.18A2.75 2.75 0 005.25 8.5v1A2.75 2.75 0 004 12a2.75 2.75 0 001.25 2.3v1.2a2.75 2.75 0 002 2.65v.35a2.5 2.5 0 002.5 2.5H10a1.5 1.5 0 001.5-1.5V6a2.5 2.5 0 00-2-2.45 2.49 2.49 0 00-0-.05z"/><path d="M14.5 3.5a2.5 2.5 0 012.5 2.5v.18A2.75 2.75 0 0118.75 8.5v1A2.75 2.75 0 0120 12a2.75 2.75 0 01-1.25 2.3v1.2a2.75 2.75 0 01-2 2.65v.35a2.5 2.5 0 01-2.5 2.5H14a1.5 1.5 0 01-1.5-1.5V6a2.5 2.5 0 012-2.45 2.49 2.49 0 010-.05z"/></svg>';
     var _streamBubbleId = null, _streamBuffer = '', _streamFlushScheduled = false, _typingRowId = null;
     var _currentThinkingRow = null, _currentThinkingSteps = [], _thinkStartTime = null;
@@ -103,11 +84,6 @@ window.ChatMessages = (function () {
 
     // ──────────────────────────────────────────────────────────────────
     // History reload
-    //
-    // Consecutive empty assistant rows (reasoning + tool pairs with no
-    // text content) are accumulated into a single episode and flushed
-    // as ONE thinking container when text arrives — mirroring the live
-    // _currentThinkingRow state machine.
     // ──────────────────────────────────────────────────────────────────
     function loadHistory(chatId) {
         clear();
@@ -122,9 +98,7 @@ window.ChatMessages = (function () {
                 if (!r.message || !r.message.messages.length) { $('#ab-welcome').show(); return; }
 
                 var pendingSegments = [];
-                var lastAgentBubble = null;   // { rowId, bubbleId, isError } — the most
-                                               // recent agent bubble that hasn't been
-                                               // confirmed "final" yet.
+                var lastAgentBubble = null;
 
                 function flushPending() {
                     if (pendingSegments.length) {
@@ -133,9 +107,6 @@ window.ChatMessages = (function () {
                     }
                 }
 
-                // Copy is only meaningful on the last agent bubble of a turn —
-                // call this whenever we're about to move past one (a new user
-                // message starts, or history reconstruction ends).
                 function finalizeAgentTurn() {
                     if (lastAgentBubble) {
                         _addMsgActions(lastAgentBubble.rowId, lastAgentBubble.bubbleId, lastAgentBubble.isError);
@@ -154,10 +125,6 @@ window.ChatMessages = (function () {
                         var hasContent = !!(msg.content && msg.content.trim());
 
                         if (hasContent) {
-                            // Reasoning attached to this text-carrying row
-                            // belongs to the PRIOR episode (it was produced
-                            // before this text) — flush it now, before the
-                            // text, same as the live renderer.
                             if (msg.reasoning && msg.reasoning.text) {
                                 pendingSegments.push({ type: 'reasoning', data: msg.reasoning });
                             }
@@ -166,13 +133,6 @@ window.ChatMessages = (function () {
                             var msgId = _appendAgentMessage(msg.content, isErr, false);
                             lastAgentBubble = { rowId: msgId, bubbleId: msgId + '-bubble', isError: isErr };
 
-                            // Tool calls attached to THIS SAME row happen
-                            // after this text was generated (e.g. "Let me
-                            // check X:" + a tool call in one completion).
-                            // They belong to the NEXT episode, together with
-                            // any action-only rows that follow — so
-                            // accumulate them instead of rendering as their
-                            // own orphaned single-action container.
                             if (steps && steps.length) {
                                 pendingSegments.push({ type: 'steps', data: steps });
                             }
@@ -211,12 +171,6 @@ window.ChatMessages = (function () {
         setTimeout(check, 0);
     }
 
-    // SOTA Structure for Agent message.
-    // withActions controls whether the copy/retry row renders immediately.
-    // Default false — copy is only meaningful once generation is actually
-    // finished, so intermediate text (followed by more thought-process
-    // blocks) renders without it; the caller attaches it later via
-    // _addMsgActions() once it knows this is the final bubble.
     function _appendAgentMessage(content, isError, withActions) {
         if (!content || !content.trim()) return null;
         var msgId = _nextId();
@@ -246,9 +200,6 @@ window.ChatMessages = (function () {
         '</div>';
     }
 
-    // Attaches the copy/retry row to an already-rendered bubble — used once
-    // we know a given bubble is the last one in the turn (end of live
-    // generation, or end of a turn on history reload).
     function _addMsgActions(rowElId, bubbleElId, isError) {
         if (!rowElId || !bubbleElId) return;
         var $wrap = $('#' + rowElId).find('.ab-bubble-wrap');
@@ -256,7 +207,6 @@ window.ChatMessages = (function () {
         $wrap.append(_msgActionsHtml(bubbleElId, isError));
     }
 
-    // SOTA Structure for User message
     function _appendUserMessage(text, attachments) {
         var id = _nextId();
         var hasText = !!(text && String(text).trim());
@@ -298,10 +248,6 @@ window.ChatMessages = (function () {
     function showTyping() {
         if (_typingRowId) return;
         _typingRowId = _nextId();
-        // Neutral "request is in flight" indicator — deliberately doesn't
-        // say "Thinking" (that label is reserved for once reasoning
-        // actually starts streaming; showing it here was misleading since
-        // nothing has happened yet on the agent side).
         $('#ab-messages').append(
             '<div class="ab-row agent" id="' + _typingRowId + '">' +
                 '<div class="ab-typing-indicator"><span></span><span></span><span></span></div>' +
@@ -315,13 +261,6 @@ window.ChatMessages = (function () {
     function _ensureStreamBubble() {
         if (_streamBubbleId && document.getElementById(_streamBubbleId)) return;
         _streamBubbleId = _nextId();
-        // IMPORTANT: Do NOT reset _streamBuffer here.
-        // onToken accumulates content into _streamBuffer BEFORE calling this
-        // function. If we reset the buffer here, the first token(s) are lost,
-        // causing truncated text like "me use..." instead of "Let me use...".
-        // The buffer is properly reset only by _freezeStreamBubble() (after
-        // rendering content into the bubble) and _resetStreamState() (on
-        // clear/new session).
         $('#ab-messages').append(
             '<div class="ab-row agent" id="row-' + _streamBubbleId + '">' +
                 '<div class="ab-avatar">' + _icons.bot + '</div>' +
@@ -339,16 +278,10 @@ window.ChatMessages = (function () {
 
         _streamBuffer += delta;
 
-        // Only finalize the thinking container when there's actual visible
-        // text to display. Whitespace-only tokens (which LLMs often emit
-        // between reasoning and tool calls) must NOT trigger a finalize,
-        // otherwise each turn creates a separate "Thought Process" block.
         if (_currentThinkingRow && _streamBuffer.trim()) {
             _finalizeThinkingContainer(false);
         }
 
-        // Don't create the DOM bubble for leading whitespace — keeps the
-        // thinking indicator visible instead of flashing an empty row.
         if (!_streamBubbleId && !_streamBuffer.trim()) {
             if (!_streamFlushScheduled) { _streamFlushScheduled = true; requestAnimationFrame(_flushStream); }
             return;
@@ -358,12 +291,100 @@ window.ChatMessages = (function () {
         if (!_streamFlushScheduled) { _streamFlushScheduled = true; requestAnimationFrame(_flushStream); }
     }
 
+    // ── Streaming renderer: hides chart/html code behind placeholders ──
+    // During live streaming the LLM emits ```chart{...}``` token-by-token.
+    // Without this, the raw JSON is visible for seconds — ugly and confusing.
+    // We scan specifically for ```chart and ```html openings. Everything
+    // before such a fence renders as normal markdown (other code blocks are
+    // untouched — marked handles them). The fence + its content (complete
+    // or not) is replaced with a shimmer placeholder. When onDone fires the
+    // entire bubble is re-rendered with _renderContentWithArtifacts, swapping
+    // the placeholder for the real chart/artifact in one frame — zero flash.
+    function _mdStreaming(text) {
+        if (!text) return '';
+
+        var result = '';
+        var pos = 0;
+        var len = text.length;
+
+        while (pos < len) {
+            // Look specifically for ```chart or ```html
+            var chartIdx = text.indexOf('```chart', pos);
+            var htmlIdx  = text.indexOf('```html', pos);
+
+            var fenceIdx = -1;
+            var lang = null;
+
+            if (chartIdx !== -1 && (htmlIdx === -1 || chartIdx <= htmlIdx)) {
+                fenceIdx = chartIdx;
+                lang = 'chart';
+            } else if (htmlIdx !== -1) {
+                fenceIdx = htmlIdx;
+                lang = 'html';
+            }
+
+            if (fenceIdx === -1) {
+                // No more artifact fences — render the rest as markdown
+                result += _md(text.slice(pos));
+                break;
+            }
+
+            // Render everything before the fence as normal markdown
+            if (fenceIdx > pos) {
+                result += _md(text.slice(pos, fenceIdx));
+            }
+
+            // Check that the language tag is followed by a newline
+            // (guards against partial openings like "```ch" mid-token)
+            var afterLang = text.slice(fenceIdx + 3 + lang.length);
+            var nlMatch = afterLang.match(/^\s*\n/);
+
+            if (!nlMatch) {
+                // Opening line not complete yet — just render what we have
+                result += _md(text.slice(fenceIdx, fenceIdx + 3 + lang.length));
+                pos = fenceIdx + 3 + lang.length;
+                continue;
+            }
+
+            var contentStart = fenceIdx + 3 + lang.length + nlMatch[0].length;
+
+            // Look for closing ```
+            var closeIdx = text.indexOf('```', contentStart);
+
+            if (closeIdx !== -1) {
+                // Complete block — skip it entirely, show placeholder
+                pos = closeIdx + 3;
+            } else {
+                // Incomplete block — skip to end, show placeholder
+                pos = len;
+            }
+
+            result += lang === 'chart' ? _createChartPlaceholder() : _createHtmlPlaceholder();
+        }
+
+        return result;
+    }
+
+    function _createChartPlaceholder() {
+        return '<div class="ab-artifact-placeholder">' +
+                   '<div class="ab-artifact-placeholder-icon">' + (_icons.barChart || '') + '</div>' +
+                   '<span class="ab-artifact-placeholder-label ab-shimmer-text">Generating chart…</span>' +
+               '</div>';
+    }
+
+    function _createHtmlPlaceholder() {
+        return '<div class="ab-artifact-placeholder">' +
+                   '<div class="ab-artifact-placeholder-icon">' + (_icons.sparkle || '') + '</div>' +
+                   '<span class="ab-artifact-placeholder-label ab-shimmer-text">Generating UI…</span>' +
+               '</div>';
+    }
+
     function _flushStream() {
         _streamFlushScheduled = false;
         if (!_streamBubbleId || _stopped) return;
         var el = document.getElementById(_streamBubbleId);
         if (el) {
-            el.innerHTML = _md(_streamBuffer) + '<span class="ab-cursor ab-cursor--ghost"></span>';
+            el.innerHTML = _mdStreaming(_streamBuffer) + '<span class="ab-cursor ab-cursor--ghost"></span>';
             el.classList.add('ab-streaming-cursor');
             _wrapTables(el);
             _scrollDown(true);
@@ -383,13 +404,11 @@ window.ChatMessages = (function () {
                     _wrapTables(el);
                     _addCodeCopyButtons(el);
                 } else {
-                    // Bubble has no visible content — remove the entire row
                     var row = document.getElementById('row-' + _streamBubbleId);
                     if (row) row.remove();
                 }
             }
         }
-        // Always reset both — content has been consumed (rendered or discarded)
         _streamBubbleId = null;
         _streamBuffer = '';
     }
@@ -657,14 +676,7 @@ window.ChatMessages = (function () {
         _resetThinkingState();
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    // Safety merge: consolidate adjacent finalized thinking containers
-    //
-    // Called in onDone/onStop as a defense-in-depth measure. If multiple
-    // "Thought Process · N actions" blocks ended up adjacent (separated
-    // only by empty/whitespace-only agent rows), this merges them into
-    // a single container — matching what loadHistory does on reload.
-    // ──────────────────────────────────────────────────────────────────
+    // ── Safety merge: consolidate adjacent finalized thinking containers ──
     function _mergeAdjacentThinkingContainers() {
         var $all = $('#ab-messages .ab-thinking-container.done, #ab-messages .ab-thinking-container.errored');
         if ($all.length <= 1) return;
@@ -674,30 +686,20 @@ window.ChatMessages = (function () {
 
         $all.each(function () {
             var $this = $(this);
-
             if (currentGroup.length === 0) {
                 currentGroup.push($this);
                 return;
             }
-
             var $prev = currentGroup[currentGroup.length - 1];
             var $between = $prev.nextUntil($this);
             var onlyEmptyAgentRows = true;
-
             $between.each(function () {
                 var $el = $(this);
                 if ($el.hasClass('ab-row') && $el.hasClass('agent')) {
                     var text = $el.find('.ab-bubble').text().trim();
-                    if (text) {
-                        onlyEmptyAgentRows = false;
-                        return false;
-                    }
-                } else {
-                    onlyEmptyAgentRows = false;
-                    return false;
-                }
+                    if (text) { onlyEmptyAgentRows = false; return false; }
+                } else { onlyEmptyAgentRows = false; return false; }
             });
-
             if (onlyEmptyAgentRows) {
                 currentGroup.push($this);
             } else {
@@ -705,73 +707,49 @@ window.ChatMessages = (function () {
                 currentGroup = [$this];
             }
         });
-
         if (currentGroup.length > 1) groups.push(currentGroup);
 
         groups.forEach(function (group) {
             var $first = group[0];
-            var totalTools = 0;
-            var hasReasoning = false;
-            var hasError = false;
+            var totalTools = 0, hasReasoning = false, hasError = false;
 
             $first.find('.ab-thinking-step').each(function () {
-                if ($(this).hasClass('ab-reasoning-block')) {
-                    hasReasoning = true;
-                } else {
-                    totalTools++;
-                }
+                if ($(this).hasClass('ab-reasoning-block')) hasReasoning = true; else totalTools++;
                 if ($(this).hasClass('ab-step-is-error')) hasError = true;
             });
 
             for (var i = 1; i < group.length; i++) {
                 var $container = group[i];
-
                 $container.find('.ab-thinking-steps > *').appendTo($first.find('.ab-thinking-steps'));
-
                 $container.find('.ab-thinking-step').each(function () {
-                    if ($(this).hasClass('ab-reasoning-block')) {
-                        hasReasoning = true;
-                    } else {
-                        totalTools++;
-                    }
+                    if ($(this).hasClass('ab-reasoning-block')) hasReasoning = true; else totalTools++;
                     if ($(this).hasClass('ab-step-is-error')) hasError = true;
                 });
-
                 var $prevInGroup = group[i - 1];
                 $prevInGroup.nextUntil($container).each(function () {
                     var $el = $(this);
                     if ($el.hasClass('ab-row') && $el.hasClass('agent')) {
-                        var text = $el.find('.ab-bubble').text().trim();
-                        if (!text) {
-                            $el.remove();
-                        }
+                        if (!$el.find('.ab-bubble').text().trim()) $el.remove();
                     }
                 });
-
                 $container.remove();
             }
 
             var label;
-            if (hasError) {
-                label = 'Stopped after an error';
-            } else {
+            if (hasError) { label = 'Stopped after an error'; }
+            else {
                 var parts = [];
                 if (hasReasoning) parts.push('Thought Process');
                 if (totalTools > 0) parts.push(totalTools + ' action' + (totalTools !== 1 ? 's' : ''));
                 label = parts.join(' · ') || '';
             }
-
             $first.find('.ab-thinking-pill').html(_finalizedPillHtml(hasError, label, hasReasoning));
         });
     }
 
     function onDone(response, isError) {
         hideTyping();
-
-        if (_currentThinkingRow) {
-            _finalizeThinkingContainer(isError);
-        }
-
+        if (_currentThinkingRow) _finalizeThinkingContainer(isError);
         _mergeAdjacentThinkingContainers();
 
         if (_streamBubbleId) {
@@ -805,9 +783,7 @@ window.ChatMessages = (function () {
     function onStop() {
         _stopped = true;
         if (_reasoningLive) _finalizeReasoning();
-        if (_currentThinkingRow) {
-            _finalizeThinkingContainer(false);
-        }
+        if (_currentThinkingRow) _finalizeThinkingContainer(false);
         _mergeAdjacentThinkingContainers();
 
         if (_streamBubbleId) {
@@ -818,6 +794,7 @@ window.ChatMessages = (function () {
                 if (trimmed) {
                     el.innerHTML = _md(trimmed);
                     el.classList.remove('ab-streaming-cursor');
+                    _wrapTables(el);
                     _addCodeCopyButtons(el);
                     if (row) _addMsgActions(row.id, el.id, false);
                 } else {
@@ -829,7 +806,7 @@ window.ChatMessages = (function () {
         hideTyping();
     }
 
-    // Matches ```html ...``` OR ```chart ...``` fenced blocks, in document order.
+    // ── Fenced block parsing (used for final render, not streaming) ────
     var _blockFenceRegex = /```(html|chart)\s*\n([\s\S]*?)```/g;
 
     function _renderContentWithArtifacts(text) {
@@ -854,27 +831,14 @@ window.ChatMessages = (function () {
         }).join('');
     }
 
-    // ── Charts (frappe.Chart) ──────────────────────────────────────────
-    // The model emits a ```chart fenced block containing JSON matching the
-    // frappe.Chart constructor's options object, e.g.:
-    //   { "title": "Revenue", "type": "bar",
-    //     "data": { "labels": [...], "datasets": [{ "name": "...", "values": [...] }] } }
-    // We render it natively (no iframe) since frappe.Chart is already loaded
-    // in Desk — far cheaper than a sandboxed iframe per chart, and it
-    // inherits Desk's theme for free.
+    // ── Charts (frappe.Chart) — thin border, subtle shadow ────────────
     var _chartStore = new Map();
     var _chartInstances = new Map();
 
     function _createChartHTML(id, rawJson) {
         _chartStore.set(id, rawJson);
+        // Clean container with just a thin border and shadow — no bar chrome
         return '<div class="ab-chart" data-chart-id="' + id + '">' +
-                '<div class="ab-artifact-bar">' +
-                    '<div class="ab-artifact-dot"></div>' +
-                    '<span class="ab-artifact-label">Chart</span>' +
-                    '<div class="ab-artifact-actions">' +
-                        '<button class="ab-artifact-bar-btn ab-chart-reload" data-chart="' + id + '" title="Reload">' + _icons.reload + '</button>' +
-                    '</div>' +
-                '</div>' +
                 '<div class="ab-chart-canvas"></div>' +
             '</div>';
     }
@@ -884,20 +848,18 @@ window.ChatMessages = (function () {
             var id = chartDiv.dataset.chartId;
             var canvas = chartDiv.querySelector('.ab-chart-canvas');
             if (!id || !canvas || canvas.dataset.mounted) return;
-            _mountSingleChart(chartDiv, canvas, id);
+            _mountSingleChart(canvas, id);
         });
     }
 
-    function _mountSingleChart(chartDiv, canvas, id) {
+    function _mountSingleChart(canvas, id) {
         var raw = _chartStore.get(id);
         if (!raw) return;
         canvas.dataset.mounted = '1';
         canvas.innerHTML = '';
 
         var spec;
-        try {
-            spec = JSON.parse(raw);
-        } catch (e) {
+        try { spec = JSON.parse(raw); } catch (e) {
             canvas.innerHTML = '<div class="ab-chart-error">Couldn\'t parse chart data.</div>';
             return;
         }
@@ -909,7 +871,7 @@ window.ChatMessages = (function () {
             var old = _chartInstances.get(id);
             if (old && old.destroy) old.destroy();
             var instance = new frappe.Chart(canvas, Object.assign({
-                height: 240,
+                height: 300,
                 colors: ['#7cd6fd', '#743ee2', '#5e64ff', '#00c30e', '#ff7300']
             }, spec));
             _chartInstances.set(id, instance);
@@ -918,17 +880,7 @@ window.ChatMessages = (function () {
         }
     }
 
-    function reloadChart(chartId) {
-        var chartDiv = document.querySelector('.ab-chart[data-chart-id="' + chartId + '"]');
-        if (!chartDiv) return;
-        var canvas = chartDiv.querySelector('.ab-chart-canvas');
-        if (canvas) { delete canvas.dataset.mounted; _mountSingleChart(chartDiv, canvas, chartId); }
-    }
-
-    $(document).on('click', '.ab-chart-reload', function () {
-        reloadChart(this.dataset.chart);
-    });
-
+    // ── HTML Artifacts ──────────────────────────────────────────────
     function _createArtifactHTML(id, htmlContent) {
         _artifactStore.set(id, htmlContent);
         return '<div class="ab-artifact" data-artifact-id="' + id + '">' +
@@ -1061,11 +1013,7 @@ window.ChatMessages = (function () {
         });
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    // Historical thinking container renderer
-    // ──────────────────────────────────────────────────────────────────
-
-    /** Build a single finalized reasoning step row */
+    // ── Historical thinking container renderer ───────────────────────
     function _buildReasoningStepHtml(reasoning) {
         return '<div class="ab-thinking-step ab-reasoning-block">' +
                     '<div class="ab-step-icon-col">' +
@@ -1087,127 +1035,105 @@ window.ChatMessages = (function () {
                 '</div>';
     }
 
-    /** Build a single finalized tool-call step row */
-    function _buildToolStepHtml(s) {
-        var stepError = s.status === 'error';
-        var meta = _toolMeta(s.tool, s.args);
-        var icon = stepError ? (_icons.alertTriangle || _icons.check) : meta.icon;
-        var resultText = s.error || s.result || s.output || s.response;
-        var _rPretty = resultText ? (typeof resultText === 'string' ? resultText : JSON.stringify(resultText, null, 2)) : '';
-        var _hArgsHtml = _prettyArgs(s.args);
-        var _hNoArgs = !_hArgsHtml || _hArgsHtml === _escapeHtml('No arguments') || _hArgsHtml === _escapeHtml('{}');
-        var _hStatus = stepError ? 'error' : 'success';
-        var _hStatusLabel = stepError ? 'Failed' : 'Done';
-        return '<div class="ab-thinking-step' + (stepError ? ' ab-step-is-error' : '') + '">' +
-                    '<div class="ab-step-icon-col">' +
-                        '<div class="ab-step-icon ' + (stepError ? 'errored' : 'done') + '">' + icon + '</div>' +
-                        '<div class="ab-step-connector"></div>' +
-                    '</div>' +
-                    '<div class="ab-step-main">' +
-                        '<div class="ab-step-headline">' +
-                            '<span class="ab-step-name ' + (stepError ? 'errored' : 'done') + '">' + _escapeHtml(meta.done) + '</span>' +
-                            '<span class="ab-step-chevron">' + _icons.down + '</span>' +
+    function _renderHistoricalThinkingContainer(segments) {
+        var id = _nextId();
+        var stepsHtml = segments.map(function (seg) {
+            if (seg.type === 'reasoning') {
+                return _buildReasoningStepHtml(seg.data);
+            } else if (seg.type === 'steps') {
+                return seg.data.map(function (step) {
+                    var meta = _toolMeta(step.tool, step.args);
+                    var isError = step.status === 'error';
+                    return '<div class="ab-thinking-step' + (isError ? ' ab-step-is-error' : '') + '">' +
+                        '<div class="ab-step-icon-col">' +
+                            '<div class="ab-step-icon ' + (isError ? 'errored' : 'done') + '">' + meta.icon + '</div>' +
+                            '<div class="ab-step-connector"></div>' +
                         '</div>' +
-                        '<div class="ab-step-detail">' +
-                            (!_hNoArgs ? '<pre class="ab-step-detail-block">' + _hArgsHtml + '</pre>' : '') +
-                            (_rPretty ? '<pre class="ab-step-detail-block' + (stepError ? ' is-error' : '') + '">' + _escapeHtml(String(_rPretty).slice(0, 4000)) + '</pre>' : '') +
-                            '<div class="ab-step-detail-footer">' +
-                                '<span class="ab-step-detail-status ' + _hStatus + '">' + _hStatusLabel + '</span>' +
+                        '<div class="ab-step-main">' +
+                            '<div class="ab-step-headline">' +
+                                '<span class="ab-step-name ' + (isError ? 'errored' : 'done') + '">' + _escapeHtml(meta.done) + '</span>' +
+                                '<span class="ab-step-chevron">' + _icons.down + '</span>' +
+                            '</div>' +
+                            '<div class="ab-step-detail">' +
+                                '<pre class="ab-step-detail-block">' + _prettyArgs(meta.args) + '</pre>' +
+                                '<div class="ab-step-detail-footer">' +
+                                    '<span class="ab-step-detail-status ' + (isError ? 'error' : 'success') + '">' + (isError ? 'Failed' : 'Done') + '</span>' +
+                                '</div>' +
                             '</div>' +
                         '</div>' +
-                    '</div>' +
-                '</div>';
-    }
-
-    /** Render one finalized collapsed thinking container from segments */
-    function _renderHistoricalThinkingContainer(segments) {
-        if (!segments || !segments.length) return;
-
-        var rowId = _nextId();
-        var hasError = false;
-        var toolCount = 0;
-        var hasReasoning = false;
-        var allStepsHtml = '';
-
-        segments.forEach(function (seg) {
-            if (seg.type === 'reasoning') {
-                hasReasoning = true;
-                allStepsHtml += _buildReasoningStepHtml(seg.data);
-            } else if (seg.type === 'steps') {
-                seg.data.forEach(function (s) {
-                    toolCount++;
-                    if (s.status === 'error') hasError = true;
-                    allStepsHtml += _buildToolStepHtml(s);
-                });
+                    '</div>';
+                }).join('');
             }
+            return '';
+        }).join('');
+
+        var hasReasoning = segments.some(function (s) { return s.type === 'reasoning'; });
+        var nTools = segments.reduce(function (sum, s) { return sum + (s.type === 'steps' ? s.data.length : 0); }, 0);
+        var hasError = segments.some(function (s) {
+            if (s.type === 'steps') return s.data.some(function (t) { return t.status === 'error'; });
+            return false;
         });
 
         var label;
-        if (hasError) {
-            label = 'Stopped after an error';
-        } else {
+        if (hasError) { label = 'Stopped after an error'; }
+        else {
             var parts = [];
             if (hasReasoning) parts.push('Thought Process');
-            if (toolCount > 0) parts.push(toolCount + ' action' + (toolCount !== 1 ? 's' : ''));
+            if (nTools > 0) parts.push(nTools + ' action' + (nTools !== 1 ? 's' : ''));
             label = parts.join(' · ') || '';
         }
 
-        var $thinking = $(
-            '<div class="ab-thinking-container" id="' + rowId + '">' +
-                '<div class="ab-thinking-pill ' + (hasError ? 'errored' : 'done') + '">' +
+        $('#ab-messages').append(
+            '<div class="ab-thinking-container done' + (hasError ? ' errored' : '') + '" id="' + id + '">' +
+                '<button class="ab-thinking-pill ' + (hasError ? 'errored' : 'done') + '" type="button">' +
                     _finalizedPillHtml(hasError, label, hasReasoning) +
-                '</div>' +
-                '<div class="ab-thinking-steps" style="display:none;">' + allStepsHtml + '</div>' +
+                '</button>' +
+                '<div class="ab-thinking-steps" style="display:none;">' + stepsHtml + '</div>' +
             '</div>'
         );
-        $('#ab-messages').append($thinking);
-        _bindThinkingToggle($thinking);
-
-        requestAnimationFrame(function () {
-            $thinking.find('.ab-reasoning-block').each(function () {
-                var $rt = $(this).find('.ab-reasoning-text');
-                if ($rt.length) {
-                    var el = $rt[0];
-                    $(this).toggleClass('truncated', el.scrollHeight > el.clientHeight + 2);
-                }
-            });
-        });
+        _bindThinkingToggle($('#' + id));
     }
 
-    function _scrollDown(soft) {
+    function _scrollDown(smooth) {
         var el = document.getElementById('ab-messages');
-        if (!el) return;
-        if (soft) { if (el.scrollHeight - el.scrollTop - el.clientHeight < 120) el.scrollTop = el.scrollHeight; }
-        else el.scrollTop = el.scrollHeight;
-    }
-
-    function _escapeHtml(str) {
-        return (str || '').replace(/[&<>"']/g, function (c) {
-            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
-        });
+        if (el) {
+            if (smooth) {
+                el.scrollTop = el.scrollHeight;
+            } else {
+                el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+            }
+        }
     }
 
     function _md(text) {
         if (!text) return '';
-        if (window.marked) return window.marked.parse(text, { breaks: true, gfm: true });
-        return _escapeHtml(text).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\n/g, '<br>');
+        if (window.marked) {
+            return marked.parse(text, { breaks: true, gfm: true });
+        }
+        return _escapeHtml(text).replace(/\n/g, '<br>');
     }
 
+    function _escapeHtml(text) {
+        if (!text) return '';
+        return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // ── Public API ──────────────────────────────────────────────────
     return {
         init: init,
         clear: clear,
         loadHistory: loadHistory,
         appendUserMsg: _appendUserMessage,
+        showTyping: showTyping,
+        hideTyping: hideTyping,
         onToken: onToken,
         onReasoning: onReasoning,
         onToolStart: onToolStart,
         onToolDone: onToolDone,
         onDone: onDone,
         onStop: onStop,
-        showTyping: showTyping,
-        hideTyping: hideTyping,
         reloadArtifact: reloadArtifact,
         expandArtifact: expandArtifact,
-        collapseAllFullscreenArtifacts: collapseAllFullscreenArtifacts
+        collapseAllFullscreenArtifacts: collapseAllFullscreenArtifacts,
     };
-}());
+})();
