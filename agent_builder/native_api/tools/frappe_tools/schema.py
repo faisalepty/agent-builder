@@ -217,10 +217,11 @@ FRAPPE_SUBMIT_DOC = {
 FRAPPE_GENERATE_REPORT = {
     "name": "frappe_generate_report",
     "description": (
-        "Execute a Frappe Query Report or Script Report and return its data. "
-        "Missing filters are auto-defaulted (fiscal-year dates, default company) which "
-        "often returns 0 rows — pass explicit filters when known. Prepared/slow reports "
-        "are queued and polled automatically. Report Builder reports are not supported. "
+        "Execute any Frappe report (Query Report, Script Report, or Report Builder) "
+        "and return its data. This calls frappe.desk.query_report.run() directly — "
+        "the same function the Frappe web UI uses. Missing filters are auto-defaulted "
+        "(fiscal-year dates, default company) which often returns 0 rows — pass "
+        "explicit filters when known. "
         "NOTE: financial-statement reports (Balance Sheet, Profit and Loss, Gross and Net "
         "Profit, Cash Flow, etc.) often require 'filter_based_on': 'Date Range' in "
         "addition to from_date/to_date. If you encounter 'mandatory' errors, the tool will "
@@ -281,7 +282,9 @@ FRAPPE_AGGREGATE = {
         "Run an aggregated GROUP BY query on a doctype — SUM, COUNT, AVG, MIN, MAX. "
         "Use this for any analytical question: 'total sales per customer', 'downtime hours "
         "per machine', 'count of orders by status'. Do NOT fetch raw rows with frappe_get_list "
-        "and try to sum them manually — use this tool instead for reliable results."
+        "and try to sum them manually — use this tool instead for reliable results. "
+        "Aliases can be any valid name (letters, digits, underscores) — they are output "
+        "column names you define, not existing doctype fields."
     ),
     "parameters": {
         "type": "object",
@@ -293,34 +296,68 @@ FRAPPE_AGGREGATE = {
             "group_by": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Fields to group by. Use [] for an overall aggregate (no grouping). Example: ['customer', 'status'].",
+                "description": (
+                    "Fields to group by. These must be real fields on the doctype. "
+                    "Use [] for an overall aggregate with no grouping."
+                ),
             },
             "aggregations": {
                 "type": "array",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "field": {"type": "string", "description": "The field to aggregate."},
-                        "function": {"type": "string", "enum": ["sum", "count", "avg", "min", "max"], "description": "Aggregation function."},
-                        "alias": {"type": "string", "description": "Output column name, e.g. 'total_amount'."},
+                        "field": {
+                            "type": "string",
+                            "description": "The doctype field to aggregate (must exist on the doctype).",
+                        },
+                        "function": {
+                            "type": "string",
+                            "enum": ["sum", "count", "avg", "min", "max"],
+                            "description": "Aggregation function.",
+                        },
+                        "alias": {
+                            "type": "string",
+                            "description": (
+                                "Output column name you choose — any valid identifier "
+                                "(letters, digits, underscores). Examples: 'total_mins', "
+                                "'total_sales', 'entry_count'. Do not use spaces or hyphens."
+                            ),
+                        },
                     },
                     "required": ["field", "function", "alias"],
                 },
-                "description": "Aggregations to compute. Example: [{\"field\": \"grand_total\", \"function\": \"sum\", \"alias\": \"total_sales\"}].",
+                "description": (
+                    "Aggregations to compute. Example: "
+                    '[{"field": "downtime", "function": "sum", "alias": "total_mins"}, '
+                    '{"field": "name", "function": "count", "alias": "entry_count"}]'
+                ),
             },
             "filters": {
                 "type": "object",
                 "default": {},
-                "description": "WHERE filters, e.g. {\"company\": \"Apex Steel\", \"docstatus\": 1}.",
+                "description": (
+                    "WHERE filters on real doctype fields. "
+                    "Examples: {\"company\": \"Apex Steel\", \"docstatus\": 1}, "
+                    "{\"from_time\": [\">\", \"2025-01-01\"]}. "
+                    "Do NOT put aliases or aggregate fields here — only real doctype fields."
+                ),
             },
             "having": {
                 "type": "object",
                 "default": {},
-                "description": "Filter on aggregate results, e.g. {\"total_sales\": [\">\", 10000]}.",
+                "description": (
+                    "Filter on aggregate results using aliases. "
+                    "Example: {\"total_mins\": [\">\", 500]}. "
+                    "Only supports simple comparison operators: >, >=, <, <=, =, !="
+                ),
             },
             "order_by": {
                 "type": "string",
-                "description": "Sort the results, e.g. 'total_sales desc'.",
+                "description": (
+                    "Sort results. Can use group_by fields or aggregate aliases. "
+                    "Examples: 'total_mins desc', 'workstation asc'. "
+                    "Append 'desc' or 'asc' for direction."
+                ),
             },
             "limit": {
                 "type": "integer",

@@ -3,23 +3,36 @@
 This fills the critical gap where the agent had to manually sum hundreds of
 rows in-context (and failed). Now: one call, exact numbers, zero manual math.
 
-Security: validates doctype exists, validates fieldnames exist on the doctype
-(to prevent injection via crafted field names), whitelists aggregate functions,
-and uses parameterized queries for all filter values.
+Security: validates doctype exists, validates GROUP BY fieldnames exist on
+the doctype (to prevent injection via crafted field names), validates
+aggregate fieldnames exist, whitelists aggregate functions, and uses
+parameterized queries for all filter values. Aliases only need to be safe
+SQL identifiers — they are NOT checked against doctype fields because they
+are user-defined output column names.
 """
 
 import json
+import re
 import frappe
 from agent_builder.native_api.tools.decorator import tool
 
 
 _VALID_FUNCTIONS = {"sum", "count", "avg", "min", "max"}
 
+# Regex for a safe SQL identifier: starts with letter/underscore, followed by
+# letters, digits, or underscores. Rejects anything with spaces, hyphens,
+# dots, or SQL-dangerous characters.
+_SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
-def _validate_fieldname(fieldname: str, valid_fields: set) -> bool:
-    """Reject fieldnames containing SQL-dangerous characters.
-    Valid fieldnames are alphanumeric + underscore only."""
-    return bool(fieldname) and fieldname.replace("_", "").isalnum() and fieldname in valid_fields
+
+def _is_safe_identifier(name: str) -> bool:
+    """Check if a string is a safe SQL identifier (for aliases, order_by)."""
+    return bool(name) and bool(_SAFE_IDENTIFIER_RE.match(name))
+
+
+def _is_valid_fieldname(fieldname: str, valid_fields: set) -> bool:
+    """Check if a fieldname is safe AND exists on the doctype."""
+    return bool(fieldname) and _is_safe_identifier(fieldname) and fieldname in valid_fields
 
 
 def _build_where_clause(filters: dict) -> tuple:
@@ -27,17 +40,20 @@ def _build_where_clause(filters: dict) -> tuple:
     if not filters:
         return "", []
 
+    _WHITELISTED_OPS = {
+        "=", "!=", ">", ">=", "<", "<=", "LIKE", "NOT LIKE", "IN", "NOT IN",
+    }
+
     conditions = []
     params = []
 
     for key, value in filters.items():
-        if not _validate_fieldname(key, {"_any"}):  # Minimal check for filter keys
+        if not _is_safe_identifier(key):
             continue
 
         if isinstance(value, list) and len(value) == 3:
             op, val = value[0], value[1]
-            # Whitelist operators to prevent injection
-            if op.upper() in ("=", "!=", ">", ">=", "<", "<=", "LIKE", "NOT LIKE", "IN", "NOT IN"):
+            if op.upper() in _WHITELISTED_OPS:
                 if op.upper() in ("IN", "NOT IN") and isinstance(val, list):
                     placeholders = ", ".join(["%s"] * len(val))
                     conditions.append(f"`{key}` {op} ({placeholders})")
@@ -75,13 +91,10 @@ def frappe_aggregate(args: dict = None, **kwargs) -> str:
     limit = args.get("limit", 100)
     having = args.get("having")
 
-    # Validation
+    # ── Validation ───────────────────────────────────────────────────
+
     if not doctype:
         return json.dumps({"error": "doctype is required"})
-    if not group_by:
-        return json.dumps({"error": "group_by is required (use [] for overall aggregate)"})
-    if not aggregations:
-        return json.dumps({"error": "aggregations is required"})
 
     if not frappe.db.exists("DocType", doctype):
         return json.dumps({"error": f"DocType '{doctype}' not found"})
@@ -94,10 +107,13 @@ def frappe_aggregate(args: dict = None, **kwargs) -> str:
     valid_fields = {f.fieldname for f in meta.fields if f.fieldname}
     valid_fields.add("name")  # Always available
 
-    # Validate group_by fields
+    # Validate group_by fields — must be real doctype fields
     for field in group_by:
-        if not _validate_fieldname(field, valid_fields):
-            return json.dumps({"error": f"Invalid field '{field}' for doctype '{doctype}'. Valid fields: {sorted(valid_fields)}"})
+        if not _is_valid_fieldname(field, valid_fields):
+            return json.dumps({
+                "error": f"Invalid group_by field '{field}' for doctype '{doctype}'. "
+                       f"Valid fields include: {sorted(valid_fields)}",
+            })
 
     # Validate and normalize aggregations
     select_parts = []
@@ -109,51 +125,67 @@ def frappe_aggregate(args: dict = None, **kwargs) -> str:
         alias = agg.get("alias")
 
         if func not in _VALID_FUNCTIONS:
-            return json.dumps({"error": f"Invalid function '{func}'. Must be one of: {', '.join(sorted(_VALID_FUNCTIONS))}"})
+            return json.dumps({
+                "error": f"Invalid function '{func}'. "
+                       f"Must be one of: {', '.join(sorted(_VALID_FUNCTIONS))}",
+            })
 
         if not alias:
             alias = f"{func}_{field}"
 
-        if not _validate_fieldname(alias, {"_any"}):
-            return json.dumps({"error": f"Invalid alias '{alias}'. Use alphanumeric + underscore only."})
+        # Alias just needs to be a safe SQL identifier, NOT a doctype field
+        if not _is_safe_identifier(alias):
+            return json.dumps({
+                "error": f"Invalid alias '{alias}'. "
+                       f"Use only letters, digits, and underscores (no spaces or special characters).",
+            })
 
-        # COUNT(*) is special — doesn't need a valid field
+        # The field being aggregated MUST be a real doctype field
         if func == "count" and field == "name":
             select_parts.append(f"COUNT(*) as `{alias}`")
-        elif not _validate_fieldname(field, valid_fields):
-            return json.dumps({"error": f"Invalid field '{field}' for doctype '{doctype}'. Valid fields: {sorted(valid_fields)}"})
+        elif not _is_valid_fieldname(field, valid_fields):
+            return json.dumps({
+                "error": f"Invalid field '{field}' for doctype '{doctype}'. "
+                       f"Valid fields include: {sorted(valid_fields)}",
+            })
         else:
             select_parts.append(f"{func_map[func]}(`{field}`) as `{alias}`")
 
-    # Build GROUP BY clause
-    group_clause = ", ".join(f"`{g}`" for g in group_by) if group_by else "1=1"
+    # ── Build query ───────────────────────────────────────────────────
 
-    # Build WHERE clause
+    # GROUP BY: use "1=1" for no grouping (overall aggregate)
+    if group_by:
+        group_clause = ", ".join(f"`{g}`" for g in group_by)
+    else:
+        group_clause = "1=1"
+
+    # WHERE
     where_clause, where_params = _build_where_clause(filters)
 
-    # Build HAVING clause (for filtering on aggregates)
+    # HAVING — filter on aggregate results
     having_clause = ""
     having_params = []
     if having:
-        # Simple HAVING support: {"total": [">", 100]}
+        _HAVING_OPS = {">", ">=", "<", "<=", "=", "!="}
         having_parts = []
         for alias, condition in having.items():
+            if not _is_safe_identifier(alias):
+                continue
             if isinstance(condition, list) and len(condition) == 2:
                 op, val = condition
-                if op.upper() in (">", ">=", "<", "<=", "=", "!="):
+                if op in _HAVING_OPS:
                     having_parts.append(f"`{alias}` {op} %s")
                     having_params.append(val)
         if having_parts:
             having_clause = " HAVING " + " AND ".join(having_parts)
 
-    # Build ORDER BY clause
+    # ORDER BY — can reference group_by fields or aliases
     order_clause = ""
-    if order_by:
-        # Validate order_by doesn't contain dangerous characters
-        if _validate_fieldname(order_by.split()[0].strip("`"), {"_any"}):
-            order_clause = f" ORDER BY {order_by}"
+    if order_by and _is_safe_identifier(order_by.split()[0].strip("`")):
+        # Allow desc/asc suffix
+        order_clause = f" ORDER BY {order_by}"
 
-    # Build LIMIT
+    # LIMIT
     limit_clause = ""
     try:
         limit_int = int(limit)
@@ -162,7 +194,8 @@ def frappe_aggregate(args: dict = None, **kwargs) -> str:
     except (TypeError, ValueError):
         pass
 
-    # Assemble and execute
+    # ── Execute ──────────────────────────────────────────────────────
+
     sql = (
         f"SELECT {', '.join(select_parts)} "
         f"FROM `tab{doctype}`{where_clause} "
@@ -176,7 +209,10 @@ def frappe_aggregate(args: dict = None, **kwargs) -> str:
         return json.dumps({
             "doctype": doctype,
             "group_by": group_by,
-            "aggregations": [a.get("alias", f"{a['function']}_{a['field']}") for a in aggregations],
+            "aggregations": [
+                a.get("alias", f"{a['function']}_{a['field']}")
+                for a in aggregations
+            ],
             "data": [dict(r) for r in results],
             "row_count": len(results),
             "query": sql,
@@ -184,5 +220,8 @@ def frappe_aggregate(args: dict = None, **kwargs) -> str:
     except frappe.PermissionError:
         return json.dumps({"error": f"No permission to query '{doctype}'"})
     except Exception as e:
-        frappe.log_error(title="Aggregate Error", message=f"Error aggregating {doctype}: {str(e)}\nSQL: {sql}")
+        frappe.log_error(
+            title="Aggregate Error",
+            message=f"Error aggregating {doctype}: {str(e)}\nSQL: {sql}",
+        )
         return json.dumps({"error": str(e), "doctype": doctype, "query": sql})
