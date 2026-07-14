@@ -298,6 +298,7 @@ FRAPPE_AGGREGATE = {
                 "items": {"type": "string"},
                 "description": (
                     "Fields to group by. These must be real fields on the doctype. "
+                    "Each result row will include these field values as labels. "
                     "Use [] for an overall aggregate with no grouping."
                 ),
             },
@@ -336,9 +337,12 @@ FRAPPE_AGGREGATE = {
                 "type": "object",
                 "default": {},
                 "description": (
-                    "WHERE filters on real doctype fields. "
-                    "Examples: {\"company\": \"Apex Steel\", \"docstatus\": 1}, "
-                    "{\"from_time\": [\">\", \"2025-01-01\"]}. "
+                    "WHERE filters on real doctype fields. Supported formats:\n"
+                    '- {"field": "value"} → field = value\n'
+                    '- {"field": [">=", "value"]} → field >= value (operator syntax)\n'
+                    '- {"field": ["IN", ["a", "b"]]} → field IN (a, b)\n'
+                    '- {"field": ["2026-01-01", "2026-12-31"]} → field BETWEEN start AND end\n'
+                    "Operators: =, !=, >, >=, <, <=, LIKE, NOT LIKE, IN, NOT IN. "
                     "Do NOT put aliases or aggregate fields here — only real doctype fields."
                 ),
             },
