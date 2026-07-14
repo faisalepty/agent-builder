@@ -73,7 +73,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-07-10 12:16:20.971223",
+ "modified": "2026-07-13 14:00:23.803812",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Omnis Evals",
@@ -90,7 +90,11 @@
  "owner": "Administrator",
  "public": 1,
  "quick_lists": [],
- "roles": [],
+ "roles": [
+  {
+   "role": "Omnis User"
+  }
+ ],
  "sequence_id": 4.0,
  "shortcuts": [],
  "title": "Omnis Evals",
