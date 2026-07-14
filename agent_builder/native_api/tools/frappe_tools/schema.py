@@ -217,7 +217,7 @@ FRAPPE_SUBMIT_DOC = {
 FRAPPE_GENERATE_REPORT = {
     "name": "frappe_generate_report",
     "description": (
-        "Execute any Frappe report (Query Report, Script Report, or Report Builder) "
+        "Execute any Frappe report (Query Report, Script Report) "
         "and return its data. This calls frappe.desk.query_report.run() directly — "
         "the same function the Frappe web UI uses. Missing filters are auto-defaulted "
         "(fiscal-year dates, default company) which often returns 0 rows — pass "
