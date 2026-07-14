@@ -1,4 +1,14 @@
-# tools/frappe_tools/generate_report.py
+"""Execute Query/Script Reports with robust filter handling.
+
+Key improvements over raw frappe.desk.query_report.run():
+  - Auto-defaults fiscal year dates and company
+  - Reads report's own .js filter definitions for mandatory fields and options
+  - Validates Link field values exist before executing
+  - Validates Select field values against report-declared options
+  - Catches fiscal year coverage gaps before execution
+  - Retry cache prevents identical failed calls in a loop
+  - Prepared report polling for slow reports
+"""
 
 import hashlib
 import json
@@ -8,32 +18,12 @@ from frappe.utils import add_months, getdate
 from agent_builder.native_api.tools.decorator import tool
 
 
-# A previous version of this tool hardcoded "Sales Analytics"/"Purchase Analytics"
-# as permanently unrunnable, reasoning that ERPNext dumps raw data to the browser
-# for client-side pivoting. That diagnosis was WRONG — verified against ERPNext's
-# actual source (erpnext/selling/report/sales_analytics/sales_analytics.py):
-# Analytics.run() returns a perfectly normal 6-tuple
-# (columns, data, message, chart, report_summary, skip_total_row).
-# The real bug: every live failure supplied 'based_on' (not a real field on this
-# report) instead of the two actually-mandatory filters, 'tree_type' and
-# 'doc_type' (per the report's own .js: reqd=1, options include
-# Customer/Item/Territory/... and Sales Invoice/Quotation/...). When tree_type
-# doesn't match one of get_data()'s known branches, self.data is never assigned,
-# producing "'Analytics' object has no attribute 'data'" — a missing/invalid
-# filter value, not a structural incompatibility. Purchase Analytics imports and
-# reuses this exact same Analytics class, so the same fix applies to both.
-# Lesson generalized below: instead of guessing or hardcoding filter names/options
-# per report, read them from the report's own client-side .js filter definitions
-# (frappe.query_reports[name] = {filters: [...]}), which every Query and Script
-# Report ships. This fixes the *class* of bug, not just these two reports.
-
 _RETRY_CACHE_PREFIX = "frappe_generate_report:last_call:"
 _RETRY_CACHE_TTL = 90  # seconds
 
-# Fallback Link-type filter keys worth checking for existence, used only when a
-# report doesn't declare its own Link filters in a way we can parse (e.g. its
-# filters live in server-side Python rather than the standard .js block).
-_FALLBACK_LINK_FILTER_DOCTYPES = {
+# Link-type filter keys worth checking for existence.
+# Extended dynamically from doctype fieldmeta when possible.
+_LINK_FILTER_DOCTYPES = {
     "company": "Company",
     "customer": "Customer",
     "supplier": "Supplier",
@@ -42,27 +32,29 @@ _FALLBACK_LINK_FILTER_DOCTYPES = {
     "project": "Project",
     "cost_center": "Cost Center",
     "warehouse": "Warehouse",
+    "employee": "Employee",
 }
 
-_DATE_FILTER_KEYS = ("from_date", "to_date", "period_start_date", "period_end_date",
-                     "posting_date", "transaction_date")
-
-# Kept as a last-resort safety net for a report whose execute() still ends up in
-# an inconsistent internal state (e.g. an unrecognized filter value skipped every
-# branch of its own logic) even after defaults/validation above. This is no
-# longer treated as "unfixable" — the message below reflects the real cause.
-_INCOMPLETE_STATE_ERROR_SIGNATURES = (
-    "object has no attribute 'data'",
-    "object has no attribute 'chart'",
-    "object has no attribute 'report_summary'",
+_DATE_FILTER_KEYS = (
+    "from_date", "to_date",
+    "period_start_date", "period_end_date",
+    "posting_date", "transaction_date",
+    "start_date", "end_date",
 )
+
+# Financial statements that read period_start_date/period_end_date
+# instead of from_date/to_date, and need filter_based_on="Date Range".
+_FINANCIAL_STATEMENT_REPORTS = {
+    "Profit and Loss Statement",
+    "Balance Sheet",
+    "Cash Flow",
+    "Gross and Net Profit Report",
+    "Trial Balance",
+}
 
 
 def _split_top_level_objects(text: str) -> list:
-    """Split a JS array-literal's inner text into its top-level {...} object
-    bodies, respecting brace nesting (a filter def's 'options: [{...}, {...}]'
-    contains braces of its own, so a naive non-nesting regex grabs the wrong
-    object — this is what silently broke default/option extraction before)."""
+    """Split JS array literal into top-level {...} bodies, respecting nesting."""
     objs, depth, start = [], 0, None
     for i, ch in enumerate(text):
         if ch == "{":
@@ -78,12 +70,9 @@ def _split_top_level_objects(text: str) -> list:
 
 
 def _read_report_filter_defs(report_doc) -> dict:
-    """Read a report's own client-side .js filter declarations and return
-    {fieldname: {"default": str|None, "options": [str, ...]|None, "reqd": bool}}
-    for whatever it declares. Works for both Query and Script Reports — both
-    ship a frappe.query_reports[name] = {filters: [...]} block. Best-effort
-    only: returns {} on any failure or if no .js file is found, and must never
-    block report execution."""
+    """Read report's client-side .js filter declarations.
+    Returns {fieldname: {"default": str|None, "options": [str]|None, "reqd": bool}}.
+    Best-effort: returns {} on any failure."""
     import os
     import re
 
@@ -94,10 +83,9 @@ def _read_report_filter_defs(report_doc) -> dict:
 
         for app in frappe.get_installed_apps():
             js_path = os.path.join(
-                frappe.get_app_path(app), module_folder, "report", report_folder, f"{report_folder}.js"
+                frappe.get_app_path(app), module_folder, "report",
+                report_folder, f"{report_folder}.js"
             )
-            # nosemgrep: frappe-security-file-traversal — path built from frappe.get_app_path
-            # + report metadata (module/name from the DB), not from user-supplied input.
             if not os.path.exists(js_path):
                 continue
 
@@ -125,15 +113,17 @@ def _read_report_filter_defs(report_doc) -> dict:
                 fieldname_match = re.search(r'fieldname:\s*["\']([^"\']+)["\']', obj)
                 if not fieldname_match:
                     continue
-                entry = {"default": None, "options": None, "reqd": bool(re.search(r"reqd:\s*1", obj))}
+                entry = {
+                    "default": None,
+                    "options": None,
+                    "reqd": bool(re.search(r"reqd:\s*1", obj)),
+                }
 
                 default_match = re.search(r'default:\s*["\']([^"\']+)["\']', obj)
                 if default_match:
                     entry["default"] = default_match.group(1)
 
-                # Only treat 'options' as a Select's choice list when it's an array —
-                # for Link fields 'options' is a bare doctype string (e.g. "Company"),
-                # which this intentionally skips.
+                # Only parse options as array for Select fields (not Link fields)
                 options_match = re.search(r"options:\s*\[(.*?)\]", obj, re.S)
                 if options_match:
                     seen, opts = set(), []
@@ -147,51 +137,58 @@ def _read_report_filter_defs(report_doc) -> dict:
                 defs[fieldname_match.group(1)] = entry
             break
     except Exception as e:
-        frappe.log_error(title="Generate Report Error", message=f"Filter def extraction failed for {report_doc.name}: {str(e)}")
+        frappe.log_error(
+            title="Report Filter Def Extraction",
+            message=f"Failed for {report_doc.name}: {e}",
+        )
 
     return defs
 
 
 def _apply_declared_defaults(filters: dict, filter_defs: dict) -> dict:
-    """Fill in any filter the report itself declares a string-literal default
-    for, if it's still missing. (Defaults that are JS expressions rather than
-    string literals — e.g. computed dates — aren't parsed here; _default_filters
-    already covers dates/company via fiscal year and Global Defaults.)"""
+    """Fill missing filters from report's declared defaults."""
     for fieldname, meta in filter_defs.items():
         if filters.get(fieldname) is None and meta.get("default") is not None:
             filters[fieldname] = meta["default"]
     return filters
 
 
-def _validate_filter_values(filters: dict, filter_defs: dict = None):
-    """Catch bad Link references, invalid Select options, and unparseable dates
-    before spending a report execution on them. Select-field validation prefers
-    options the report itself declares (filter_defs) over any static guess,
-    since valid option sets are report-specific and drift across versions.
-    Returns None if clean, otherwise an error payload with concrete suggestions."""
+def _validate_filter_values(filters: dict, filter_defs: dict = None) -> dict | None:
+    """Validate Link refs, Select options, dates, mandatory fields.
+    Returns None if clean, else error payload."""
     filter_defs = filter_defs or {}
     errors = []
 
-    for key, doctype in _FALLBACK_LINK_FILTER_DOCTYPES.items():
+    # Validate Link field values exist
+    for key, doctype in _LINK_FILTER_DOCTYPES.items():
         value = filters.get(key)
         if not value or isinstance(value, list):
             continue
         if not frappe.db.exists(doctype, value):
-            similar = frappe.get_all(doctype, filters={"name": ["like", f"%{value}%"]},
-                                      fields=["name"], limit=3)
+            similar = frappe.get_all(
+                doctype,
+                filters={"name": ["like", f"%{value}%"]},
+                fields=["name"],
+                limit=3,
+            )
             suggestion = (
-                f"Did you mean: {', '.join(s.name for s in similar)}?" if similar
+                f"Did you mean: {', '.join(s.name for s in similar)}?"
+                if similar
                 else f"Valid {doctype} examples: "
-                     f"{', '.join(v.name for v in frappe.get_all(doctype, fields=['name'], limit=5))}"
+                f"{', '.join(v.name for v in frappe.get_all(doctype, fields=['name'], limit=5))}"
             )
             errors.append(f"Invalid {key}='{value}': no such {doctype}. {suggestion}")
 
+    # Validate Select field values against declared options
     for fieldname, meta in filter_defs.items():
         options = meta.get("options")
         value = filters.get(fieldname)
         if options and value and value not in options:
-            errors.append(f"Invalid {fieldname}='{value}'. Must be one of: {', '.join(options)}")
+            errors.append(
+                f"Invalid {fieldname}='{value}'. Must be one of: {', '.join(options)}"
+            )
 
+    # Check mandatory fields
     missing_mandatory = [
         fn for fn, meta in filter_defs.items()
         if meta.get("reqd") and filters.get(fn) is None
@@ -199,9 +196,10 @@ def _validate_filter_values(filters: dict, filter_defs: dict = None):
     if missing_mandatory:
         errors.append(
             f"Missing mandatory filter(s): {', '.join(missing_mandatory)}. "
-            f"This report marks them reqd=1 in its own filter definition."
+            f"This report marks them reqd=1 in its filter definition."
         )
 
+    # Validate date formats
     for key in _DATE_FILTER_KEYS:
         value = filters.get(key)
         if value:
@@ -215,25 +213,26 @@ def _validate_filter_values(filters: dict, filter_defs: dict = None):
     return {
         "error": "invalid_filter_values",
         "validation_errors": errors,
-        "message": "Fix the filter values above and retry — the report was not executed.",
+        "message": "Fix the filter values above and retry.",
     }
 
 
 def _default_filters(filters: dict) -> dict:
+    """Apply standard defaults: fiscal year dates, company, filter_based_on."""
     filters = {k: v for k, v in filters.items() if v is not None}
 
-    # ERPNext's shared financial_statements.py (P&L, Balance Sheet, Cash Flow,
-    # Gross and Net Profit, etc.) reads period_start_date/period_end_date and
-    # from_fiscal_year/to_fiscal_year — NOT from_date/to_date/fiscal_year.
-    # Source: erpnext/accounts/report/balance_sheet/balance_sheet.py execute()
+    # Financial statements use period_start/end_date, not from/to_date
     if not filters.get("period_start_date") and filters.get("from_date"):
         filters["period_start_date"] = filters["from_date"]
     if not filters.get("period_end_date") and filters.get("to_date"):
         filters["period_end_date"] = filters["to_date"]
 
+    # Default to current fiscal year if no dates given
     if not filters.get("period_start_date") and not filters.get("period_end_date"):
         fy = frappe.db.get_value(
-            "Fiscal Year", {"disabled": 0}, ["name", "year_start_date", "year_end_date"],
+            "Fiscal Year",
+            {"disabled": 0},
+            ["name", "year_start_date", "year_end_date"],
             order_by="year_start_date desc",
         )
         if fy:
@@ -246,9 +245,11 @@ def _default_filters(filters: dict) -> dict:
             filters["period_end_date"] = str(today)
             filters["period_start_date"] = str(add_months(today, -12))
 
+    # Financial statements need filter_based_on="Date Range"
     filters.setdefault("filter_based_on", "Date Range")
     filters.setdefault("periodicity", "Yearly")
 
+    # Default company
     if "company" not in filters:
         default_company = frappe.db.get_single_value("Global Defaults", "default_company")
         if default_company:
@@ -257,29 +258,27 @@ def _default_filters(filters: dict) -> dict:
     return filters
 
 
-def _validate_fiscal_year_coverage(filters: dict):
-    """If a company + explicit date range is given but no active Fiscal Year for that
-    company covers it, return an actionable error payload instead of letting the
-    report raise an opaque 'Date X is not in any active Fiscal Year' exception.
-    Confirmed live failure: company='My Company', from_date=2026-01-01 had no
-    Fiscal Year record covering it, even though the *global* default Fiscal Year
-    (used by _default_filters as a fallback) did exist."""
+def _validate_fiscal_year_coverage(filters: dict) -> dict | None:
+    """Fail fast if no Fiscal Year covers the given date range."""
     company = filters.get("company")
     start = filters.get("period_start_date") or filters.get("from_date")
     end = filters.get("period_end_date") or filters.get("to_date")
+
     if not (company and start and end):
         return None
 
-    covering = frappe.db.exists(
+    if frappe.db.exists(
         "Fiscal Year",
         {"disabled": 0, "year_start_date": ("<=", end), "year_end_date": (">=", start)},
-    )
-    if covering:
+    ):
         return None
 
     available = frappe.db.get_all(
-        "Fiscal Year", filters={"disabled": 0}, fields=["name", "year_start_date", "year_end_date"],
-        order_by="year_start_date desc", limit=5,
+        "Fiscal Year",
+        filters={"disabled": 0},
+        fields=["name", "year_start_date", "year_end_date"],
+        order_by="year_start_date desc",
+        limit=5,
     )
     return {
         "error": "no_fiscal_year_for_range",
@@ -291,19 +290,17 @@ def _validate_fiscal_year_coverage(filters: dict):
         ],
         "message": (
             f"No active Fiscal Year covers {start} to {end} for company '{company}'. "
-            f"This is a configuration/date issue, not a filter-shape problem — do not "
-            f"retry with the same dates. Pick a date range within one of the "
-            f"available_fiscal_years above, or ask the user to confirm the correct period."
+            f"Pick a date range within one of the available_fiscal_years above."
         ),
     }
 
 
 def _run_prepared_or_direct(report_doc, filters: dict, max_wait: int = 120) -> dict:
-    """For prepared reports: check for a cached completed run, otherwise queue
-    and poll with backoff up to max_wait seconds. For everything else, run directly."""
+    """Run report directly, or queue+poll for prepared reports."""
     from frappe.desk.query_report import run, get_prepared_report_result
     from frappe.core.doctype.prepared_report.prepared_report import (
-        get_completed_prepared_report, make_prepared_report,
+        get_completed_prepared_report,
+        make_prepared_report,
     )
 
     is_prepared = getattr(report_doc, "prepared_report", False) and not getattr(
@@ -312,11 +309,14 @@ def _run_prepared_or_direct(report_doc, filters: dict, max_wait: int = 120) -> d
 
     if not is_prepared:
         return run(
-            report_name=report_doc.name, filters=filters, user=frappe.session.user,
+            report_name=report_doc.name,
+            filters=filters,
+            user=frappe.session.user,
             is_tree=getattr(report_doc, "is_tree", 0),
             parent_field=getattr(report_doc, "parent_field", None),
         )
 
+    # Check for cached result
     cached_name = get_completed_prepared_report(
         filters=filters, user=frappe.session.user, report_name=report_doc.name
     )
@@ -325,6 +325,7 @@ def _run_prepared_or_direct(report_doc, filters: dict, max_wait: int = 120) -> d
         if result and result.get("result"):
             return {**result, "source": "cached"}
 
+    # Queue and poll
     prepared = make_prepared_report(report_name=report_doc.name, filters=filters)
     prepared_name = prepared.get("name")
     frappe.db.commit()
@@ -346,25 +347,27 @@ def _run_prepared_or_direct(report_doc, filters: dict, max_wait: int = 120) -> d
         poll_interval = min(poll_interval * 1.5, 15.0)
 
     return {
-        "result": [], "columns": [], "status": "timeout",
-        "message": f"Report still generating after {max_wait}s. Retry with the same filters shortly.",
+        "result": [],
+        "columns": [],
+        "status": "timeout",
+        "message": f"Report still generating after {max_wait}s. Retry shortly.",
         "prepared_report_name": prepared_name,
     }
 
 
 def _extract_args(args, kwargs):
-    """Normalize (report_name, filters) regardless of whether the MCP framework
-    nested them under 'args', flattened them into kwargs, or passed filters as a
-    JSON string."""
+    """Normalize (report_name, filters) from various MCP framework call styles."""
     payload = args if isinstance(args, dict) else kwargs.get("args") or {}
     report_name = payload.get("report_name") or kwargs.get("report_name")
     filters = payload.get("filters")
     if filters is None:
         filters = kwargs.get("filters")
     if filters is None:
-        # Framework flattened the arguments directly into payload/kwargs
-        flat = {k: v for k, v in {**kwargs, **payload}.items()
-                if k not in ("report_name", "filters", "args")}
+        flat = {
+            k: v
+            for k, v in {**kwargs, **payload}.items()
+            if k not in ("report_name", "filters", "args")
+        }
         filters = flat or {}
     if isinstance(filters, str):
         try:
@@ -376,9 +379,14 @@ def _extract_args(args, kwargs):
     return report_name, filters
 
 
+def _make_error_payload(error_type: str, report_name: str, **extra) -> dict:
+    """Standardize error payloads."""
+    return {"error": error_type, "report_name": report_name, **extra}
+
+
 @tool(schema_name="frappe_generate_report")
 def frappe_generate_report(args: dict = None, **kwargs) -> str:
-    """Execute a Query Report or Script Report."""
+    """Execute a Query Report or Script Report and return its data."""
     report_name, filters = _extract_args(args, kwargs)
 
     if not report_name:
@@ -387,9 +395,7 @@ def frappe_generate_report(args: dict = None, **kwargs) -> str:
     if not frappe.db.exists("Report", report_name):
         return json.dumps({"error": f"Report '{report_name}' not found"})
 
-    # Short-circuit identical retries within a short window: several live sessions
-    # showed the same (report_name, filters) pair retried after an identical failure,
-    # burning tool calls on a result that cannot change.
+    # Retry cache: prevent identical failed calls in a loop
     cache_key = _RETRY_CACHE_PREFIX + hashlib.sha256(
         f"{frappe.session.user}:{report_name}:{json.dumps(filters, sort_keys=True, default=str)}".encode()
     ).hexdigest()
@@ -399,11 +405,7 @@ def frappe_generate_report(args: dict = None, **kwargs) -> str:
             "error": "identical_retry_detected",
             "report_name": report_name,
             "previous_error": cached_error,
-            "message": (
-                "This exact report_name + filters combination was already attempted "
-                f"in the last {_RETRY_CACHE_TTL}s and failed with the error above. "
-                "Change the filters meaningfully or stop; retrying identically will not help."
-            ),
+            "message": f"This exact report+filters was tried in the last {_RETRY_CACHE_TTL}s and failed. Change filters or stop.",
         }, default=str)
 
     try:
@@ -412,8 +414,7 @@ def frappe_generate_report(args: dict = None, **kwargs) -> str:
 
         if report_doc.report_type == "Report Builder":
             return json.dumps({
-                "error": "Report Builder reports are not supported. Use a Script Report, "
-                         "Query Report, or Custom Report instead.",
+                "error": "Report Builder reports are not supported. Use Query/Script Report.",
             })
         if report_doc.report_type not in ("Query Report", "Script Report"):
             return json.dumps({"error": f"Unsupported report type: {report_doc.report_type}"})
@@ -421,115 +422,81 @@ def frappe_generate_report(args: dict = None, **kwargs) -> str:
         user_keys = set(filters.keys())
         effective_filters = _default_filters(dict(filters))
 
-        # Read this report's own declared filter defaults/options once, and use
-        # them both to fill in missing values and to validate what's there —
-        # generalizes across any report shaped like Sales/Purchase Analytics
-        # instead of guessing or hardcoding per report name.
+        # Read and apply report's own filter definitions
         filter_defs = _read_report_filter_defs(report_doc)
         effective_filters = _apply_declared_defaults(effective_filters, filter_defs)
 
-        # GUARDRAIL: Catch bad Link references / invalid Select options / bad dates /
-        # missing report-declared mandatory filters before spending an execution on them.
+        # Validate before executing
         validation_error = _validate_filter_values(effective_filters, filter_defs)
         if validation_error:
             frappe.cache().set_value(cache_key, validation_error, expires_in_sec=_RETRY_CACHE_TTL)
             return json.dumps(validation_error, default=str)
 
-        # Crucial for reports that read from frappe.form_dict instead of the filters arg
+        # Set form_dict for reports that read from it
         frappe.local.form_dict.update(effective_filters)
 
-        # GUARDRAIL: Prevent infinite agent loops on empty financial data
-        financial_reports = ["Profit and Loss Statement", "Balance Sheet",
-                              "Gross and Net Profit Report", "Cash Flow", "Trial Balance"]
-        if report_name in financial_reports:
+        # Guardrail: empty financial data
+        if report_name in _FINANCIAL_STATEMENT_REPORTS:
             company = effective_filters.get("company")
-            gl_exists = frappe.db.exists("GL Entry", {"company": company, "is_cancelled": 0})
-            if not gl_exists:
+            if not frappe.db.exists("GL Entry", {"company": company, "is_cancelled": 0}):
                 fy = frappe.db.get_value(
-                    "Fiscal Year", {"disabled": 0}, ["name", "year_start_date", "year_end_date"],
+                    "Fiscal Year", {"disabled": 0},
+                    ["name", "year_start_date", "year_end_date"],
                     order_by="year_start_date desc",
                 )
-                return json.dumps({
-                    "error": "no_financial_data",
-                    "report_name": report_name,
-                    "company": company,
-                    "current_fiscal_year": fy[0] if fy else None,
-                    "fiscal_year_range": [str(fy[1]), str(fy[2])] if fy else None,
-                    "message": (
-                        f"No submitted accounting entries exist for company '{company}'. "
-                        f"This is a data-completeness issue, not a filter or tool problem — "
-                        f"do not retry with different filters or re-check Sales/Purchase "
-                        f"Invoice; GL Entry is authoritative and is confirmed empty. "
-                        f"Report this to the user as-is."
-                    ),
-                }, default=str)
+                payload = _make_error_payload(
+                    "no_financial_data", report_name, company=company,
+                    current_fiscal_year=fy[0] if fy else None,
+                    fiscal_year_range=[str(fy[1]), str(fy[2])] if fy else None,
+                    message=f"No submitted GL Entries for '{company}'. This is a data issue, not a filter problem.",
+                )
+                frappe.cache().set_value(cache_key, payload, expires_in_sec=_RETRY_CACHE_TTL)
+                return json.dumps(payload, default=str)
 
-        # GUARDRAIL: Fail fast on a company/date range not covered by any Fiscal Year,
-        # rather than letting the report raise its own opaque exception mid-execution.
+        # Guardrail: fiscal year coverage
         fy_error = _validate_fiscal_year_coverage(effective_filters)
         if fy_error:
             frappe.cache().set_value(cache_key, fy_error, expires_in_sec=_RETRY_CACHE_TTL)
             return json.dumps(fy_error, default=str)
 
+        # Execute
         try:
             result = _run_prepared_or_direct(report_doc, effective_filters)
         except KeyError as e:
             missing_key = str(e).strip("'\"")
-            payload = {
-                "error": f"missing_required_filter:{missing_key}",
-                "report_name": report_name,
-                "filters_sent": effective_filters,
-                "hint": (
-                    f"The report script reads filters['{missing_key}'] directly and has no "
-                    f"default for it. Supply '{missing_key}' explicitly and retry once. If "
-                    f"you don't know the valid values, check the report's standard filter "
-                    f"panel in the Frappe Desk UI or the report's .json filter definitions."
-                ),
-            }
+            payload = _make_error_payload(
+                f"missing_required_filter:{missing_key}", report_name,
+                filters_sent=effective_filters,
+                hint=f"Report reads filters['{missing_key}'] with no default. Supply it explicitly.",
+            )
             frappe.cache().set_value(cache_key, payload, expires_in_sec=_RETRY_CACHE_TTL)
             return json.dumps(payload, default=str)
         except Exception as e:
             error_str = str(e)
-            if any(sig in error_str for sig in _INCOMPLETE_STATE_ERROR_SIGNATURES):
-                declared = {fn: meta.get("options") for fn, meta in filter_defs.items() if meta.get("options")}
-                payload = {
-                    "error": "report_internal_state_incomplete",
-                    "report_name": report_name,
-                    "filters_sent": effective_filters,
-                    "message": (
-                        f"'{report_name}' raised {error_str}. This typically means a Select-type "
-                        f"filter value didn't match any branch the report's own execute() checks "
-                        f"for, so it never finished building its result. This is fixable — it is "
-                        f"not a structural limitation of this tool. Check filters_sent against "
-                        f"this report's actual valid options below and retry with a matching value."
-                    ),
-                    "declared_filter_options": declared or None,
-                }
-                frappe.cache().set_value(cache_key, payload, expires_in_sec=_RETRY_CACHE_TTL)
-                return json.dumps(payload, default=str)
+
+            # Handle "not in any active fiscal year" specially
             if "not in any active fiscal year" in error_str.lower():
-                payload = {
-                    "error": "no_fiscal_year_for_range",
-                    "report_name": report_name,
-                    "message": (
-                        f"{error_str}. This is a configuration/date issue, not a filter-shape "
-                        f"problem — do not retry with the same dates. Pick a different date "
-                        f"range or confirm the correct fiscal year with the user."
-                    ),
-                }
+                payload = _make_error_payload(
+                    "no_fiscal_year_for_range", report_name,
+                    message=f"{error_str}. Pick a different date range.",
+                )
                 frappe.cache().set_value(cache_key, payload, expires_in_sec=_RETRY_CACHE_TTL)
                 return json.dumps(payload, default=str)
+
+            # Handle "mandatory" filter errors
             if "mandatory" in error_str.lower():
-                payload = {
-                    "error": error_str,
-                    "report_name": report_name,
-                    "hint": f"The report script received these exact filters: {effective_filters}. If it still claims fields are mandatory, the report may be reading from a different source. Use 'frappe_get_list' on 'GL Entry' to fetch data directly."
-                }
+                payload = _make_error_payload(
+                    error_str, report_name,
+                    hint=f"Filters sent: {effective_filters}. Try frappe_get_list on the underlying doctype.",
+                )
                 frappe.cache().set_value(cache_key, payload, expires_in_sec=_RETRY_CACHE_TTL)
                 return json.dumps(payload, default=str)
+
+            # Generic: cache and re-raise
             frappe.cache().set_value(cache_key, {"error": error_str}, expires_in_sec=_RETRY_CACHE_TTL)
             raise
 
+        # Success: build response
         rows = [dict(r) if isinstance(r, dict) else r for r in result.get("result", [])]
         auto_added = {k: v for k, v in effective_filters.items() if k not in user_keys}
 
@@ -547,9 +514,8 @@ def frappe_generate_report(args: dict = None, **kwargs) -> str:
             payload["filters_auto_added"] = auto_added
         if not rows:
             payload["suggestion"] = (
-                "Report returned 0 rows — auto-defaulted filters may not match your data. "
-                "Retry with explicit filters. If you are checking financial data, verify "
-                "underlying GL Entries or Sales Invoices exist for this period using frappe_get_list."
+                "Report returned 0 rows. Auto-defaulted filters may not match your data. "
+                "Try explicit filters, or verify data exists via frappe_get_list."
             )
 
         return json.dumps(payload, default=str)
@@ -557,6 +523,6 @@ def frappe_generate_report(args: dict = None, **kwargs) -> str:
     except frappe.PermissionError:
         return json.dumps({"error": f"No permission to access report '{report_name}'"})
     except Exception as e:
-        frappe.log_error(title="Generate Report Error", message=f"Error generating {report_name}: {str(e)}")
+        frappe.log_error(title="Generate Report Error", message=f"{report_name}: {e}")
         frappe.cache().set_value(cache_key, {"error": str(e)}, expires_in_sec=_RETRY_CACHE_TTL)
         return json.dumps({"error": str(e), "report_name": report_name})

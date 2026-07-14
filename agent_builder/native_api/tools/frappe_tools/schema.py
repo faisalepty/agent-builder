@@ -1,4 +1,4 @@
-# tools/frappe_tools/schema.py
+"""Tool schemas for MCP function definitions."""
 
 FRAPPE_CREATE_DOC = {
     "name": "frappe_create_doc",
@@ -103,7 +103,8 @@ FRAPPE_GET_LIST = {
     "name": "frappe_get_list",
     "description": (
         "Search and list Frappe documents with optional filtering. Use this to find records, "
-        "browse a doctype, or discover data before creating/updating documents."
+        "browse a doctype, or discover data before creating/updating documents. "
+        "For aggregated queries (SUM, COUNT, GROUP BY), use frappe_aggregate instead."
     ),
     "parameters": {
         "type": "object",
@@ -250,9 +251,8 @@ FRAPPE_GENERATE_REPORT = {
 FRAPPE_LIST_REPORTS = {
     "name": "frappe_list_reports",
     "description": (
-        "List available Frappe reports (Query Reports, Script Reports, etc.), optionally "
-        "filtered by module or report type. Use this to discover report names before "
-        "calling frappe_generate_report."
+        "List available Frappe reports, optionally filtered by module, report type, "
+        "or name substring. Use this to discover report names before calling frappe_generate_report."
     ),
     "parameters": {
         "type": "object",
@@ -266,8 +266,69 @@ FRAPPE_LIST_REPORTS = {
                 "enum": ["Query Report", "Script Report", "Report Builder"],
                 "description": "Filter to a specific report type.",
             },
+            "name_contains": {
+                "type": "string",
+                "description": "Filter to reports whose name contains this text (case-insensitive). Example: 'downtime' finds 'Downtime Analysis'.",
+            },
         },
         "required": [],
+    },
+}
+
+FRAPPE_AGGREGATE = {
+    "name": "frappe_aggregate",
+    "description": (
+        "Run an aggregated GROUP BY query on a doctype — SUM, COUNT, AVG, MIN, MAX. "
+        "Use this for any analytical question: 'total sales per customer', 'downtime hours "
+        "per machine', 'count of orders by status'. Do NOT fetch raw rows with frappe_get_list "
+        "and try to sum them manually — use this tool instead for reliable results."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "doctype": {
+                "type": "string",
+                "description": "The doctype to query, e.g. 'Sales Invoice', 'Downtime Entry'.",
+            },
+            "group_by": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Fields to group by. Use [] for an overall aggregate (no grouping). Example: ['customer', 'status'].",
+            },
+            "aggregations": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "field": {"type": "string", "description": "The field to aggregate."},
+                        "function": {"type": "string", "enum": ["sum", "count", "avg", "min", "max"], "description": "Aggregation function."},
+                        "alias": {"type": "string", "description": "Output column name, e.g. 'total_amount'."},
+                    },
+                    "required": ["field", "function", "alias"],
+                },
+                "description": "Aggregations to compute. Example: [{\"field\": \"grand_total\", \"function\": \"sum\", \"alias\": \"total_sales\"}].",
+            },
+            "filters": {
+                "type": "object",
+                "default": {},
+                "description": "WHERE filters, e.g. {\"company\": \"Apex Steel\", \"docstatus\": 1}.",
+            },
+            "having": {
+                "type": "object",
+                "default": {},
+                "description": "Filter on aggregate results, e.g. {\"total_sales\": [\">\", 10000]}.",
+            },
+            "order_by": {
+                "type": "string",
+                "description": "Sort the results, e.g. 'total_sales desc'.",
+            },
+            "limit": {
+                "type": "integer",
+                "default": 100,
+                "description": "Max group rows to return.",
+            },
+        },
+        "required": ["doctype", "group_by", "aggregations"],
     },
 }
 
@@ -355,14 +416,18 @@ FRAPPE_GET_PENDING_APPROVALS = {
 FRAPPE_SEARCH_DOCUMENTS = {
     "name": "frappe_search_documents",
     "description": (
-        "Global search by name across common doctypes (User, Contact, Customer, Supplier, "
-        "Item, Company, Employee, Task, Project). Use when the doctype isn't known — "
-        "otherwise prefer frappe_get_list with a specific doctype and filters."
+        "Search by name across doctypes. Defaults to common doctypes (Customer, Item, Sales Order, etc.). "
+        "Use the 'doctypes' parameter to search specific doctypes. Prefer frappe_get_list when "
+        "you know the exact doctype."
     ),
     "parameters": {
         "type": "object",
         "properties": {
             "query": {"type": "string", "description": "Text to search for in document names."},
+            "doctypes": {
+                "type": "string",
+                "description": "Comma-separated list of doctypes to search. Overrides defaults. Example: 'Customer,Supplier'.",
+            },
             "limit": {"type": "integer", "default": 20, "description": "Maximum results across all doctypes."},
         },
         "required": ["query"],
