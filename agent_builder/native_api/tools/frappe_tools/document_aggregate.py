@@ -24,6 +24,12 @@ _VALID_FUNCTIONS = {"sum", "count", "avg", "min", "max"}
 # dots, or SQL-dangerous characters.
 _SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
+# Operators that indicate a filter is using [op, value] syntax rather than
+# a BETWEEN range [start, end].
+_OPERATOR_OPS = {
+    "=", "!=", ">", ">=", "<", "<=", "LIKE", "NOT LIKE", "IN", "NOT IN",
+}
+
 
 def _is_safe_identifier(name: str) -> bool:
     """Check if a string is a safe SQL identifier (for aliases, order_by)."""
@@ -36,13 +42,21 @@ def _is_valid_fieldname(fieldname: str, valid_fields: set) -> bool:
 
 
 def _build_where_clause(filters: dict) -> tuple:
-    """Build WHERE clause from filters dict. Returns (where_sql, params_list)."""
+    """Build WHERE clause from filters dict. Returns (where_sql, params_list).
+
+    Supported filter formats:
+      - {"field": "value"}                       → field = %s
+      - {"field": [">=", "value"]}                → field >= %s  (operator syntax)
+      - {"field": ["IN", ["a", "b"]]}             → field IN (%s, %s)
+      - {"field": ["start", "end"]}               → field BETWEEN %s AND %s
+      - {"field": [">", "value", "extra_ignored"]}→ field > %s (3rd elem ignored for compat)
+
+    Disambiguation: a 2-element list is treated as BETWEEN *only* when the
+    first element is NOT a recognised operator. This prevents [">=", "2026-01-01"]
+    from being silently mangled into a broken BETWEEN clause.
+    """
     if not filters:
         return "", []
-
-    _WHITELISTED_OPS = {
-        "=", "!=", ">", ">=", "<", "<=", "LIKE", "NOT LIKE", "IN", "NOT IN",
-    }
 
     conditions = []
     params = []
@@ -51,22 +65,46 @@ def _build_where_clause(filters: dict) -> tuple:
         if not _is_safe_identifier(key):
             continue
 
-        if isinstance(value, list) and len(value) == 3:
+        if isinstance(value, list) and len(value) >= 3:
+            # 3+ elements: first is operator, second is value
             op, val = value[0], value[1]
-            if op.upper() in _WHITELISTED_OPS:
-                if op.upper() in ("IN", "NOT IN") and isinstance(val, list):
+            if isinstance(op, str) and op.upper() in _OPERATOR_OPS:
+                op = op.upper()
+                if op in ("IN", "NOT IN") and isinstance(val, list):
+                    if not val:
+                        continue
                     placeholders = ", ".join(["%s"] * len(val))
                     conditions.append(f"`{key}` {op} ({placeholders})")
                     params.extend(val)
                 else:
                     conditions.append(f"`{key}` {op} %s")
                     params.append(val)
-        elif isinstance(value, list) and len(value) == 2:
-            conditions.append(f"`{key}` BETWEEN %s AND %s")
-            params.extend(value)
-        else:
-            conditions.append(f"`{key}` = %s")
-            params.append(value)
+                continue
+
+        if isinstance(value, list) and len(value) == 2:
+            # 2-element list: disambiguate operator syntax from BETWEEN range
+            first = value[0]
+            if isinstance(first, str) and first.upper() in _OPERATOR_OPS:
+                # Operator syntax: [">=", "2026-01-01"]
+                op = first.upper()
+                conditions.append(f"`{key}` {op} %s")
+                params.append(value[1])
+            else:
+                # BETWEEN range: ["2026-01-01", "2026-12-31"]
+                conditions.append(f"`{key}` BETWEEN %s AND %s")
+                params.extend(value)
+            continue
+
+        if isinstance(value, list):
+            # Single-element list or empty — treat as plain value
+            if value:
+                conditions.append(f"`{key}` = %s")
+                params.append(value[0])
+            continue
+
+        # Scalar value
+        conditions.append(f"`{key}` = %s")
+        params.append(value)
 
     if not conditions:
         return "", []
@@ -153,7 +191,15 @@ def frappe_aggregate(args: dict = None, **kwargs) -> str:
 
     # ── Build query ───────────────────────────────────────────────────
 
-    # GROUP BY: use "1=1" for no grouping (overall aggregate)
+    # SELECT: group_by fields FIRST (so labels appear in every result row),
+    # then aggregate expressions.
+    final_select_parts = []
+    if group_by:
+        for g in group_by:
+            final_select_parts.append(f"`{g}`")
+    final_select_parts.extend(select_parts)
+
+    # GROUP BY
     if group_by:
         group_clause = ", ".join(f"`{g}`" for g in group_by)
     else:
@@ -197,7 +243,7 @@ def frappe_aggregate(args: dict = None, **kwargs) -> str:
     # ── Execute ──────────────────────────────────────────────────────
 
     sql = (
-        f"SELECT {', '.join(select_parts)} "
+        f"SELECT {', '.join(final_select_parts)} "
         f"FROM `tab{doctype}`{where_clause} "
         f"GROUP BY {group_clause}{having_clause}{order_clause}{limit_clause}"
     )
@@ -225,3 +271,5 @@ def frappe_aggregate(args: dict = None, **kwargs) -> str:
             message=f"Error aggregating {doctype}: {str(e)}\nSQL: {sql}",
         )
         return json.dumps({"error": str(e), "doctype": doctype, "query": sql})
+
+
