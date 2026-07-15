@@ -299,58 +299,52 @@ def _validate_fiscal_year_coverage(filters: dict):
 
 
 def _run_prepared_or_direct(report_doc, filters: dict, max_wait: int = 120) -> dict:
-    """For prepared reports: check for a cached completed run, otherwise queue
-    and poll with backoff up to max_wait seconds. For everything else, run directly."""
+    """Check for a cached prepared report, otherwise execute synchronously.
+    
+    NOTE: We bypass `make_prepared_report` (which enqueues a background job) 
+    because this tool runs inside the agent's own background worker. Enqueuing 
+    a nested job causes a deadlock where the report sits in the queue until 
+    the agent's polling loop times out.
+    """
     from frappe.desk.query_report import run, get_prepared_report_result
-    from frappe.core.doctype.prepared_report.prepared_report import (
-        get_completed_prepared_report, make_prepared_report,
-    )
+    from frappe.core.doctype.prepared_report.prepared_report import get_completed_prepared_report
 
     is_prepared = getattr(report_doc, "prepared_report", False) and not getattr(
         report_doc, "disable_prepared_report", False
     )
 
-    if not is_prepared:
-        return run(
-            report_name=report_doc.name, filters=filters, user=frappe.session.user,
+    # If it's a prepared report, check if we have a cached version first
+    if is_prepared:
+        cached_name = get_completed_prepared_report(
+            filters=filters, user=frappe.session.user, report_name=report_doc.name
+        )
+        if cached_name:
+            result = get_prepared_report_result(report_doc, filters, dn=cached_name)
+            if result and result.get("result"):
+                return {**result, "source": "cached"}
+
+    # CRITICAL FIX: Frappe's `run()` function intentionally returns empty data 
+    # if `prepared_report` is True and no cached report is found. It expects the 
+    # UI to trigger a background job. To force synchronous execution inside the 
+    # agent's worker, we temporarily disable the flag in memory.
+    original_prepared_flag = report_doc.prepared_report
+    report_doc.prepared_report = 0
+
+    try:
+        result = run(
+            report_name=report_doc.name, 
+            filters=filters, 
+            user=frappe.session.user,
             is_tree=getattr(report_doc, "is_tree", 0),
             parent_field=getattr(report_doc, "parent_field", None),
         )
+    finally:
+        # Restore the original flag to avoid unintended side effects 
+        # on the doc object later in the request lifecycle.
+        report_doc.prepared_report = original_prepared_flag
 
-    cached_name = get_completed_prepared_report(
-        filters=filters, user=frappe.session.user, report_name=report_doc.name
-    )
-    if cached_name:
-        result = get_prepared_report_result(report_doc, filters, dn=cached_name)
-        if result and result.get("result"):
-            return {**result, "source": "cached"}
-
-    prepared = make_prepared_report(report_name=report_doc.name, filters=filters)
-    prepared_name = prepared.get("name")
-    frappe.db.commit()
-
-    elapsed, poll_interval = 0, 2.0
-    while elapsed < max_wait:
-        time.sleep(poll_interval)
-        elapsed += poll_interval
-        frappe.db.rollback()
-        doc = frappe.get_doc("Prepared Report", prepared_name)
-
-        if doc.status == "Completed":
-            result = get_prepared_report_result(report_doc, filters, dn=prepared_name)
-            if result and result.get("result"):
-                return {**result, "source": "background_job", "wait_seconds": int(elapsed)}
-        elif doc.status == "Error":
-            raise RuntimeError(doc.error_message or "Report generation failed")
-
-        poll_interval = min(poll_interval * 1.5, 15.0)
-
-    return {
-        "result": [], "columns": [], "status": "timeout",
-        "message": f"Report still generating after {max_wait}s. Retry with the same filters shortly.",
-        "prepared_report_name": prepared_name,
-    }
-
+    result["source"] = "synchronous"
+    return result
 
 def _extract_args(args, kwargs):
     """Normalize (report_name, filters) regardless of whether the MCP framework

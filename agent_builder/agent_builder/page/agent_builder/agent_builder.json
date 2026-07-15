@@ -1,0 +1,23 @@
+{
+ "content": null,
+ "creation": "2026-07-15 07:41:34.257176",
+ "docstatus": 0,
+ "doctype": "Page",
+ "idx": 0,
+ "modified": "2026-07-15 07:47:28.847616",
+ "modified_by": "Administrator",
+ "module": "Agent Builder",
+ "name": "agent-builder",
+ "owner": "Administrator",
+ "page_name": "agent-builder",
+ "roles": [
+  {
+   "role": "Omnis User"
+  }
+ ],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Agent Builder"
+}
