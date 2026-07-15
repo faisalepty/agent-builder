@@ -1,5 +1,6 @@
 /**
- * Omnis Chat UI v4.6.1 — Refined charts + streaming artifact placeholders
+ * Omnis Chat UI v4.6.2 — Refined charts + streaming artifact placeholders
+ * v4.6.2: Fix chart y-axis label clipping and md table empty space.
  * v4.6.1: .ab-chart gets a thin grey border with subtle shadow for a
  *   modern framed look. Default chart height bumped to 300px. New
  *   .ab-artifact-placeholder with shimmer animation for the streaming
@@ -379,8 +380,7 @@
     box-sizing: border-box;
 }
 .ab-bubble table {
-    width: max-content;
-    min-width: 420px;
+    width: 100%;
     border-collapse: separate;
     border-spacing: 0;
     font-size: 13px;
@@ -737,8 +737,9 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 .ab-chart-canvas {
     width: 100%;
     min-height: 120px;
-    padding: 12px 8px 8px;
+    padding: 16px 16px 8px 32px; /* Increased left padding to prevent y-axis number clipping */
     background: var(--bg-color);
+    box-sizing: border-box;
 }
 .ab-chart-canvas .chart-container { margin: 0 auto; }
 .ab-chart-error {
