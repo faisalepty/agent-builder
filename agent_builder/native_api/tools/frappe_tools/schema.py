@@ -213,6 +213,7 @@ FRAPPE_SUBMIT_DOC = {
         "required": ["doctype", "name"],
     },
 }
+
 FRAPPE_GENERATE_REPORT = {
     "name": "frappe_generate_report",
     "description": (
@@ -226,12 +227,16 @@ FRAPPE_GENERATE_REPORT = {
         "addition to from_date/to_date. If you encounter 'mandatory' errors, the tool will "
         "return the exact filters it passed. If it still fails, use frappe_get_list on the "
         "underlying doctype (e.g., GL Entry) to fetch data directly. "
-        "EFFICIENCY: Reports can return 10k+ rows which exceeds AI context windows. "
-        "Use preview_mode=true first to see column schema + total count + sample rows, "
-        "then paginate with max_rows/offset. Use 'columns' to select only needed fields. "
-        "When results are truncated, a 'summary' with min/max/sum (numeric) and "
-        "top values (categorical) is auto-included so you can answer aggregate questions "
-        "without fetching every row."
+        "EFFICIENCY: Reports can return 10k+ rows. The tool auto-includes report_summary "
+        "cards and chart data when the report provides them — these compact figures often "
+        "answer the question with zero row data needed. When results are truncated, "
+        "numeric aggregates (sum/avg/min/max) are auto-included. For large unfiltered "
+        "results (>3000 rows), a CSV export is auto-generated. Use group_by to collapse "
+        "rows into per-group totals, sort_by for top-N, and row_filter to search specific "
+        "rows — all reuse the cached result without re-running the report. Result-shaping "
+        "controls (row_limit, row_offset, sort_by, sort_order, group_by, group_agg, "
+        "row_filter, columns) go INSIDE the filters object but are stripped before the "
+        "report runs — they shape the output, not the report execution."
     ),
     "parameters": {
         "type": "object",
@@ -244,51 +249,34 @@ FRAPPE_GENERATE_REPORT = {
                 "type": "object",
                 "default": {},
                 "description": (
-                    "Filter key-value pairs, e.g. {\"company\": \"your company name\", \"from_date\": \"2026-01-01\", "
-                    "\"to_date\": \"2026-12-31\"}. Financial reports may also need "
-                    "\"filter_based_on\": \"Date Range\" — check frappe_get_report_filters if unsure."
-                ),
-            },
-            "preview_mode": {
-                "type": "boolean",
-                "default": False,
-                "description": (
-                    "If true, returns only the column schema (with fieldnames, labels, types), "
-                    "the total row count, and a 5-row sample — without pulling the full dataset. "
-                    "Use this FIRST on unfamiliar reports to discover what columns exist and how "
-                    "many rows to expect, then decide which columns to request and whether to paginate."
-                ),
-            },
-            "max_rows": {
-                "type": "integer",
-                "default": 200,
-                "description": (
-                    "Maximum number of rows to return. Default 200, hard cap 2000. "
-                    "If the report has more rows than max_rows, a 'summary' object is "
-                    "auto-included with aggregate stats (min/max/sum for numeric columns, "
-                    "top-5 values for categorical columns) computed over ALL rows, so you "
-                    "can still answer 'how much?' questions without fetching every row. "
-                    "Use offset to paginate through additional pages."
-                ),
-            },
-            "offset": {
-                "type": "integer",
-                "default": 0,
-                "description": (
-                    "Starting row index for pagination. Combine with max_rows to page through "
-                    "large reports. E.g. offset=200, max_rows=200 returns rows 201-400. "
-                    "The response includes 'pagination.has_more' and 'pagination.next_offset' "
-                    "to indicate if more pages exist."
-                ),
-            },
-            "columns": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": (
-                    "Optional list of fieldnames to include in the response, e.g. "
-                    "[\"name\", \"amount\", \"status\"]. All other columns are omitted, "
-                    "reducing token cost significantly. Use preview_mode=true first to "
-                    "discover available fieldnames."
+                    "Report filter key-value pairs AND result-shaping controls. "
+                    "REPORT FILTERS (passed to the report): e.g. "
+                    "{\"company\": \"My Company\", \"from_date\": \"2026-01-01\", "
+                    "\"to_date\": \"2026-12-31\", \"filter_based_on\": \"Date Range\"}. "
+                    "Check frappe_get_report_filters if unsure which filters a report accepts.\n\n"
+                    "RESULT-SHAPING CONTROLS (stripped before the report runs; two calls "
+                    "that differ only in these reuse the same cached result):\n"
+                    "  - row_limit (int, default 250, max 2000): max data rows to return.\n"
+                    "  - row_offset (int, default 0): starting row index for pagination.\n"
+                    "  - sort_by (str): fieldname to sort the FULL result by before slicing. "
+                    "Use with row_limit for top-N queries (e.g. sort_by='amount', row_limit=10 "
+                    "gives the top 10 by amount, not an arbitrary prefix).\n"
+                    "  - sort_order (str, 'asc'|'desc', default 'desc'): sort direction.\n"
+                    "  - group_by (str): fieldname to group rows by. Returns grouped_data "
+                    "with per-group numeric aggregates instead of raw rows. Ideal for "
+                    "'break down X by Y' queries — e.g. group_by='territory' collapses "
+                    "10k rows into ~20 groups.\n"
+                    "  - group_agg (str, 'sum'|'avg'|'count', default 'sum'): aggregate "
+                    "function for group_by.\n"
+                    "  - row_filter (dict or list of dicts): AND-combined field-level "
+                    "filters to narrow rows. Each dict: {\"field\": \"<fieldname>\", "
+                    "\"op\": \"eq\"|\"neq\"|\"contains\"|\"gt\"|\"gte\"|\"lt\"|\"lte\", "
+                    "\"value\": <value>}. Example: [{\"field\": \"customer\", "
+                    "\"op\": \"contains\", \"value\": \"Acme\"}, {\"field\": \"amount\", "
+                    "\"op\": \"gte\", \"value\": 1000}].\n"
+                    "  - columns (list or comma-separated str): fieldnames to include in "
+                    "the output, dropping all others to reduce payload size. "
+                    "Example: [\"name\", \"amount\", \"status\"]."
                 ),
             },
         },
