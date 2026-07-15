@@ -870,10 +870,20 @@ window.ChatMessages = (function () {
         try {
             var old = _chartInstances.get(id);
             if (old && old.destroy) old.destroy();
+
+            // Shorten large y-axis numbers (e.g. 1,200,000 -> 1.2M) so they
+            // never overflow the left padding/border of the chart card.
+            // We merge rather than overwrite so a spec-provided axisOptions
+            // object doesn't silently disable this default.
+            var axisOptions = Object.assign(
+                { shortenYAxisNumbers: 1 },
+                spec.axisOptions || {}
+            );
+
             var instance = new frappe.Chart(canvas, Object.assign({
                 height: 300,
                 colors: ['#7cd6fd', '#743ee2', '#5e64ff', '#00c30e', '#ff7300']
-            }, spec));
+            }, spec, { axisOptions: axisOptions }));
             _chartInstances.set(id, instance);
         } catch (e) {
             canvas.innerHTML = '<div class="ab-chart-error">Couldn\'t render chart: ' + (e && e.message ? e.message : 'unknown error') + '</div>';
