@@ -1,5 +1,11 @@
 /**
- * Omnis Chat UI v4.6.2 — Refined charts + streaming artifact placeholders
+ * Omnis Chat UI v4.6.3 — Refined charts + streaming artifact placeholders
+ * v4.6.3: Chart canvas no longer hard-clips its own SVG (only rounds the
+ *   card corners), and gets more left breathing room, so long y-axis
+ *   numbers (paired with axisOptions.shortenYAxisNumbers in JS) never get
+ *   cut off. Table wrapper now shrink-wraps to the table's natural width
+ *   instead of always stretching to the full bubble width, so small
+ *   tables don't render with a wide border and lots of dead space.
  * v4.6.2: Fix chart y-axis label clipping and md table empty space.
  * v4.6.1: .ab-chart gets a thin grey border with subtle shadow for a
  *   modern framed look. Default chart height bumped to 300px. New
@@ -370,8 +376,8 @@
 /* ── Responsive Table System ────────────────────────────────── */
 .ab-table-wrapper {
     display: block;
-    width: 100%;
-    max-width: 100%;
+    width: fit-content;   /* hug the table's natural content width... */
+    max-width: 100%;      /* ...but never exceed the bubble, scroll instead */
     margin: 16px 0;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -380,7 +386,7 @@
     box-sizing: border-box;
 }
 .ab-bubble table {
-    width: 100%;
+    width: auto;          /* let columns size to their content, not stretch to fill the wrapper */
     border-collapse: separate;
     border-spacing: 0;
     font-size: 13px;
@@ -396,6 +402,7 @@
 .ab-bubble tr:last-child td { border-bottom: none; }
 #ab-window.ab-expanded .ab-bubble th,
 #ab-window.ab-expanded .ab-bubble td { white-space: normal; }
+#ab-window.ab-expanded .ab-table-wrapper { width: 100%; }
 
 /* Message Actions */
 .ab-msg-actions { display: flex; align-items: center; gap: 4px; margin-top: 6px; opacity: 0; transition: opacity 0.2s; }
@@ -737,9 +744,10 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 .ab-chart-canvas {
     width: 100%;
     min-height: 120px;
-    padding: 16px 16px 8px 32px; /* Increased left padding to prevent y-axis number clipping */
+    padding: 16px 16px 8px 40px; /* extra left padding so shortened y-axis labels never brush the border */
     background: var(--bg-color);
     box-sizing: border-box;
+    overflow: visible; /* let frappe's SVG breathe; .ab-chart still clips to the rounded card */
 }
 .ab-chart-canvas .chart-container { margin: 0 auto; }
 .ab-chart-error {
