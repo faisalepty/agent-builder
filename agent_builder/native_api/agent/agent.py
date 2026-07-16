@@ -8,7 +8,13 @@ import frappe
 from typing import Callable, Optional, Tuple, List, Any
 
 from agent_builder.native_api.agent.conversation import Conversation, StoppedByUser
-from agent_builder.native_api.agent.setup import get_tool_registry, get_system_prompt
+from agent_builder.native_api.agent.setup import (
+    get_tool_registry,
+    get_system_prompt,
+    get_agent_definition,
+    get_agent_system_prompt,
+    get_tool_schemas_for,
+)
 from agent_builder.native_api.tools.executor import ToolExecutor
 from agent_builder.native_api.providers.openai_api import OpenAIProvider
 
@@ -31,20 +37,34 @@ class Agent:
     """
     def __init__(
         self,
-        max_turns: int = 40,
+        agent_name: Optional[str] = None,
+        max_turns: Optional[int] = None,
         max_retries: int = 2,
         max_context_chars: int = 1000000,
     ):
-        # 1. Bootstrap internal dependencies via setup.py
+        """
+        agent_name: name of an ``Agent Definition`` record (Agent Builder).
+            When given, the agent's instructions are layered onto the shared
+            identity/style scaffold, its tool list is narrowed per its
+            tool_mode/allowed_tools, and its own model/max_turns are used
+            unless explicitly overridden. When omitted, behaves exactly as
+            before (the hardcoded default Omnis agent) — existing callers
+            (the chat widget) are unaffected.
+        """
+        self.agent_name = agent_name
+        agent_def = get_agent_definition(agent_name) if agent_name else None
+
+        # 1. Bootstrap internal dependencies via setup.py, scoped to this agent
         self.registry = get_tool_registry()
-        self.system_prompt = get_system_prompt()
-        
+        self.system_prompt = get_agent_system_prompt(agent_name)
+        self.available_tool_schemas = get_tool_schemas_for(agent_name)
+
         # 2. Initialize provider and executor
-        self.provider = OpenAIProvider()
+        self.provider = OpenAIProvider(model_override=agent_def["model"]) if (agent_def and agent_def.get("model")) else OpenAIProvider()
         self.executor = ToolExecutor(self.registry)
-        
-        # 3. Store config
-        self.max_turns = max_turns
+
+        # 3. Store config — explicit args win, then Agent Definition, then default
+        self.max_turns = max_turns or (agent_def["max_turns"] if agent_def else 40)
         self.max_retries = max_retries
         self.max_context_chars = max_context_chars
 
@@ -54,7 +74,7 @@ class Agent:
         on_token: Optional[Callable[[str], None]] = None,
         on_reasoning: Optional[Callable[[str], None]] = None,
     ) -> str:
-        available_tools = self.registry.get_tool_schemas()
+        available_tools = self.available_tool_schemas
         conversation.set_system(self.system_prompt)
 
         last_fp: Optional[Tuple[str, str]] = None

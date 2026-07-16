@@ -274,6 +274,19 @@ def get_skills():
 
 
 @frappe.whitelist()
+def get_agents():
+    """Return all enabled Agent Definitions, for the Agent Builder page and
+    any agent-picker UI in the chat widget."""
+    agents = frappe.get_all(
+        "Agent Definition",
+        fields=["agent_name", "description", "icon", "is_default", "model"],
+        filters={"is_enabled": 1},
+        order_by="is_default desc, agent_name asc",
+    )
+    return {"agents": agents}
+
+
+@frappe.whitelist()
 def get_chats():
     """Return the current user's chat list."""
     chats = frappe.get_list(
@@ -287,8 +300,13 @@ def get_chats():
 
 
 @frappe.whitelist()
-def chat(message, chat_id=None, attachments=None):
-    """API Endpoint: Queues the message for background processing."""
+def chat(message, chat_id=None, attachments=None, agent_name=None):
+    """API Endpoint: Queues the message for background processing.
+
+    agent_name: optional name of an Agent Definition (Agent Builder) to run
+    this turn with, instead of the default Omnis agent. The chat widget
+    doesn't need to pass this — omit it and behavior is unchanged.
+    """
     user = frappe.session.user
     attachments = frappe.parse_json(attachments) if attachments else []
 
@@ -305,7 +323,8 @@ def chat(message, chat_id=None, attachments=None):
         message=message,
         chat_id=chat_id,
         attachments=attachments,
-        user=user
+        user=user,
+        agent_name=agent_name,
     )
 
     # frappe.enqueue returns the RQ Job object (None in `now=True` sync-test
@@ -333,8 +352,12 @@ def stop_chat(chat_id, job_id=None):
     return {"status": "stopping"}
 
 
-def process_agent_chat(message, chat_id, attachments, user):
-    """Background Job: Executes the agent loop."""
+def process_agent_chat(message, chat_id, attachments, user, agent_name=None):
+    """Background Job: Executes the agent loop.
+
+    agent_name: name of an Agent Definition to run this session's turn
+    with. None -> the default Omnis agent (unchanged behavior).
+    """
     # ── Extract slash-command skill invocations ──
     skill_slugs, cleaned_message = _extract_skill_commands(message)
     invoked_skills, not_found = _load_invoked_skills(skill_slugs)
@@ -359,7 +382,7 @@ def process_agent_chat(message, chat_id, attachments, user):
     conversation = Conversation(session_id=chat_id, user=user)
 
     try:
-        agent = Agent()
+        agent = Agent(agent_name=agent_name)
 
         # Inject skill content as a per-turn system message,
         # positioned right before the user message in the child table.
