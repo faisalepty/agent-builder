@@ -1,21 +1,14 @@
 /**
- * APS Copilot Chat UI v5.1 — Unified theme variables
+ * APS Copilot Chat UI v5.2 — Launcher contrast fix
+ * v5.2: Swapped launcher background and icon colors to use --text-color 
+ *   and --bg-color, creating a high-contrast inverted look that stands out 
+ *   in both light and dark themes.
  * v5.1: Replaced all --primary usages for backgrounds, icons, and hovers
- *   with the same variables the list view uses (--control-bg, --bg-color,
- *   --text-color, --text-muted, --border-color). --primary is now reserved
- *   exclusively for focus rings and the active-state highlight (which is
- *   itself a list-view pattern). This makes theme switching work correctly
- *   everywhere — launcher, suggestion cards, welcome icons, skill items,
- *   empty states, streaming cursor, etc. — with zero dark-mode regressions.
+ *   with the same variables the list view uses.
  * v5.0: Renamed to APS Copilot. Rewrote welcome screen with plain-language
  *   feature list + real example questions. Added a first-visit hint bubble
  *   next to the launcher. Header "Back" and "New chat" buttons now carry
  *   visible text labels. Added a persistent "New conversation" button.
- * v4.6.3: Refined charts + streaming artifact placeholders
- * v4.6.2: Fix chart y-axis label clipping and md table empty space.
- * v4.6.1: .ab-chart gets a thin grey border with subtle shadow.
- * v4.6: Stop button hover turns red; borderless charts.
- * v4.5: Premium light-mode code block aesthetics, status indicator.
  */
 
 /* ── Custom Properties ── */
@@ -53,9 +46,9 @@
     width: 60px;
     height: 60px;
     border-radius: 50%;
-    background: var(--control-bg);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
+    background: var(--text-color);
+    color: var(--bg-color);
+    border: none;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -67,7 +60,7 @@
 }
 #ab-launcher:hover {
     transform: scale(1.05) translateY(-2px);
-    background: var(--bg-color);
+    background: var(--text-muted);
     box-shadow: var(--ab-shadow-lg);
 }
 @keyframes ab-launcher-pop {
@@ -1110,10 +1103,6 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 .hidden { display: none !important; }
 
 /* ── Dark mode fixes ──────────────────────────────────────────── */
-/* Only genuinely fixed, non-themed colors need dark-mode overrides.
-   Everything else uses var(--bg-color)/var(--text-color)/var(--text-muted)/
-   var(--control-bg)/var(--border-color) directly and inherits correct
-   values from Frappe's theme. */
 [data-theme="dark"] #ab-launcher {
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
 }
@@ -1125,9 +1114,6 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 }
 [data-theme="dark"] #ab-badge { border-color: var(--bg-color); }
 
-/* Code blocks: our own --ab-code-bg/--ab-code-text (not a Frappe token)
-   default to a light "card" look in both themes; give it a dark-appropriate
-   pairing instead so it doesn't look like a rendering glitch. */
 [data-theme="dark"] {
     --ab-code-bg: #22272e;
     --ab-code-text: #cdd9e5;
@@ -1137,8 +1123,6 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
     border: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
 }
 
-/* Artifact preview iframes default to a literal white canvas regardless of
-   theme (most generated reports/charts assume a light background). */
 [data-theme="dark"] .ab-artifact-frame {
     border-top: 1px solid var(--border-color);
 }
