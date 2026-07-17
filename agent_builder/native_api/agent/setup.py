@@ -14,6 +14,7 @@ TOOLS_DIR = Path(__file__).resolve().parent.parent / "tools"
 
 _CACHED_REGISTRY: Optional[ToolRegistry] = None
 _CACHED_SYSTEM_PROMPT: Optional[str] = None
+_AGENT_DEF_CACHE: Dict[str, dict] = {}
 
 # =========================================================================
 # Prompt piece constants
@@ -172,3 +173,82 @@ def invalidate_prompt_cache() -> None:
     """Force a full rebuild on the next call to ``get_system_prompt``."""
     global _CACHED_SYSTEM_PROMPT
     _CACHED_SYSTEM_PROMPT = None
+    _AGENT_DEF_CACHE.clear()
+
+
+# =========================================================================
+# Agent Definition support — user-created agents (Agent Builder)
+# =========================================================================
+
+def get_agent_definition(agent_name: str) -> dict:
+    """Load an ``Agent Definition`` record, cached per process.
+
+    Raises frappe.DoesNotExistError if the name isn't found; throws if
+    disabled.
+    """
+    if agent_name not in _AGENT_DEF_CACHE:
+        doc = frappe.get_doc("Agent Definition", agent_name)
+        if not doc.is_enabled:
+            frappe.throw(f"Agent '{agent_name}' is disabled.")
+        _AGENT_DEF_CACHE[agent_name] = {
+            "agent_name": doc.agent_name,
+            "instructions": doc.instructions or "",
+            "model": doc.model or None,
+            "temperature": doc.temperature,
+            "max_turns": doc.max_turns or 40,
+            "tool_mode": doc.tool_mode or "All",
+            "allowed_tools": [
+                t.strip() for t in (doc.allowed_tools or "").split(",") if t.strip()
+            ],
+        }
+    return _AGENT_DEF_CACHE[agent_name]
+
+
+def get_default_agent_name() -> Optional[str]:
+    """Return the Agent Definition flagged is_default, if any (used by the
+    chat widget when no explicit agent is requested). None -> fall back to
+    the hardcoded Omnis identity, for backward compatibility."""
+    return frappe.db.get_value(
+        "Agent Definition", {"is_default": 1, "is_enabled": 1}, "agent_name"
+    )
+
+
+def get_agent_system_prompt(agent_name: Optional[str]) -> str:
+    """Build the system prompt for a specific Agent Definition, layering its
+    instructions on top of the same stable Identity/Style/Chart/Skills
+    scaffold every agent shares. Falls back to the default Omnis prompt when
+    agent_name is None."""
+    if not agent_name:
+        return get_system_prompt()
+
+    agent_def = get_agent_definition(agent_name)
+    parts = build_system_prompt_parts(system_message=agent_def["instructions"])
+    return "\n\n".join(p for p in parts.values() if p)
+
+
+def get_tool_schemas_for(agent_name: Optional[str]) -> list:
+    """Return the tool schema list a given agent is allowed to see.
+
+    This is a *soft* restriction: it narrows what the model is offered, not
+    what ToolRegistry can execute. Good enough to scope an agent's
+    behavior; it is not a hard permission boundary (Frappe's own doc
+    permissions still apply underneath every tool call).
+    """
+    all_schemas = get_tool_registry().get_tool_schemas()
+    if not agent_name:
+        return all_schemas
+
+    agent_def = get_agent_definition(agent_name)
+    mode = agent_def["tool_mode"]
+    allowed = set(agent_def["allowed_tools"])
+    if mode == "All" or not allowed:
+        return all_schemas
+
+    def _name(schema):
+        return schema.get("function", {}).get("name") or schema.get("name")
+
+    if mode == "Allow List":
+        return [s for s in all_schemas if _name(s) in allowed]
+    if mode == "Block List":
+        return [s for s in all_schemas if _name(s) not in allowed]
+    return all_schemas

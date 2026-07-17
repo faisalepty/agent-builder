@@ -1,5 +1,10 @@
 /**
- * Chat_Ui.js v4.6 — Stop button kills background job
+ * Chat_Ui.js v5.0 — Rebrand to APS Copilot + non-technical-user UX pass
+ * v5.0: Renamed to APS Copilot throughout. New welcome screen copy (plain
+ *   feature list + real example questions). First-visit hint bubble next
+ *   to the launcher. Labeled Back/New-chat header buttons. Prominent
+ *   "New conversation" button above the chat list. All existing
+ *   functionality, IDs, and backend calls are unchanged.
  * v4.6: Stop button calls backend stop_chat to cancel the RQ job and
  *   set a Redis abort flag. Job ID tracked from enqueue response.
  * v4.5: Clean light-mode code block aesthetics, status indicator system,
@@ -52,10 +57,20 @@
     ICONS.plus = ICONS.newchat;
 
     const SUGGESTIONS = [
-        { label: 'List records',    icon: 'listIcon',   text: 'Show me the latest 10 open Sales Orders' },
-        { label: 'Create a doc',    icon: 'plusCircle', text: 'Create a new Lead for Acme Corp with email acme@example.com' },
-        { label: 'Summarise data',  icon: 'layers',      text: 'Summarise outstanding invoices by customer' },
-        { label: 'Run a report',    icon: 'barChart',    text: 'What are the top 5 items sold this month?' },
+        { label: "What were today's sales?",         icon: 'barChart',   text: "What were today's sales?" },
+        { label: 'Which invoices are overdue?',      icon: 'fileText',   text: 'Which invoices are overdue?' },
+        { label: 'Show stock for an item',           icon: 'listIcon',   text: 'Show stock for Item XYZ.' },
+        { label: 'Who are our top customers?',       icon: 'layers',     text: 'Who are our top 10 customers this month?' },
+    ];
+
+    const WELCOME_FEATURES = [
+        { icon: '📊', text: 'Analyze sales and purchases' },
+        { icon: '💰', text: 'Check customer balances and outstanding invoices' },
+        { icon: '📦', text: 'Review inventory and stock levels' },
+        { icon: '📈', text: 'Generate business insights and reports' },
+        { icon: '🧾', text: 'Find quotations, sales orders, and purchase orders' },
+        { icon: '👥', text: 'Look up customers and suppliers' },
+        { icon: '🤖', text: 'Answer questions about your ERP data in natural language' },
     ];
 
     function escapeHtml(txt) {
@@ -66,24 +81,27 @@
 
     // ── SOTA DOM Structure Injection ───────────────────────────
     $('body').append(`
-        <button id="ab-launcher" title="Omnis — click to open, drag to reposition">
-            <span class="ab-launcher-icon ab-launcher-icon-chat">${ICONS.launcherChat}</span>
-            <span id="ab-badge"></span>
-        </button>
+        <div id="ab-launcher-wrap">
+            <div id="ab-launcher-bubbles"></div>
+            <button id="ab-launcher" title="APS Copilot — click to open, hover for quick questions">
+                <span class="ab-launcher-icon ab-launcher-icon-chat">${ICONS.launcherChat}</span>
+                <span id="ab-badge"></span>
+            </button>
+        </div>
 
         <div id="ab-window">
             <div id="ab-header">
-                <button id="ab-back" class="ab-hbtn" title="Back">${ICONS.back}</button>
+                <button id="ab-back" class="ab-hbtn" title="Back to conversations">${ICONS.back}</button>
                 <div id="ab-header-avatar">${ICONS.bot}</div>
                 <div id="ab-header-info">
-                    <div id="ab-header-name">Omnis</div>
+                    <div id="ab-header-name">APS Copilot</div>
                     <div id="ab-header-status">
                         <div id="ab-status-dot"></div>
                         <span id="ab-status-text">Online</span>
                     </div>
                 </div>
-                <button id="ab-new-chat" class="ab-hbtn" title="New Chat">${ICONS.newchat}</button>
-                <button id="ab-expand"   class="ab-hbtn" title="Expand">${ICONS.expand}</button>
+                <button id="ab-new-chat" class="ab-hbtn ab-hbtn-labeled" title="Start a new chat">${ICONS.newchat}<span>New chat</span></button>
+                <button id="ab-expand"   class="ab-hbtn" title="Expand window">${ICONS.expand}</button>
                 <button id="ab-close"    class="ab-hbtn" title="Close">${ICONS.close}</button>
             </div>
 
@@ -111,7 +129,7 @@
 
                             <div id="ab-input-wrap">
                                 <div id="ab-input-highlight" aria-hidden="true"></div>
-                                <textarea id="ab-input" rows="1" placeholder="Ask Omnis anything…"></textarea>
+                                <textarea id="ab-input" rows="1" placeholder="Ask APS Copilot anything…"></textarea>
                             </div>
 
                             <button id="ab-plus-btn" class="ab-input-icon-btn" title="Add files or a skill" type="button">${ICONS.plus}</button>
@@ -164,6 +182,10 @@
     `);
 
     function renderWelcomeScreen() {
+        const featuresHtml = WELCOME_FEATURES.map(f => `
+            <li><span class="ab-welcome-feature-icon">${f.icon}</span><span>${escapeHtml(f.text)}</span></li>
+        `).join('');
+
         const cardsHtml = SUGGESTIONS.map((s, i) => `
             <button class="ab-suggestion-card" data-text="${escapeHtml(s.text)}" type="button" style="animation-delay:${i * 40}ms">
                 <span class="ab-suggestion-icon">${ICONS[s.icon] || ICONS.sparkle}</span>
@@ -175,8 +197,10 @@
         $('#ab-messages').append(`
             <div id="ab-welcome">
                 <div id="ab-welcome-icon">${ICONS.sparkle}</div>
-                <h3>How can I help you today?</h3>
-                <p>Query records, draft documents, or run a report — just ask.</p>
+                <h3>Welcome to APS Copilot</h3>
+                <p>I'm your AI assistant for ERPNext. I can help you:</p>
+                <ul id="ab-welcome-features">${featuresHtml}</ul>
+                <p class="ab-welcome-subtext">Just ask me a question — tap an example below or type your own.</p>
                 <div class="ab-suggestions-grid">${cardsHtml}</div>
             </div>
         `);
@@ -259,7 +283,7 @@
         $('#ab-window').removeClass('view-conv');
         $('#ab-back').hide();
         $('#ab-new-chat').show();
-        $('#ab-header-name').text('Omnis');
+        $('#ab-header-name').text('APS Copilot');
         setStatus('Online', false);
         ChatList.load();
     }
@@ -268,7 +292,6 @@
         currentView = 'conv';
         $('#ab-window').addClass('view-conv');
         $('#ab-back').show();
-        $('#ab-new-chat').hide();
         $('#ab-header-name').text(title || 'Chat');
         $('#ab-input').focus();
     }
@@ -360,21 +383,62 @@
         handleEl.addEventListener('pointerdown', onPointerDown);
     }
 
-    const launcherEl = document.getElementById('ab-launcher');
-    const windowEl   = document.getElementById('ab-window');
-    _makeDraggable(launcherEl, launcherEl, function (wasDrag) {
+    const launcherWrapEl = document.getElementById('ab-launcher-wrap');
+    const launcherEl     = document.getElementById('ab-launcher');
+    const windowEl       = document.getElementById('ab-window');
+    _makeDraggable(launcherWrapEl, launcherWrapEl, function (wasDrag) {
         if (wasDrag) _syncWindowToLauncher();
     });
     launcherEl.addEventListener('click', function () {
         isOpen ? _close() : _open();
     });
 
+    // ── Hover suggestion bubbles ─────────────────────────────────
+    // Hovering the launcher previews a few real example questions.
+    // Clicking a bubble opens the widget with that question pre-filled
+    // (not sent) so the person can review/edit before sending. Clicking
+    // the launcher itself still just opens the widget as normal.
+    (function initLauncherBubbles() {
+        const $bubbles = $('#ab-launcher-bubbles');
+        if (!$bubbles.length) return;
+
+        $bubbles.html(SUGGESTIONS.map((s, i) => `
+            <button class="ab-launcher-bubble" data-text="${escapeHtml(s.text)}" type="button" style="transition-delay:${i * 30}ms">${escapeHtml(s.label)}</button>
+        `).join(''));
+
+        let hideTimer = null;
+        function showBubbles() {
+            clearTimeout(hideTimer);
+            if (isOpen) return;
+            $bubbles.addClass('visible');
+        }
+        function hideBubbles(delay) {
+            clearTimeout(hideTimer);
+            hideTimer = setTimeout(() => $bubbles.removeClass('visible'), delay || 0);
+        }
+
+        launcherWrapEl.addEventListener('mouseenter', showBubbles);
+        launcherWrapEl.addEventListener('mouseleave', () => hideBubbles(250));
+        // Touch devices: a tap on the launcher opens the chat directly (see
+        // click handler above), so bubbles only need the hover path.
+
+        $(document).on('click', '.ab-launcher-bubble', function () {
+            const text = $(this).data('text');
+            hideBubbles(0);
+            _open();
+            startNewChat();
+            setTimeout(() => {
+                $('#ab-input').val(text).trigger('input').focus();
+            }, currentView === 'list' ? 0 : 0);
+        });
+    })();
+
     const headerEl = document.getElementById('ab-header');
     _makeDraggable(headerEl, windowEl, null);
 
     function _syncWindowToLauncher() {
         if (!isOpen) return;
-        const lr = launcherEl.getBoundingClientRect();
+        const lr = launcherWrapEl.getBoundingClientRect();
         const wr = windowEl.getBoundingClientRect();
         const vw = window.innerWidth, vh = window.innerHeight;
         let left = lr.left - wr.width + lr.width;
@@ -389,6 +453,7 @@
 
     $(document).on('click', '#ab-close', _close);
     $(document).on('click', '#ab-back', showList);
+    $(document).on('click', '.ab-empty-new-chat-btn', startNewChat);
 
     let _closeVisibilityTimer = null;
 
@@ -397,14 +462,15 @@
         clearTimeout(_closeVisibilityTimer);
         $('#ab-window').removeClass('ab-fully-closed');
         $('#ab-window').addClass('open');
-        $('#ab-launcher').addClass('ab-launcher-hidden');
+        $('#ab-launcher-wrap').addClass('ab-launcher-hidden');
+        $('#ab-launcher-bubbles').removeClass('visible');
         if (currentView === 'list') ChatList.load();
         else if (currentChatId) $('#ab-input').focus();
     }
     function _close() {
         isOpen = false;
         $('#ab-window').removeClass('open');
-        $('#ab-launcher').removeClass('ab-launcher-hidden');
+        $('#ab-launcher-wrap').removeClass('ab-launcher-hidden');
         closePlusMenu();
         closeSlashMenu();
         if (ChatMessages && ChatMessages.collapseAllFullscreenArtifacts) ChatMessages.collapseAllFullscreenArtifacts();
@@ -472,7 +538,7 @@
     }
     function handleThinkingTimeout() {
         if (!isThinking) return;
-        try { ChatMessages.onDone('Omnis seems to have lost connection mid-response. Please try again.', true); }
+        try { ChatMessages.onDone('APS Copilot seems to have lost connection mid-response. Please try again.', true); }
         catch (err) { console.error(err); }
         setInputState(false);
         setStatus('Timed out', false, true);

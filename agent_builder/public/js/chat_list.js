@@ -37,8 +37,19 @@ window.ChatList = (function () {
         $el.empty();
 
         if (!chats.length) {
-            const msg = q ? `No chats matching "${_searchQ}"` : 'No conversations yet.<br>Start a new chat.';
-            $el.html(`<div style="padding:48px 20px;text-align:center;color:var(--text-muted);font-size:13px;line-height:1.6;">${msg}</div>`);
+            if (q) {
+                $el.html(`<div class="ab-list-empty">No chats matching "${frappe.utils.escape_html(_searchQ)}"</div>`);
+            } else {
+                $el.html(`
+                    <div class="ab-list-empty ab-list-empty-first">
+                        <div class="ab-list-empty-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+                        </div>
+                        <div class="ab-list-empty-title">No conversations yet</div>
+                        <div class="ab-list-empty-sub">Ask about sales, invoices, stock, or anything in your ERP data.</div>
+                        <button class="ab-empty-new-chat-btn" type="button">Start a new chat</button>
+                    </div>`);
+            }
             return;
         }
 

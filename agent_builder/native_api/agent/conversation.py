@@ -1,7 +1,7 @@
 # omnis_hermes/agent/conversation.py
 import hashlib
 import json
-from typing import Optional
+from typing import Optional, Dict, Any, List
 
 import frappe
 from frappe.utils import now_datetime
@@ -18,6 +18,18 @@ class StoppedByUser(Exception):
     """Raised inside Agent.run()'s loop when a user-initiated stop is
     detected via Conversation.is_stop_requested()."""
     pass
+
+
+class ChainBrokenError(Exception):
+    """Raised when the model stops unexpectedly mid-chain.
+
+    The partial_message contains whatever the model produced before
+    the break, so callers can decide whether to surface it or retry.
+    """
+    def __init__(self, reason: str, partial_message: Dict[str, Any]):
+        self.reason = reason
+        self.partial_message = partial_message
+        super().__init__(f"Chain broken: {reason}")
 
 
 # Simple process-lifetime cache — pricing rows change rarely, and hitting the
@@ -80,10 +92,40 @@ class Conversation:
         self.system_prompt = None
         self._reasoning_buffer = ""
         self._last_message_id = None
+        # Track recent tool calls for loop detection.
+        # The Agent can override _max_repeated_calls to tune sensitivity.
+        self._recent_tool_calls: List[str] = []
+        self._max_repeated_calls: int = 3
+
+    # ── Loop detection ───────────────────────────────────
+
+    def _detect_tool_loop(self, tool_name: str, arguments: str) -> bool:
+        """Detect if we're calling the same tool with the same args repeatedly.
+
+        Returns True if the same (tool_name, arguments) pair has been seen
+        _max_repeated_calls times consecutively at the tail of the history.
+        """
+        call_signature = f"{tool_name}:{arguments}"
+        self._recent_tool_calls.append(call_signature)
+
+        # Keep only the last N*2 calls so the window doesn't grow unbounded.
+        window = self._max_repeated_calls * 2
+        if len(self._recent_tool_calls) > window:
+            self._recent_tool_calls = self._recent_tool_calls[-window:]
+
+        # Count consecutive identical calls from the tail.
+        consecutive = 0
+        for call in reversed(self._recent_tool_calls):
+            if call == call_signature:
+                consecutive += 1
+            else:
+                break
+
+        return consecutive >= self._max_repeated_calls
 
     # ── History reconstruction ───────────────────────────
 
-    def get_messages(self, reasoning_replay=None):
+    def get_messages(self, reasoning_replay=None, max_turns: Optional[int] = None):
         """Rebuild the OpenAI-style message list from the two normalized tables.
 
         reasoning_replay: optional callable(meta, had_tool_calls, msg) — see
@@ -91,11 +133,20 @@ class Conversation:
         whether) each assistant row's stored reasoning_meta gets reattached
         to the outgoing message for this specific provider/model. When
         omitted, falls back to the old universal behavior of merging
-        buffered plain-text reasoning into a <think> block inside content —
+        buffered plain-text reasoning into a  </thinking>
+ block inside content —
         safe for simple open-weight deployments, but NOT correct for
         providers with strict replay requirements (DeepSeek V4, OpenRouter
         reasoning models with tool calls). Always pass the provider's bound
         replay_reasoning when one is available.
+
+        max_turns: optional limit on the number of assistant turns to include
+        in the rebuilt history. When set, only the *last* max_turns assistant
+        messages are sent to the provider (older ones are dropped from the
+        request but remain in the DB for the timeline UI). This prevents
+        context-window overflow on very long sessions. The system prompt
+        and the user message that triggered the first kept assistant turn
+        are always preserved.
         """
         messages = []
         if self.system_prompt:
@@ -110,7 +161,33 @@ class Conversation:
         # assistant turn — only used in the no-strategy fallback path.
         pending_reasoning = []
 
-        for row in self.doc.messages:
+        # Collect all rows so we can slice by turn count if needed.
+        all_rows = list(self.doc.messages)
+
+        # If max_turns is set, find the cut point: we want the LAST
+        # max_turns assistant messages, plus any user/system messages that
+        # fall after the assistant message just before the first kept one
+        # (so we don't lose the user prompt that triggered it).
+        if max_turns is not None:
+            assistant_indices = [
+                i for i, r in enumerate(all_rows) if r.role == "assistant"
+            ]
+            if len(assistant_indices) > max_turns:
+                # Index of the first assistant message we want to keep.
+                first_keep_idx = assistant_indices[-max_turns]
+                # Index of the assistant message just before it (if any).
+                prev_assistant_idx = (
+                    assistant_indices[-max_turns - 1]
+                    if len(assistant_indices) > max_turns
+                    else -1
+                )
+                # Keep everything from prev_assistant+1 onward so we
+                # capture the user message that preceded the first kept
+                # assistant turn.
+                cut = prev_assistant_idx + 1 if prev_assistant_idx >= 0 else 0
+                all_rows = all_rows[cut:]
+
+        for row in all_rows:
             if row.role == "reasoning":
                 if reasoning_replay is None and row.content:
                     pending_reasoning.append(row.content.strip())
@@ -123,15 +200,15 @@ class Conversation:
 
                 if reasoning_replay is None:
                     # Fallback: re-attach preceding reasoning into the
-                    # assistant's content block as a <think> tag. Fine for
+                    # assistant's content block as a  </thinking> tag. Fine for
                     # providers that just want text; not correct for
                     # providers with structural replay requirements.
                     if pending_reasoning:
                         reasoning_text = "\n\n".join(pending_reasoning)
                         if content:
-                            content = f"<think>\n{reasoning_text}\n</think>\n\n{content}"
+                            content = f" </thinking>\n{reasoning_text}\n</thinking>\n\n{content}"
                         else:
-                            content = f"<think>\n{reasoning_text}\n</think>"
+                            content = f" </thinking>\n{reasoning_text}\n</thinking>"
                         pending_reasoning = []
 
                 msg = {"role": "assistant", "content": content}
@@ -175,7 +252,8 @@ class Conversation:
                     else:
                         result_content = (
                             "Error: tool execution was interrupted and no "
-                            "result was recorded."
+                            "result was recorded. Please retry the operation "
+                            "if needed."
                         )
                     messages.append({
                         "role": "tool",
@@ -222,6 +300,9 @@ class Conversation:
         the skill's content is loaded and inserted here so the agent sees
         it as contextual instructions scoped to that specific request.
 
+        Also used by Agent._inject_system_nudge() to steer a broken chain
+        back on track without replacing the top-level system prompt.
+
         skill_name: pass the invoking skill's name (e.g. from the slash
         command) to stamp skill_invoked + skill_content_hash on the session.
         The hash lets eval scores be joined back to the exact skill content
@@ -256,12 +337,20 @@ class Conversation:
         self._emit("user", text)
 
     def add_assistant_message(self, message_obj, streamed=False, latency_ms=None):
+        """Persist an assistant turn (content, reasoning, tool calls, usage).
+
+        Raises ChainBrokenError AFTER persisting the partial message if the
+        provider signaled an unexpected termination (e.g. stopped mid-reasoning,
+        stream ended without finish_reason). The caller can catch this to
+        attempt recovery or surface the partial content.
+        """
         self._flush_reasoning()
 
         content = message_obj.get("content") or ""
         tool_calls = message_obj.get("tool_calls") or []
         reasoning_meta = message_obj.get("reasoning_meta")
         reasoning_text = message_obj.get("reasoning")
+        chain_break = message_obj.get("chain_break")
         # Populated by OpenAIProvider.generate() — see openai_api.py. Handles
         # both Chat Completions (prompt_tokens/completion_tokens) and
         # Anthropic/Responses-style (input_tokens/output_tokens) usage shapes
@@ -299,6 +388,8 @@ class Conversation:
             # correctly later. Requires a "reasoning_meta" Long Text/JSON
             # field on the Agent Message child table.
             "reasoning_meta": json.dumps(reasoning_meta) if reasoning_meta else None,
+            # Store chain break info for debugging and analytics.
+            "chain_break": json.dumps(chain_break) if chain_break else None,
             "turn_index": self._turn_index,
             "model": model,
             "input_tokens": input_tokens,
@@ -321,13 +412,45 @@ class Conversation:
         if turn_cost is not None:
             self.doc.estimated_cost = (self.doc.estimated_cost or 0) + turn_cost
 
+        # Add tool call rows — with loop detection.
         for tc in tool_calls:
             fn = tc.get("function", {})
+            args_str = fn.get("arguments") or "{}"
+
+            # Detect and short-circuit tool loops.
+            if self._detect_tool_loop(fn.get("name", ""), args_str):
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Tool loop detected: %s called %d times consecutively "
+                    "with same args in session %s",
+                    fn.get("name", ""),
+                    self._max_repeated_calls,
+                    self.session_id,
+                )
+                self.doc.append("tool_calls", {
+                    "call_id": tc.get("id") or _gen_id(),
+                    "parent_message": msg_id,
+                    "tool_name": fn.get("name", ""),
+                    "arguments": args_str,
+                    "status": "error",
+                    "error": (
+                        "Error: Tool loop detected — the same tool was called "
+                        "repeatedly with identical arguments. Please try a "
+                        "different approach or provide your final answer with "
+                        "the information already available."
+                    ),
+                    "started_at": now_datetime(),
+                    "completed_at": now_datetime(),
+                    "elapsed_ms": 0,
+                    "was_loop_strike": True,
+                })
+                continue
+
             self.doc.append("tool_calls", {
                 "call_id": tc.get("id") or _gen_id(),
                 "parent_message": msg_id,
                 "tool_name": fn.get("name", ""),
-                "arguments": fn.get("arguments") or "{}",
+                "arguments": args_str,
                 "status": "pending",
                 "started_at": now_datetime(),
             })
@@ -336,6 +459,11 @@ class Conversation:
             self._emit("assistant", content)
 
         self._checkpoint()
+
+        # Raise chain break error AFTER persisting, so the partial message
+        # is safely in the DB for debugging and potential recovery.
+        if chain_break:
+            raise ChainBrokenError(chain_break.get("reason", "Unknown"), message_obj)
 
     # ── Streaming hooks ──────────────────────────────────
 
@@ -513,6 +641,91 @@ class Conversation:
         if ended_reason:
             self.doc.ended_reason = ended_reason
         self._checkpoint()
+
+    # ── Recovery helpers ─────────────────────────────────
+
+    def get_last_incomplete_state(self) -> Dict[str, Any]:
+        """Analyze the conversation to find any incomplete state that needs
+        recovery (e.g. after a crash or interrupted turn).
+
+        Returns a dict with:
+          - has_pending_tool_calls: bool — True if any tool calls are stuck
+            in "pending" or "running" status.
+          - pending_call_ids: list[str] — IDs of the stuck tool calls.
+          - last_assistant_message_id: Optional[str] — The most recent
+            assistant message (may be None if the session has no turns yet).
+          - last_assistant_had_tool_calls: bool — True if the last assistant
+            message has unresolved (pending/running) tool calls.
+        """
+        pending_calls: List[str] = []
+        last_assistant_id: Optional[str] = None
+        last_assistant_had_tools = False
+
+        for row in reversed(self.doc.messages):
+            if row.role == "assistant":
+                last_assistant_id = row.message_id
+                # Check if any tool calls from this assistant message are
+                # still pending or running (never got a result).
+                last_assistant_had_tools = any(
+                    tc.parent_message == row.message_id
+                    and tc.status in ("pending", "running")
+                    for tc in self.doc.tool_calls
+                )
+                break
+
+        # Collect all pending tool calls regardless of parent.
+        for tc in self.doc.tool_calls:
+            if tc.status == "pending":
+                pending_calls.append(tc.call_id)
+
+        return {
+            "has_pending_tool_calls": bool(pending_calls),
+            "pending_call_ids": pending_calls,
+            "last_assistant_message_id": last_assistant_id,
+            "last_assistant_had_tool_calls": last_assistant_had_tools,
+        }
+
+    def can_retry_from_last_state(self) -> bool:
+        """Check if it's safe to retry from the last state.
+
+        It's safe to retry if:
+        - There are pending tool calls (we can inject error results so the
+          model knows to retry or try a different approach).
+        - The last assistant message had unresolved tool calls.
+        """
+        state = self.get_last_incomplete_state()
+        return (
+            state["has_pending_tool_calls"]
+            or state["last_assistant_had_tool_calls"]
+        )
+
+    def inject_recovery_tool_results(self) -> int:
+        """Inject error results for any pending tool calls so the model can
+        continue on the next turn instead of getting stuck waiting for
+        results that will never arrive.
+
+        Returns the number of tool results injected.
+        """
+        state = self.get_last_incomplete_state()
+        if not state["has_pending_tool_calls"]:
+            return 0
+
+        count = 0
+        for tc in self.doc.tool_calls:
+            if tc.status == "pending":
+                self.add_tool_result(
+                    tool_call_id=tc.call_id,
+                    name=tc.tool_name,
+                    content=(
+                        "Error: Previous execution was interrupted and no "
+                        "result was recorded. Please retry the operation "
+                        "if needed."
+                    ),
+                    was_loop_strike=False,
+                )
+                count += 1
+
+        return count
 
     # ── Private ──────────────────────────────────────────
 

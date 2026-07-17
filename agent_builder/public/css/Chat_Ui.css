@@ -1,20 +1,21 @@
 /**
- * Omnis Chat UI v4.6.3 — Refined charts + streaming artifact placeholders
- * v4.6.3: Chart canvas no longer hard-clips its own SVG (only rounds the
- *   card corners), and gets more left breathing room, so long y-axis
- *   numbers (paired with axisOptions.shortenYAxisNumbers in JS) never get
- *   cut off. Table wrapper now shrink-wraps to the table's natural width
- *   instead of always stretching to the full bubble width, so small
- *   tables don't render with a wide border and lots of dead space.
+ * APS Copilot Chat UI v5.1 — Unified theme variables
+ * v5.1: Replaced all --primary usages for backgrounds, icons, and hovers
+ *   with the same variables the list view uses (--control-bg, --bg-color,
+ *   --text-color, --text-muted, --border-color). --primary is now reserved
+ *   exclusively for focus rings and the active-state highlight (which is
+ *   itself a list-view pattern). This makes theme switching work correctly
+ *   everywhere — launcher, suggestion cards, welcome icons, skill items,
+ *   empty states, streaming cursor, etc. — with zero dark-mode regressions.
+ * v5.0: Renamed to APS Copilot. Rewrote welcome screen with plain-language
+ *   feature list + real example questions. Added a first-visit hint bubble
+ *   next to the launcher. Header "Back" and "New chat" buttons now carry
+ *   visible text labels. Added a persistent "New conversation" button.
+ * v4.6.3: Refined charts + streaming artifact placeholders
  * v4.6.2: Fix chart y-axis label clipping and md table empty space.
- * v4.6.1: .ab-chart gets a thin grey border with subtle shadow for a
- *   modern framed look. Default chart height bumped to 300px. New
- *   .ab-artifact-placeholder with shimmer animation for the streaming
- *   mask that replaces raw chart/html code during generation.
- * v4.6: Stop button hover turns red; borderless charts (now reverted to
- *   thin-border style per user feedback).
- * v4.5: Premium light-mode code block aesthetics, status indicator,
- *   twin-layer border matching.
+ * v4.6.1: .ab-chart gets a thin grey border with subtle shadow.
+ * v4.6: Stop button hover turns red; borderless charts.
+ * v4.5: Premium light-mode code block aesthetics, status indicator.
  */
 
 /* ── Custom Properties ── */
@@ -28,29 +29,46 @@
 }
 
 /* ── Launcher ─────────────────────────────────────────────────── */
-#ab-launcher {
+#ab-launcher-wrap {
     position: fixed;
     bottom: 32px;
     right: 32px;
     z-index: 9999;
     width: 60px;
     height: 60px;
+    cursor: grab;
+}
+#ab-launcher-wrap:active { cursor: grabbing; }
+#ab-launcher-wrap.ab-launcher-hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.7);
+    transition: opacity 0.2s ease, transform 0.2s var(--ab-spring);
+}
+#ab-launcher-wrap.ab-launcher-hidden #ab-launcher-bubbles { opacity: 0; visibility: hidden; }
+
+#ab-launcher {
+    position: absolute;
+    inset: 0;
+    width: 60px;
+    height: 60px;
     border-radius: 50%;
-    background: var(--primary);
-    color: #fff;
+    background: var(--control-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
     display: flex;
     align-items: center;
     justify-content: center;
-    cursor: grab;
-    box-shadow: 0 8px 24px color-mix(in srgb, var(--primary) 40%, transparent);
-    transition: transform 0.25s var(--ab-spring), box-shadow 0.2s;
-    border: none;
+    cursor: inherit;
+    box-shadow: var(--ab-shadow-md);
+    transition: transform 0.25s var(--ab-spring), box-shadow 0.2s, background 0.2s;
     outline: none;
     animation: ab-launcher-pop 0.5s var(--ab-spring);
 }
 #ab-launcher:hover {
     transform: scale(1.05) translateY(-2px);
-    box-shadow: 0 12px 32px color-mix(in srgb, var(--primary) 50%, transparent);
+    background: var(--bg-color);
+    box-shadow: var(--ab-shadow-lg);
 }
 @keyframes ab-launcher-pop {
     0% { transform: scale(0); opacity: 0; }
@@ -69,13 +87,7 @@
     justify-content: center;
 }
 #ab-launcher .ab-launcher-icon-chat svg { width: 26px; height: 26px; }
-#ab-launcher:active { cursor: grabbing; }
-#ab-launcher.ab-launcher-hidden {
-    opacity: 0;
-    pointer-events: none;
-    transform: scale(0.7);
-    transition: opacity 0.2s ease, transform 0.2s var(--ab-spring);
-}
+#ab-launcher:active { cursor: inherit; }
 
 #ab-badge {
     position: absolute;
@@ -159,8 +171,9 @@
     width: 32px;
     height: 32px;
     border-radius: 10px;
-    background: color-mix(in srgb, var(--primary) 15%, var(--bg-color));
-    color: var(--primary);
+    background: var(--control-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -191,7 +204,7 @@
     background: #10b981;
     transition: background 0.3s;
 }
-#ab-status-dot.thinking { background: var(--primary); animation: pulse 1.5s infinite; }
+#ab-status-dot.thinking { background: var(--text-muted); animation: pulse 1.5s infinite; }
 #ab-status-dot.error { background: #ef4444; }
 
 .ab-hbtn {
@@ -208,7 +221,78 @@
     transition: all 0.2s;
 }
 .ab-hbtn:hover { background: var(--control-bg); color: var(--text-color); }
-.ab-hbtn svg { width: 18px; height: 18px; }
+.ab-hbtn svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+/* Icon+label variant — hover matches list item hover exactly */
+.ab-hbtn-labeled {
+    width: auto;
+    padding: 0 12px 0 8px;
+    gap: 6px;
+    border-radius: 20px;
+}
+.ab-hbtn-labeled span { font-size: 12.5px; font-weight: 500; white-space: nowrap; }
+.ab-hbtn-labeled:hover { background: var(--control-bg); color: var(--text-color); }
+#ab-new-chat.ab-hbtn-labeled { padding: 0 14px 0 10px; }
+
+/* Empty conversation list — actionable, not just descriptive */
+.ab-list-empty { padding: 48px 20px; text-align: center; color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+.ab-list-empty-first { padding: 40px 24px; display: flex; flex-direction: column; align-items: center; }
+.ab-list-empty-icon {
+    width: 48px; height: 48px; border-radius: 14px; margin-bottom: 14px;
+    background: var(--control-bg); color: var(--text-color);
+    border: 1px solid var(--border-color);
+    display: flex; align-items: center; justify-content: center;
+}
+.ab-list-empty-icon svg { width: 22px; height: 22px; }
+.ab-list-empty-title { font-size: 14px; font-weight: 600; color: var(--text-color); margin-bottom: 4px; }
+.ab-list-empty-sub { font-size: 12.5px; color: var(--text-muted); margin-bottom: 18px; max-width: 240px; }
+.ab-empty-new-chat-btn {
+    padding: 9px 18px; border-radius: 12px; border: 1px solid var(--border-color);
+    background: var(--control-bg); color: var(--text-color); font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: all 0.2s var(--ab-spring);
+}
+.ab-empty-new-chat-btn:hover { transform: translateY(-1px); background: var(--bg-color); box-shadow: var(--ab-shadow-sm); }
+
+/* Hover-triggered quick-question bubbles above the launcher */
+#ab-launcher-bubbles {
+    position: absolute;
+    bottom: calc(100% + 14px);
+    right: 0;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s;
+}
+#ab-launcher-bubbles.visible { opacity: 1; visibility: visible; }
+.ab-launcher-bubble {
+    max-width: 240px;
+    background: var(--bg-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 9px 14px;
+    font-size: 12.5px;
+    font-weight: 500;
+    line-height: 1.4;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    box-shadow: var(--ab-shadow-md);
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+    transition: opacity 0.2s var(--ab-spring), transform 0.2s var(--ab-spring), border-color 0.2s, background 0.2s;
+}
+#ab-launcher-bubbles.visible .ab-launcher-bubble { opacity: 1; transform: translateY(0) scale(1); }
+.ab-launcher-bubble:hover { border-color: var(--text-muted); background: var(--control-bg); }
+@media (max-width: 480px) {
+    #ab-launcher-bubbles { display: none; }
+}
 
 /* ── Views Setup ──────────────────────────────────────────────── */
 #ab-views { flex: 1; overflow: hidden; position: relative; display: flex; }
@@ -236,9 +320,9 @@
     box-sizing: border-box;
 }
 #ab-list-search:focus {
-    border-color: var(--primary);
+    border-color: var(--text-muted);
     background: var(--bg-color);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-muted) 15%, transparent);
 }
 .ab-search-icon {
     position: absolute; left: 32px; top: 50%; transform: translateY(-50%);
@@ -259,7 +343,7 @@
     display: flex; gap: 12px; align-items: center; transition: background 0.2s;
 }
 .ab-chat-item:hover { background: var(--control-bg); }
-.ab-chat-item.active { background: color-mix(in srgb, var(--primary) 8%, var(--bg-color)); }
+.ab-chat-item.active { background: var(--control-bg); border: 1px solid var(--border-color); }
 .ab-chat-item-icon {
     width: 36px; height: 36px; border-radius: 10px;
     background: var(--bg-color); border: 1px solid var(--border-color);
@@ -277,24 +361,52 @@
 #ab-messages::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
 
 /* Welcome Screen */
-#ab-welcome { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; text-align: center; height: 100%; }
-#ab-welcome-icon { width: 56px; height: 56px; border-radius: 16px; background: color-mix(in srgb, var(--primary) 10%, var(--bg-color)); display: flex; align-items: center; justify-content: center; margin-bottom: 20px; color: var(--primary); }
-#ab-welcome h3 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
-#ab-welcome p { font-size: 13px; color: var(--text-muted); margin: 0 0 28px; line-height: 1.5; }
+#ab-welcome { display: flex; flex-direction: column; align-items: center; margin: auto; padding: 32px 20px; text-align: center; max-width: 100%; box-sizing: border-box; }
+#ab-welcome-icon {
+    width: 56px; height: 56px; border-radius: 16px;
+    background: var(--control-bg); color: var(--text-color);
+    border: 1px solid var(--border-color);
+    display: flex; align-items: center; justify-content: center; margin-bottom: 20px;
+}
+#ab-welcome-icon svg { width: 26px; height: 26px; }
+#ab-welcome h3 { font-size: 18px; font-weight: 600; margin: 0 0 8px; color: var(--text-color); }
+#ab-welcome p { font-size: 13px; color: var(--text-muted); margin: 0 0 10px; line-height: 1.5; }
+#ab-welcome p.ab-welcome-subtext { margin: 18px 0 16px; }
+
+#ab-welcome-features {
+    list-style: none;
+    margin: 4px 0 18px;
+    padding: 12px 16px;
+    width: 100%;
+    box-sizing: border-box;
+    text-align: left;
+    background: var(--control-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+}
+#ab-welcome-features li {
+    display: flex; align-items: flex-start; gap: 10px;
+    font-size: 12.5px; color: var(--text-color); line-height: 1.4;
+}
+.ab-welcome-feature-icon { flex-shrink: 0; font-size: 14px; line-height: 1.4; }
 
 .ab-suggestions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; }
 @media (max-width: 380px) { .ab-suggestions-grid { grid-template-columns: 1fr; } }
 
 .ab-suggestion-card {
     display: flex; flex-direction: column; align-items: flex-start; gap: 12px;
-    background: var(--control-bg); border: 1px solid transparent; border-radius: 16px;
+    background: var(--control-bg); border: 1px solid var(--border-color); border-radius: 16px;
     padding: 16px 14px; cursor: pointer; text-align: left; transition: all 0.2s var(--ab-spring);
     animation: ab-fade-up 0.35s ease both;
 }
-.ab-suggestion-card:hover { background: var(--bg-color); border-color: var(--primary); box-shadow: var(--ab-shadow-sm); transform: translateY(-2px); }
+.ab-suggestion-card:hover { background: var(--bg-color); border-color: var(--text-muted); box-shadow: var(--ab-shadow-sm); transform: translateY(-2px); }
 .ab-suggestion-icon {
     width: 32px; height: 32px; border-radius: 9px;
-    background: color-mix(in srgb, var(--primary) 12%, var(--bg-color)); color: var(--primary);
+    background: var(--bg-color); color: var(--text-color);
+    border: 1px solid var(--border-color);
     display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .ab-suggestion-icon svg { width: 16px; height: 16px; }
@@ -309,6 +421,7 @@
 .ab-row.user .ab-bubble {
     background: var(--control-bg);
     color: var(--text-color);
+    border: 1px solid var(--border-color);
     padding: 12px 18px;
     border-radius: 20px 20px 4px 20px;
     font-size: 14px;
@@ -324,7 +437,7 @@
     font-size: 12px; color: var(--text-color); text-decoration: none; max-width: 200px;
     transition: all 0.2s;
 }
-.ab-msg-attachment:hover { border-color: var(--primary); color: var(--primary); }
+.ab-msg-attachment:hover { border-color: var(--text-muted); color: var(--text-color); }
 .ab-msg-attachment svg { width: 13px; height: 13px; flex-shrink: 0; }
 .ab-msg-attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -350,9 +463,10 @@
 .ab-bubble ul, .ab-bubble ol { margin: 0 0 16px 24px; padding: 0; }
 .ab-bubble li { margin-bottom: 6px; }
 .ab-bubble strong { font-weight: 600; color: var(--text-color); }
-.ab-bubble h1, .ab-bubble h2, .ab-bubble h3 { font-weight: 600; margin: 24px 0 12px; line-height: 1.3; }
+.ab-bubble h1, .ab-bubble h2, .ab-bubble h3 { font-weight: 600; margin: 24px 0 12px; line-height: 1.3; color: var(--text-color); }
 .ab-bubble code {
-    background: var(--control-bg); color: #e83e8c;
+    background: var(--control-bg); color: var(--text-color);
+    border: 1px solid var(--border-color);
     border-radius: 4px; padding: 2px 6px; font-family: var(--font-mono); font-size: 12px;
 }
 
@@ -361,7 +475,7 @@
     border-radius: 12px; padding: 16px; overflow-x: auto;
     margin: 16px 0; position: relative; box-shadow: inset 0 0 0 1px var(--border-color);
 }
-.ab-bubble pre code { background: none; color: inherit; padding: 0; font-size: 13px; line-height: 1.5; }
+.ab-bubble pre code { background: none; color: inherit; padding: 0; font-size: 13px; line-height: 1.5; border: none; }
 .ab-pre-copy {
     position: absolute; top: 8px; right: 8px;
     background: var(--control-bg); color: var(--text-color);
@@ -376,8 +490,8 @@
 /* ── Responsive Table System ────────────────────────────────── */
 .ab-table-wrapper {
     display: block;
-    width: fit-content;   /* hug the table's natural content width... */
-    max-width: 100%;      /* ...but never exceed the bubble, scroll instead */
+    width: fit-content;
+    max-width: 100%;
     margin: 16px 0;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -386,7 +500,7 @@
     box-sizing: border-box;
 }
 .ab-bubble table {
-    width: auto;          /* let columns size to their content, not stretch to fill the wrapper */
+    width: auto;
     border-collapse: separate;
     border-spacing: 0;
     font-size: 13px;
@@ -398,7 +512,7 @@
     border-bottom: 1px solid var(--border-color);
     white-space: nowrap;
 }
-.ab-bubble th { background: var(--control-bg); font-weight: 600; }
+.ab-bubble th { background: var(--control-bg); font-weight: 600; color: var(--text-color); }
 .ab-bubble tr:last-child td { border-bottom: none; }
 #ab-window.ab-expanded .ab-bubble th,
 #ab-window.ab-expanded .ab-bubble td { white-space: normal; }
@@ -425,7 +539,7 @@
     display: inline-block;
     width: 6px;
     height: 14px;
-    background: var(--primary);
+    background: var(--text-color);
     margin-left: 3px;
     vertical-align: text-bottom;
     animation: blink 1s step-start infinite;
@@ -462,7 +576,7 @@
 .ab-reasoning-hint {
     display: none;
     position: absolute; right: 0; bottom: 0;
-    font-size: 10.5px; font-weight: 500; color: var(--primary);
+    font-size: 10.5px; font-weight: 500; color: var(--text-muted);
     background: linear-gradient(to right, transparent, var(--bg-color) 40%);
     padding: 0 0 0 18px;
     opacity: 0; transition: opacity 0.15s;
@@ -579,7 +693,7 @@
 .ab-step-icon svg { width: 9px; height: 9px; display: block; }
 .ab-step-icon-brain svg { width: 11px; height: 11px; }
 .ab-step-icon.running {
-    border-color: var(--primary); color: var(--primary);
+    border-color: var(--text-muted); color: var(--text-color);
     animation: ab-step-pulse 1.4s ease-in-out infinite;
 }
 .ab-step-icon.done    { border-color: var(--border-color); color: var(--text-muted); }
@@ -644,7 +758,7 @@
     white-space: pre-wrap; word-break: break-all;
     background: var(--control-bg); color: var(--text-muted);
     border-radius: 5px; padding: 5px 8px; margin: 0;
-    max-height: 130px; overflow-y: auto; border: none;
+    max-height: 130px; overflow-y: auto; border: 1px solid var(--border-color);
 }
 .ab-step-detail-block.is-error { color: #ef4444; }
 .ab-step-detail-footer {
@@ -694,10 +808,7 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 
 @keyframes ab-artifact-pop { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
 
-/* ── Streaming Artifact Placeholder ─────────────────────────────
-   Shown while the LLM is generating ```chart or ```html content.
-   Replaced in one frame when onDone fires — the user never sees
-   raw JSON or HTML code streaming in.                             */
+/* ── Streaming Artifact Placeholder ───────────────────────────── */
 .ab-artifact-placeholder {
     display: flex;
     align-items: center;
@@ -706,8 +817,8 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
     margin: 20px 0;
     padding: 40px 20px;
     border-radius: 12px;
-    background: color-mix(in srgb, var(--border-color) 20%, var(--bg-color));
-    border: 1px dashed color-mix(in srgb, var(--border-color) 60%, transparent);
+    background: var(--control-bg);
+    border: 1px dashed var(--border-color);
 }
 .ab-artifact-placeholder-icon {
     display: flex;
@@ -716,8 +827,9 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
     width: 28px;
     height: 28px;
     border-radius: 8px;
-    background: color-mix(in srgb, var(--primary) 10%, var(--bg-color));
-    color: var(--primary);
+    background: var(--bg-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
     flex-shrink: 0;
 }
 .ab-artifact-placeholder-icon svg {
@@ -730,9 +842,7 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
     color: var(--text-muted);
 }
 
-/* ── Charts (frappe.Chart) — thin modern border ─────────────────
-   Clean container with a subtle grey border and light shadow.
-   No heavy chrome bar — just the chart itself in a refined frame.  */
+/* ── Charts (frappe.Chart) — thin modern border ───────────────── */
 .ab-chart {
     margin: 16px 0;
     border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
@@ -744,10 +854,10 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 .ab-chart-canvas {
     width: 100%;
     min-height: 120px;
-    padding: 16px 16px 8px 40px; /* extra left padding so shortened y-axis labels never brush the border */
+    padding: 16px 16px 8px 40px;
     background: var(--bg-color);
     box-sizing: border-box;
-    overflow: visible; /* let frappe's SVG breathe; .ab-chart still clips to the rounded card */
+    overflow: visible;
 }
 .ab-chart-canvas .chart-container { margin: 0 auto; }
 .ab-chart-error {
@@ -768,8 +878,8 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
     display: flex; flex-direction: column;
 }
 #ab-input-box:focus-within {
-    border-color: var(--primary); background: var(--bg-color);
-    box-shadow: 0 4px 16px color-mix(in srgb, var(--primary) 10%, transparent);
+    border-color: var(--text-muted); background: var(--bg-color);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
 }
 
 /* ── Twin-layer input highlight ───────────────────────────────── */
@@ -824,9 +934,10 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 }
 
 .ab-skill-token {
-    color: var(--primary);
+    color: var(--text-color);
     font-weight: 500;
-    background: color-mix(in srgb, var(--primary) 10%, transparent);
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
     border-radius: 4px;
     padding: 0 2px;
     white-space: nowrap;
@@ -917,6 +1028,7 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 .ab-plus-menu-item:hover, .ab-plus-menu-item:focus-visible { background: var(--control-bg); outline: none; }
 .ab-plus-menu-icon {
     width: 28px; height: 28px; border-radius: 8px; background: var(--control-bg);
+    border: 1px solid var(--border-color);
     color: var(--text-muted); display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .ab-plus-menu-icon svg { width: 15px; height: 15px; }
@@ -945,7 +1057,7 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
     padding: 7px 10px; font-size: 12px; color: var(--text-color); outline: none; box-sizing: border-box;
     transition: border-color 0.2s;
 }
-#ab-skill-search:focus { border-color: var(--primary); }
+#ab-skill-search:focus { border-color: var(--text-muted); }
 
 .ab-flyout-list { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-right: 2px; }
 .ab-flyout-list::-webkit-scrollbar { width: 4px; }
@@ -959,7 +1071,8 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 .ab-skill-item:hover, .ab-skill-item.active { background: var(--control-bg); }
 .ab-skill-item-icon {
     width: 22px; height: 22px; border-radius: 7px;
-    background: color-mix(in srgb, var(--primary) 12%, var(--bg-color)); color: var(--primary);
+    background: var(--control-bg); color: var(--text-color);
+    border: 1px solid var(--border-color);
     display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .ab-skill-item-icon svg { width: 12px; height: 12px; }
@@ -985,7 +1098,7 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
     z-index: 10; opacity: 0; pointer-events: none; transition: all 0.2s;
 }
 #ab-scroll-btn.visible { display: flex; opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: all; }
-#ab-scroll-btn:hover { transform: translateX(-50%) translateY(-2px); }
+#ab-scroll-btn:hover { transform: translateX(-50%) translateY(-2px); background: var(--control-bg); }
 #ab-scroll-btn svg { width: 16px; height: 16px; }
 
 /* ── Animations ───────────────────────────────────────────────── */
@@ -995,3 +1108,46 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 @keyframes typing-dot { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); background: var(--text-color); } }
 .hidden { display: none !important; }
+
+/* ── Dark mode fixes ──────────────────────────────────────────── */
+/* Only genuinely fixed, non-themed colors need dark-mode overrides.
+   Everything else uses var(--bg-color)/var(--text-color)/var(--text-muted)/
+   var(--control-bg)/var(--border-color) directly and inherits correct
+   values from Frappe's theme. */
+[data-theme="dark"] #ab-launcher {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+[data-theme="dark"] #ab-launcher:hover {
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+}
+[data-theme="dark"] #ab-window {
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5), 0 0 0 1px color-mix(in srgb, var(--border-color) 80%, transparent);
+}
+[data-theme="dark"] #ab-badge { border-color: var(--bg-color); }
+
+/* Code blocks: our own --ab-code-bg/--ab-code-text (not a Frappe token)
+   default to a light "card" look in both themes; give it a dark-appropriate
+   pairing instead so it doesn't look like a rendering glitch. */
+[data-theme="dark"] {
+    --ab-code-bg: #22272e;
+    --ab-code-text: #cdd9e5;
+}
+[data-theme="dark"] pre code,
+[data-theme="dark"] .ab-code-block {
+    border: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+}
+
+/* Artifact preview iframes default to a literal white canvas regardless of
+   theme (most generated reports/charts assume a light background). */
+[data-theme="dark"] .ab-artifact-frame {
+    border-top: 1px solid var(--border-color);
+}
+[data-theme="dark"] .ab-artifact { border-color: color-mix(in srgb, var(--border-color) 80%, transparent); }
+
+[data-theme="dark"] .ab-launcher-bubble {
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="dark"] .ab-empty-new-chat-btn {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
