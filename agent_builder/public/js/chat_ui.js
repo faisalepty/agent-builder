@@ -1,15 +1,8 @@
 /**
- * Chat_Ui.js v5.0 — Rebrand to APS Copilot + non-technical-user UX pass
- * v5.0: Renamed to APS Copilot throughout. New welcome screen copy (plain
- *   feature list + real example questions). First-visit hint bubble next
- *   to the launcher. Labeled Back/New-chat header buttons. Prominent
- *   "New conversation" button above the chat list. All existing
- *   functionality, IDs, and backend calls are unchanged.
- * v4.6: Stop button calls backend stop_chat to cancel the RQ job and
- *   set a Redis abort flag. Job ID tracked from enqueue response.
- * v4.5: Clean light-mode code block aesthetics, status indicator system,
- *   synchronized border properties for twin-layer alignment.
- * v4.4: twin-layer input highlight, slash-command autocomplete on / anywhere.
+ * Chat_Ui.js v5.4 — Apex Piping branding integration
+ * v5.4: Extracted exact A+P blended monogram from logo. Updated
+ *   drawing animation to trace the monogram paths.
+ * v5.3: Replaced generic bot icon with custom triangle logo. 
  */
  $(document).ready(function () {
 
@@ -24,7 +17,17 @@
     }
 
     // ── Modern Lucide-style Icons (stroke-width: 1.5) ──────────
+    // Custom AP Monogram extracted from Apex Piping Logo
     const ICONS = {
+        // A/P monogram traced directly from the approved sketch: two nested
+        // chevrons (the "A") sharing a peak, with the outer one curling
+        // into a small hook (the "P") on the right.
+        // A/P monogram traced from the approved v2 sketch: a short inner
+        // chevron and a taller outer chevron sharing the same peak region,
+        // the outer one flowing into a single smooth hook (one bezier, not
+        // a freehand multi-point curve).
+        logo: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.95" stroke-linecap="round" stroke-linejoin="round"><path d="M2.45 17.8 L11.3 9.5 L16.29 13.42"/><path d="M3.89 13.89 L11.16 4.05 L17.72 10.69 C21.5 13.85 16.86 19.97 12.14 13.66"/></svg>`,
+        logoLoader: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path class="ab-logo-loader-base" stroke-width="1.95" d="M2.45 17.8 L11.3 9.5 L16.29 13.42"/><path class="ab-logo-loader-base" stroke-width="1.95" d="M3.89 13.89 L11.16 4.05 L17.72 10.69 C21.5 13.85 16.86 19.97 12.14 13.66"/><path class="ab-logo-loader-flow" stroke-width="2.1" pathLength="100" d="M2.45 17.8 L11.3 9.5 L16.29 13.42"/><path class="ab-logo-loader-flow ab-logo-loader-flow-delay" stroke-width="2.1" pathLength="100" d="M3.89 13.89 L11.16 4.05 L17.72 10.69 C21.5 13.85 16.86 19.97 12.14 13.66"/></svg>`,
         sparkle:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 10h.01M12 10h.01M16 10h.01" stroke-width="2.5" stroke-linecap="round"/></svg>`,
         send:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>`,
         close:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
@@ -92,7 +95,7 @@
         <div id="ab-window">
             <div id="ab-header">
                 <button id="ab-back" class="ab-hbtn" title="Back to conversations">${ICONS.back}</button>
-                <div id="ab-header-avatar">${ICONS.bot}</div>
+                <div id="ab-header-avatar">${ICONS.logo}</div>
                 <div id="ab-header-info">
                     <div id="ab-header-name">APS Copilot</div>
                     <div id="ab-header-status">
@@ -196,7 +199,7 @@
         $('#ab-welcome').remove();
         $('#ab-messages').append(`
             <div id="ab-welcome">
-                <div id="ab-welcome-icon">${ICONS.sparkle}</div>
+                <div id="ab-welcome-icon">${ICONS.logo}</div>
                 <h3>Welcome to APS Copilot</h3>
                 <p>I'm your AI assistant for ERPNext. I can help you:</p>
                 <ul id="ab-welcome-features">${featuresHtml}</ul>
@@ -394,10 +397,6 @@
     });
 
     // ── Hover suggestion bubbles ─────────────────────────────────
-    // Hovering the launcher previews a few real example questions.
-    // Clicking a bubble opens the widget with that question pre-filled
-    // (not sent) so the person can review/edit before sending. Clicking
-    // the launcher itself still just opens the widget as normal.
     (function initLauncherBubbles() {
         const $bubbles = $('#ab-launcher-bubbles');
         if (!$bubbles.length) return;
@@ -419,8 +418,6 @@
 
         launcherWrapEl.addEventListener('mouseenter', showBubbles);
         launcherWrapEl.addEventListener('mouseleave', () => hideBubbles(250));
-        // Touch devices: a tap on the launcher opens the chat directly (see
-        // click handler above), so bubbles only need the hover path.
 
         $(document).on('click', '.ab-launcher-bubble', function () {
             const text = $(this).data('text');

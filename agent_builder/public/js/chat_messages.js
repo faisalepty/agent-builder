@@ -1,21 +1,9 @@
 /**
- * chat_messages.js v4.5.0 — Streaming artifact masking + refined charts
- * v4.5.0: During streaming, ```chart and ```html fenced blocks are
- *   replaced with shimmer placeholders so the user never sees raw
- *   JSON/code being generated. The placeholder is swapped for the
- *   real chart/artifact when onDone fires. Charts get a thin modern
- *   border with subtle shadow (no heavy chrome bar). Chart default
- *   height bumped to 300px.
- * v4.4.0: Charts render borderless.
- * v4.3.6: FIX — first tokens between thinking containers no longer lost.
- * v4.3.5: FIX — multiple "Thought Process" blocks in multi-turn loops.
- * v4.3.4: FIX — empty assistant bubbles removed during live streaming.
- * v4.3.3: All elapsed-time displays removed.
- * v4.3.2: FIX — multiple reasoning/tool segments grouped correctly on reload.
- * v4.3.1: FIX — historical tool calls status fix; reasoning renders on reload.
- * v4.3: artifact fullscreen portals to <body>; backdrop + Escape exit;
- *   tool-call steps with per-tool icons, click-to-expand detail panel.
- * v4.2: persisted tool-call steps, error bubbles with Retry, Edit action.
+ * chat_messages.js v4.7.0 — Claude-style generation footer
+ * v4.7.0: Removed inline cursor entirely. The AP logo drawing 
+ *   animation now sits in a dedicated footer below the generating
+ *   text block until the response completes.
+ * v4.6.0: Replaced 3-dot typing indicator with custom logo drawing.
  */
 window.ChatMessages = (function () {
 
@@ -176,7 +164,7 @@ window.ChatMessages = (function () {
         var msgId = _nextId();
         $('#ab-messages').append(
             '<div class="ab-row agent' + (isError ? ' is-error' : '') + '" id="' + msgId + '">' +
-                '<div class="ab-avatar">' + (isError ? (_icons.alertTriangle || _icons.bot) : _icons.bot) + '</div>' +
+                '<div class="ab-avatar">' + (isError ? (_icons.alertTriangle || _icons.logo) : _icons.logo) + '</div>' +
                 '<div class="ab-bubble-wrap">' +
                     '<div class="ab-bubble' + (isError ? ' ab-bubble-error' : '') + '" id="' + msgId + '-bubble"></div>' +
                     (withActions ? _msgActionsHtml(msgId + '-bubble', isError) : '') +
@@ -250,7 +238,7 @@ window.ChatMessages = (function () {
         _typingRowId = _nextId();
         $('#ab-messages').append(
             '<div class="ab-row agent" id="' + _typingRowId + '">' +
-                '<div class="ab-typing-indicator"><span></span><span></span><span></span></div>' +
+                '<div class="ab-typing-indicator ab-typing-logo">' + (_icons.logoLoader || _icons.logo) + '</div>' +
             '</div>'
         );
         _scrollDown();
@@ -263,7 +251,7 @@ window.ChatMessages = (function () {
         _streamBubbleId = _nextId();
         $('#ab-messages').append(
             '<div class="ab-row agent" id="row-' + _streamBubbleId + '">' +
-                '<div class="ab-avatar">' + _icons.bot + '</div>' +
+                '<div class="ab-avatar">' + _icons.logo + '</div>' +
                 '<div class="ab-bubble-wrap">' +
                     '<div class="ab-bubble" id="' + _streamBubbleId + '"></div>' +
                 '</div>' +
@@ -292,14 +280,6 @@ window.ChatMessages = (function () {
     }
 
     // ── Streaming renderer: hides chart/html code behind placeholders ──
-    // During live streaming the LLM emits ```chart{...}``` token-by-token.
-    // Without this, the raw JSON is visible for seconds — ugly and confusing.
-    // We scan specifically for ```chart and ```html openings. Everything
-    // before such a fence renders as normal markdown (other code blocks are
-    // untouched — marked handles them). The fence + its content (complete
-    // or not) is replaced with a shimmer placeholder. When onDone fires the
-    // entire bubble is re-rendered with _renderContentWithArtifacts, swapping
-    // the placeholder for the real chart/artifact in one frame — zero flash.
     function _mdStreaming(text) {
         if (!text) return '';
 
@@ -308,7 +288,6 @@ window.ChatMessages = (function () {
         var len = text.length;
 
         while (pos < len) {
-            // Look specifically for ```chart or ```html
             var chartIdx = text.indexOf('```chart', pos);
             var htmlIdx  = text.indexOf('```html', pos);
 
@@ -324,38 +303,29 @@ window.ChatMessages = (function () {
             }
 
             if (fenceIdx === -1) {
-                // No more artifact fences — render the rest as markdown
                 result += _md(text.slice(pos));
                 break;
             }
 
-            // Render everything before the fence as normal markdown
             if (fenceIdx > pos) {
                 result += _md(text.slice(pos, fenceIdx));
             }
 
-            // Check that the language tag is followed by a newline
-            // (guards against partial openings like "```ch" mid-token)
             var afterLang = text.slice(fenceIdx + 3 + lang.length);
             var nlMatch = afterLang.match(/^\s*\n/);
 
             if (!nlMatch) {
-                // Opening line not complete yet — just render what we have
                 result += _md(text.slice(fenceIdx, fenceIdx + 3 + lang.length));
                 pos = fenceIdx + 3 + lang.length;
                 continue;
             }
 
             var contentStart = fenceIdx + 3 + lang.length + nlMatch[0].length;
-
-            // Look for closing ```
             var closeIdx = text.indexOf('```', contentStart);
 
             if (closeIdx !== -1) {
-                // Complete block — skip it entirely, show placeholder
                 pos = closeIdx + 3;
             } else {
-                // Incomplete block — skip to end, show placeholder
                 pos = len;
             }
 
@@ -384,8 +354,14 @@ window.ChatMessages = (function () {
         if (!_streamBubbleId || _stopped) return;
         var el = document.getElementById(_streamBubbleId);
         if (el) {
-            el.innerHTML = _mdStreaming(_streamBuffer) + '<span class="ab-cursor ab-cursor--ghost"></span>';
-            el.classList.add('ab-streaming-cursor');
+            el.innerHTML = _mdStreaming(_streamBuffer);
+            
+            // Append/Ensure the generation footer (AP logo animation) is below the text
+            var $wrap = $('#row-' + _streamBubbleId).find('.ab-bubble-wrap');
+            if (!$wrap.find('.ab-streaming-footer').length) {
+                $wrap.append('<div class="ab-streaming-footer">' + (_icons.logoLoader || _icons.logo) + '</div>');
+            }
+            
             _wrapTables(el);
             _scrollDown(true);
         }
@@ -397,10 +373,8 @@ window.ChatMessages = (function () {
             if (el) {
                 var trimmed = (_streamBuffer || '').trim();
                 if (trimmed) {
-                    var cursor = el.querySelector('.ab-cursor');
-                    if (cursor) cursor.remove();
+                    $('#row-' + _streamBubbleId).find('.ab-streaming-footer').remove();
                     el.innerHTML = _md(trimmed);
-                    el.classList.remove('ab-streaming-cursor');
                     _wrapTables(el);
                     _addCodeCopyButtons(el);
                 } else {
@@ -487,7 +461,7 @@ window.ChatMessages = (function () {
         if (!_reasoningBlockId) return;
         var el = document.querySelector('#' + _reasoningBlockId + ' .ab-reasoning-text');
         if (el) {
-            el.innerHTML = _escapeHtml(_reasoningBuffer).replace(/\n/g, '<br>') + (_reasoningLive ? '<span class="ab-cursor ab-cursor--ghost"></span>' : '');
+            el.innerHTML = _escapeHtml(_reasoningBuffer).replace(/\n/g, '<br>');
             var $block = $('#' + _reasoningBlockId);
             if (!$block.hasClass('ab-reasoning-expanded')) {
                 el.scrollTop = el.scrollHeight;
@@ -758,7 +732,7 @@ window.ChatMessages = (function () {
             if (el) {
                 var finalContent = (response || _streamBuffer || '').trim();
                 if (finalContent) {
-                    el.classList.remove('ab-streaming-cursor');
+                    $('#row-' + _streamBubbleId).find('.ab-streaming-footer').remove();
                     if (isError) {
                         if (row) row.classList.add('is-error');
                         el.classList.add('ab-bubble-error');
@@ -792,8 +766,8 @@ window.ChatMessages = (function () {
             if (el) {
                 var trimmed = (_streamBuffer || '').trim();
                 if (trimmed) {
+                    $('#row-' + _streamBubbleId).find('.ab-streaming-footer').remove();
                     el.innerHTML = _md(trimmed);
-                    el.classList.remove('ab-streaming-cursor');
                     _wrapTables(el);
                     _addCodeCopyButtons(el);
                     if (row) _addMsgActions(row.id, el.id, false);
@@ -837,7 +811,6 @@ window.ChatMessages = (function () {
 
     function _createChartHTML(id, rawJson) {
         _chartStore.set(id, rawJson);
-        // Clean container with just a thin border and shadow — no bar chrome
         return '<div class="ab-chart" data-chart-id="' + id + '">' +
                 '<div class="ab-chart-canvas"></div>' +
             '</div>';
@@ -871,10 +844,6 @@ window.ChatMessages = (function () {
             var old = _chartInstances.get(id);
             if (old && old.destroy) old.destroy();
 
-            // Shorten large y-axis numbers (e.g. 1,200,000 -> 1.2M) so they
-            // never overflow the left padding/border of the chart card.
-            // We merge rather than overwrite so a spec-provided axisOptions
-            // object doesn't silently disable this default.
             var axisOptions = Object.assign(
                 { shortenYAxisNumbers: 1 },
                 spec.axisOptions || {}
