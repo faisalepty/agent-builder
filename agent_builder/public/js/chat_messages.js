@@ -401,6 +401,7 @@ window.ChatMessages = (function () {
                     '<span class="ab-chevron">' + _icons.down + '</span>' +
                 '</button>' +
                 '<div class="ab-thinking-steps" style="display:none;"></div>' +
+                '<div class="ab-streaming-footer ab-thinking-footer-loader">' + (_icons.logoLoader || _icons.logo) + '</div>' +
             '</div>'
         );
         if (_streamBubbleId) {
@@ -627,6 +628,7 @@ window.ChatMessages = (function () {
         if (_reasoningLive) _finalizeReasoning();
 
         var $container = $('#' + _currentThinkingRow);
+        $container.find('.ab-thinking-footer-loader').remove();
         var nTools = _currentThinkingSteps.length;
 
         var hasReasoning = _reasoningElapsedMs != null;

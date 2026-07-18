@@ -164,7 +164,7 @@
     height: 32px;
     border-radius: 10px;
     background: var(--control-bg);
-    color: var(--text-color);
+    color: #8a5a34;
     border: 1px solid var(--border-color);
     display: flex;
     align-items: center;
@@ -173,6 +173,12 @@
     position: relative;
 }
 #ab-header-avatar svg { width: 18px; height: 18px; }
+#ab-header-avatar svg path {
+    stroke: currentColor;
+    stroke-width: 90;
+    stroke-linejoin: round;
+    paint-order: stroke fill;
+}
 
 #ab-header-info { flex: 1; min-width: 0; cursor: default; }
 #ab-header-name {
@@ -353,11 +359,17 @@
 #ab-welcome { display: flex; flex-direction: column; align-items: center; margin: auto; padding: 32px 20px; text-align: center; max-width: 100%; box-sizing: border-box; }
 #ab-welcome-icon {
     width: 56px; height: 56px; border-radius: 16px;
-    background: var(--control-bg); color: var(--text-color);
+    background: var(--control-bg); color: #8a5a34;
     border: 1px solid var(--border-color);
     display: flex; align-items: center; justify-content: center; margin-bottom: 20px;
 }
 #ab-welcome-icon svg { width: 26px; height: 26px; }
+#ab-welcome-icon svg path {
+    stroke: currentColor;
+    stroke-width: 90;
+    stroke-linejoin: round;
+    paint-order: stroke fill;
+}
 #ab-welcome h3 { font-size: 18px; font-weight: 600; margin: 0 0 8px; color: var(--text-color); }
 #ab-welcome p { font-size: 13px; color: var(--text-muted); margin: 0 0 10px; line-height: 1.5; }
 #ab-welcome p.ab-welcome-subtext { margin: 18px 0 16px; }
@@ -527,7 +539,6 @@
     padding-left: 2px;
     height: 24px;
 }
-.ab-streaming-footer svg { width: 18px; height: 18px; color: var(--text-muted); }
 
 /* ── Reasoning (chain-of-thought) step ─────────────────────────── */
 .ab-reasoning-block .ab-step-icon svg { width: 9px; height: 9px; }
@@ -617,16 +628,30 @@
 /* Typing Indicator (Logo Loader) */
 .ab-typing-indicator { display: inline-flex; align-items: center; gap: 4px; padding: 10px 0; }
 .ab-typing-logo { padding: 6px 0; display: flex; align-items: center; }
-.ab-typing-logo svg { width: 24px; height: 24px; color: var(--text-muted); }
-.ab-logo-loader-base { opacity: 0.28; }
-.ab-logo-loader-flow {
-    stroke-dasharray: 14 86;
-    animation: ab-logo-flow 1.6s linear infinite;
+
+.ab-typing-logo svg,
+.ab-streaming-footer svg {
+    color: #8a5a34;
+    transform-box: fill-box;
+    transform-origin: 50% 50%;
+    animation: ab-mark-breathe 1.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
-.ab-logo-loader-flow-delay { animation-delay: -0.55s; }
-@keyframes ab-logo-flow {
-    to { stroke-dashoffset: -100; }
+.ab-typing-logo svg { width: 24px; height: 24px; }
+.ab-streaming-footer svg { width: 18px; height: 18px; }
+
+/* One uniform breath for the whole mark — the shimmer sweep does the
+   "liveliness" work, this just keeps it gently rising and falling rather
+   than sitting dead still. The linework itself never distorts. */
+@keyframes ab-mark-breathe {
+    0%, 100% { transform: scale(0.96); opacity: 0.9; }
+    50%      { transform: scale(1.0); opacity: 1; }
 }
+
+@media (prefers-reduced-motion: reduce) {
+    .ab-typing-logo svg, .ab-streaming-footer svg { animation: none; opacity: 0.85; }
+}
+
+.ab-thinking-footer-loader { padding-left: 6px; }
 
 @keyframes ab-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
