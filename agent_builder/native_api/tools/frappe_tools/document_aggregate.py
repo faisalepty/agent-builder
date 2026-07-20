@@ -112,7 +112,7 @@ def _build_where_clause(filters: dict) -> tuple:
     return " WHERE " + " AND ".join(conditions), params
 
 
-@tool(schema_name="frappe_aggregate")
+# @tool(schema_name="frappe_aggregate")
 def frappe_aggregate(args: dict = None, **kwargs) -> str:
     """Run a GROUP BY aggregate query on a doctype — SUM, COUNT, AVG, MIN, MAX.
 

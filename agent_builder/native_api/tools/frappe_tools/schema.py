@@ -311,102 +311,102 @@ FRAPPE_LIST_REPORTS = {
     },
 }
 
-FRAPPE_AGGREGATE = {
-    "name": "frappe_aggregate",
-    "description": (
-        "Run an aggregated GROUP BY query on a doctype — SUM, COUNT, AVG, MIN, MAX. "
-        "Use this for any analytical question: 'total sales per customer', 'downtime hours "
-        "per machine', 'count of orders by status'. Do NOT fetch raw rows with frappe_get_list "
-        "and try to sum them manually — use this tool instead for reliable results. "
-        "Aliases can be any valid name (letters, digits, underscores) — they are output "
-        "column names you define, not existing doctype fields."
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "doctype": {
-                "type": "string",
-                "description": "The doctype to query, e.g. 'Sales Invoice', 'Downtime Entry'.",
-            },
-            "group_by": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": (
-                    "Fields to group by. These must be real fields on the doctype. "
-                    "Each result row will include these field values as labels. "
-                    "Use [] for an overall aggregate with no grouping."
-                ),
-            },
-            "aggregations": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "field": {
-                            "type": "string",
-                            "description": "The doctype field to aggregate (must exist on the doctype).",
-                        },
-                        "function": {
-                            "type": "string",
-                            "enum": ["sum", "count", "avg", "min", "max"],
-                            "description": "Aggregation function.",
-                        },
-                        "alias": {
-                            "type": "string",
-                            "description": (
-                                "Output column name you choose — any valid identifier "
-                                "(letters, digits, underscores). Examples: 'total_mins', "
-                                "'total_sales', 'entry_count'. Do not use spaces or hyphens."
-                            ),
-                        },
-                    },
-                    "required": ["field", "function", "alias"],
-                },
-                "description": (
-                    "Aggregations to compute. Example: "
-                    '[{"field": "downtime", "function": "sum", "alias": "total_mins"}, '
-                    '{"field": "name", "function": "count", "alias": "entry_count"}]'
-                ),
-            },
-            "filters": {
-                "type": "object",
-                "default": {},
-                "description": (
-                    "WHERE filters on real doctype fields. Supported formats:\n"
-                    '- {"field": "value"} → field = value\n'
-                    '- {"field": [">=", "value"]} → field >= value (operator syntax)\n'
-                    '- {"field": ["IN", ["a", "b"]]} → field IN (a, b)\n'
-                    '- {"field": ["2026-01-01", "2026-12-31"]} → field BETWEEN start AND end\n'
-                    "Operators: =, !=, >, >=, <, <=, LIKE, NOT LIKE, IN, NOT IN. "
-                    "Do NOT put aliases or aggregate fields here — only real doctype fields."
-                ),
-            },
-            "having": {
-                "type": "object",
-                "default": {},
-                "description": (
-                    "Filter on aggregate results using aliases. "
-                    "Example: {\"total_mins\": [\">\", 500]}. "
-                    "Only supports simple comparison operators: >, >=, <, <=, =, !="
-                ),
-            },
-            "order_by": {
-                "type": "string",
-                "description": (
-                    "Sort results. Can use group_by fields or aggregate aliases. "
-                    "Examples: 'total_mins desc', 'workstation asc'. "
-                    "Append 'desc' or 'asc' for direction."
-                ),
-            },
-            "limit": {
-                "type": "integer",
-                "default": 100,
-                "description": "Max group rows to return.",
-            },
-        },
-        "required": ["doctype", "group_by", "aggregations"],
-    },
-}
+# FRAPPE_AGGREGATE = {
+#     "name": "frappe_aggregate",
+#     "description": (
+#         "Run an aggregated GROUP BY query on a doctype — SUM, COUNT, AVG, MIN, MAX. "
+#         "Use this for any analytical question: 'total sales per customer', 'downtime hours "
+#         "per machine', 'count of orders by status'. Do NOT fetch raw rows with frappe_get_list "
+#         "and try to sum them manually — use this tool instead for reliable results. "
+#         "Aliases can be any valid name (letters, digits, underscores) — they are output "
+#         "column names you define, not existing doctype fields."
+#     ),
+#     "parameters": {
+#         "type": "object",
+#         "properties": {
+#             "doctype": {
+#                 "type": "string",
+#                 "description": "The doctype to query, e.g. 'Sales Invoice', 'Downtime Entry'.",
+#             },
+#             "group_by": {
+#                 "type": "array",
+#                 "items": {"type": "string"},
+#                 "description": (
+#                     "Fields to group by. These must be real fields on the doctype. "
+#                     "Each result row will include these field values as labels. "
+#                     "Use [] for an overall aggregate with no grouping."
+#                 ),
+#             },
+#             "aggregations": {
+#                 "type": "array",
+#                 "items": {
+#                     "type": "object",
+#                     "properties": {
+#                         "field": {
+#                             "type": "string",
+#                             "description": "The doctype field to aggregate (must exist on the doctype).",
+#                         },
+#                         "function": {
+#                             "type": "string",
+#                             "enum": ["sum", "count", "avg", "min", "max"],
+#                             "description": "Aggregation function.",
+#                         },
+#                         "alias": {
+#                             "type": "string",
+#                             "description": (
+#                                 "Output column name you choose — any valid identifier "
+#                                 "(letters, digits, underscores). Examples: 'total_mins', "
+#                                 "'total_sales', 'entry_count'. Do not use spaces or hyphens."
+#                             ),
+#                         },
+#                     },
+#                     "required": ["field", "function", "alias"],
+#                 },
+#                 "description": (
+#                     "Aggregations to compute. Example: "
+#                     '[{"field": "downtime", "function": "sum", "alias": "total_mins"}, '
+#                     '{"field": "name", "function": "count", "alias": "entry_count"}]'
+#                 ),
+#             },
+#             "filters": {
+#                 "type": "object",
+#                 "default": {},
+#                 "description": (
+#                     "WHERE filters on real doctype fields. Supported formats:\n"
+#                     '- {"field": "value"} → field = value\n'
+#                     '- {"field": [">=", "value"]} → field >= value (operator syntax)\n'
+#                     '- {"field": ["IN", ["a", "b"]]} → field IN (a, b)\n'
+#                     '- {"field": ["2026-01-01", "2026-12-31"]} → field BETWEEN start AND end\n'
+#                     "Operators: =, !=, >, >=, <, <=, LIKE, NOT LIKE, IN, NOT IN. "
+#                     "Do NOT put aliases or aggregate fields here — only real doctype fields."
+#                 ),
+#             },
+#             "having": {
+#                 "type": "object",
+#                 "default": {},
+#                 "description": (
+#                     "Filter on aggregate results using aliases. "
+#                     "Example: {\"total_mins\": [\">\", 500]}. "
+#                     "Only supports simple comparison operators: >, >=, <, <=, =, !="
+#                 ),
+#             },
+#             "order_by": {
+#                 "type": "string",
+#                 "description": (
+#                     "Sort results. Can use group_by fields or aggregate aliases. "
+#                     "Examples: 'total_mins desc', 'workstation asc'. "
+#                     "Append 'desc' or 'asc' for direction."
+#                 ),
+#             },
+#             "limit": {
+#                 "type": "integer",
+#                 "default": 100,
+#                 "description": "Max group rows to return.",
+#             },
+#         },
+#         "required": ["doctype", "group_by", "aggregations"],
+#     },
+# }
 
 FRAPPE_GET_WORKFLOW_INFO = {
     "name": "frappe_get_workflow_info",
@@ -536,5 +536,66 @@ FRAPPE_SEARCH_LINK = {
             },
         },
         "required": ["doctype", "query"],
+    },
+}
+
+FRAPPE_QUERY = {
+    "name": "frappe_query",
+    "description": (
+        "Run an advanced read-only query across one or two linked Frappe doctypes: filtering, "
+        "a single join, and group-by/aggregation (sum, count, avg, min, max). Use this instead of "
+        "frappe_get_list when you need data from a linked doctype in the same result rows (e.g. "
+        "customer_name alongside Sales Invoice rows), or when you need totals/counts grouped by a "
+        "field (e.g. total sales per customer). For simple single-doctype listing with no join or "
+        "aggregation, use frappe_get_list instead — it's simpler and covers that case."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "operations": {
+                "type": "array",
+                "description": (
+                    "An ordered list of steps building up the query. The FIRST step must always be "
+                    "'source'. Steps are applied in the order given.\n\n"
+                    "Step types:\n"
+                    "- {\"type\": \"source\", \"doctype\": \"Sales Invoice\"} — REQUIRED FIRST. Sets the "
+                    "doctype to query from.\n"
+                    "- {\"type\": \"filter\", \"field\": \"status\", \"operator\": \"=\", \"value\": \"Paid\"} — "
+                    "filters rows. 'field' is a plain fieldname on the source doctype, or "
+                    "\"Doctype.fieldname\" to reference a field on a joined doctype. Operators: "
+                    "=, !=, >, <, >=, <=, in, not_in, like, not_like, between, is_set, is_not_set. "
+                    "'in'/'not_in' take a list value; 'between' takes a [start, end] list.\n"
+                    "- {\"type\": \"filter_group\", \"logic\": \"and\"|\"or\", \"filters\": [...]} — combines "
+                    "multiple filter conditions (same shape as 'filter') with AND/OR logic.\n"
+                    "- {\"type\": \"join\", \"doctype\": \"Customer\", \"join_type\": \"left\"|\"inner\", "
+                    "\"left_field\": \"customer\", \"right_field\": \"name\", \"select\": [\"customer_name\"]} — "
+                    "joins one other doctype on a link field. 'left_field' is the field on the source "
+                    "doctype, 'right_field' is the field on the joined doctype it matches. 'select' lists "
+                    "which fields to pull back from the joined doctype (returned as 'Doctype.field' keys). "
+                    "Use 'left' to keep all source rows even without a match; use 'inner' to only keep "
+                    "rows that have a match. Only one join is supported per query.\n"
+                    "- {\"type\": \"select\", \"fields\": [\"name\", \"grand_total\"]} — choose which fields "
+                    "from the source doctype to return. Skip this step to get default columns.\n"
+                    "- {\"type\": \"summarize\", \"group_by\": [\"customer\"], \"measures\": [{\"field\": "
+                    "\"grand_total\", \"function\": \"sum\", \"as\": \"total_sales\"}]} — groups rows and "
+                    "computes aggregates. 'function' is one of: sum, count, avg, min, max. 'as' names the "
+                    "result column (optional, defaults to '<function>_<field>').\n"
+                    "- {\"type\": \"order_by\", \"field\": \"total_sales\", \"direction\": \"asc\"|\"desc\"} — "
+                    "sorts results. Can reference an aggregate alias from 'summarize'.\n"
+                    "- {\"type\": \"limit\", \"value\": 50} — caps the number of rows returned. Default 100, "
+                    "max 1000.\n\n"
+                    "Example — total sales per customer for paid invoices, top 10:\n"
+                    "[{\"type\": \"source\", \"doctype\": \"Sales Invoice\"}, "
+                    "{\"type\": \"filter\", \"field\": \"status\", \"operator\": \"=\", \"value\": \"Paid\"}, "
+                    "{\"type\": \"join\", \"doctype\": \"Customer\", \"join_type\": \"left\", "
+                    "\"left_field\": \"customer\", \"right_field\": \"name\", \"select\": [\"customer_name\"]}, "
+                    "{\"type\": \"summarize\", \"group_by\": [\"customer\"], \"measures\": [{\"field\": "
+                    "\"grand_total\", \"function\": \"sum\", \"as\": \"total_sales\"}]}, "
+                    "{\"type\": \"order_by\", \"field\": \"total_sales\", \"direction\": \"desc\"}, "
+                    "{\"type\": \"limit\", \"value\": 10}]"
+                ),
+            },
+        },
+        "required": ["operations"],
     },
 }
