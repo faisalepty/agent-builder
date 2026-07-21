@@ -4,12 +4,13 @@ import json
 import frappe
 from frappe.query_builder import Criterion, Order
 from frappe.query_builder.functions import Sum, Count, Avg, Min, Max
+from frappe.desk.reportview import build_match_conditions
 from agent_builder.native_api.tools.decorator import tool
 
 
-ALLOWED_OP_TYPES = {"source", "filter", "filter_group", "join", "select", "summarize", "order_by", "limit"}
 ALLOWED_JOIN_TYPES = {"left", "inner"}
 ALLOWED_AGG_FUNCTIONS = {"sum": Sum, "count": Count, "avg": Avg, "min": Min, "max": Max}
+MAX_JOINS = 3
 
 FILTER_OPERATORS = {
     "=": lambda f, v: f == v,
@@ -22,7 +23,7 @@ FILTER_OPERATORS = {
     "not_in": lambda f, v: f.notin(v),
     "like": lambda f, v: f.like(f"%{v}%"),
     "not_like": lambda f, v: f.not_like(f"%{v}%"),
-    "between": lambda f, v: f[v[0]:v[1]],
+    "between": lambda f, v: f.between(v[0], v[1]),
     "is_set": lambda f, v: f.isnotnull(),
     "is_not_set": lambda f, v: f.isnull(),
 }
@@ -38,8 +39,8 @@ class QueryBuildError(Exception):
 
 @tool(schema_name="frappe_query")
 def frappe_query(args: dict, **kwargs) -> str:
-    """Run a read-only multi-step query across one or two linked doctypes,
-    with optional grouping and aggregation, using Frappe's native query builder."""
+    """Run a read-only multi-step query across linked doctypes, with optional
+    filtering, joins, and grouping/aggregation, using Frappe's native query builder."""
     operations = args.get("operations")
 
     if not operations or not isinstance(operations, list):
@@ -50,15 +51,15 @@ def frappe_query(args: dict, **kwargs) -> str:
         for idx, op in enumerate(operations):
             op = op or {}
             op_type = op.get("type")
+            handler = builder.HANDLERS.get(op_type)
 
-            if op_type not in ALLOWED_OP_TYPES:
+            if handler is None:
                 raise QueryBuildError(
                     f"Operation {idx + 1}: unsupported type '{op_type}'. "
-                    f"Allowed types: {sorted(ALLOWED_OP_TYPES)}"
+                    f"Allowed types: {sorted(builder.HANDLERS)}"
                 )
 
-            handler = getattr(builder, f"_apply_{op_type}")
-            handler(op)
+            handler(builder, op)
 
         rows = builder.execute()
 
@@ -66,6 +67,7 @@ def frappe_query(args: dict, **kwargs) -> str:
             "data": rows,
             "count": len(rows),
             "doctypes_used": builder.doctypes_used,
+            "warnings": builder.warnings,
         }, default=str)
 
     except QueryBuildError as e:
@@ -81,38 +83,56 @@ class _QueryContext:
     """Walks the operations list in order and incrementally builds a
     frappe.query_builder query, mirroring a linear pipeline (not a DAG)."""
 
+    STANDARD_FIELDS = frozenset({
+        "name", "creation", "modified", "owner", "modified_by", "docstatus",
+        "parent", "parenttype", "parentfield", "idx",
+    })
+
     def __init__(self):
         self.query = None
         self.source_dt = None
         self.source_tbl = None
         self.tables = {}          # doctype -> qb table object
+        self.metas = {}           # doctype -> frappe Meta (cached, avoids repeat lookups)
         self.doctypes_used = []
+        self.join_count = 0
         self.group_by_fields = []
         self.has_summarize = False
-        self.select_fields = None  # explicit select() list, if given
         self.limit_value = DEFAULT_LIMIT
+        self.warnings = []
 
     # ---- helpers -----------------------------------------------------
 
-    def _check_doctype(self, doctype):
-        if not frappe.db.exists("DocType", doctype):
-            raise QueryBuildError(f"Doctype '{doctype}' does not exist")
-        if not frappe.has_permission(doctype, ptype="read"):
-            raise frappe.PermissionError(f"No permission to read '{doctype}'")
+    def _get_meta(self, doctype):
+        if doctype not in self.metas:
+            if not frappe.db.exists("DocType", doctype):
+                raise QueryBuildError(f"Doctype '{doctype}' does not exist")
+            self.metas[doctype] = frappe.get_meta(doctype)
+        return self.metas[doctype]
 
     def _check_field(self, doctype, fieldname):
-        if fieldname in ("name", "creation", "modified", "owner", "modified_by", "docstatus"):
+        if fieldname in self.STANDARD_FIELDS:
             return
-        meta = frappe.get_meta(doctype)
-        if not meta.has_field(fieldname):
+        if not self._get_meta(doctype).has_field(fieldname):
             raise QueryBuildError(f"Field '{fieldname}' does not exist on doctype '{doctype}'")
 
     def _get_table(self, doctype):
         if doctype not in self.tables:
-            self._check_doctype(doctype)
+            self._get_meta(doctype)  # existence check
+            if not frappe.has_permission(doctype, ptype="read"):
+                raise frappe.PermissionError(f"No permission to read '{doctype}'")
             self.tables[doctype] = frappe.qb.DocType(doctype)
             self.doctypes_used.append(doctype)
         return self.tables[doctype]
+
+    def _row_permission_condition(self, doctype):
+        """User-permission / permission-query-condition restrictions Frappe normally
+        applies automatically in get_list — frappe.qb bypasses these, so they're
+        added back in manually per doctype touched."""
+        match_conditions = build_match_conditions(doctype)
+        if match_conditions:
+            return frappe.qb.raw(match_conditions)
+        return None
 
     def _resolve_field(self, field_spec):
         """field_spec is either 'fieldname' (resolves against source doctype)
@@ -147,9 +167,66 @@ class _QueryContext:
         doctype = op.get("doctype")
         if not doctype:
             raise QueryBuildError("'source' requires 'doctype'")
+        meta = self._get_meta(doctype)
+
+        if getattr(meta, "istable", 0):
+            self._setup_child_source(doctype)
+            return
+
         self.source_dt = doctype
         self.source_tbl = self._get_table(doctype)
         self.query = frappe.qb.from_(self.source_tbl)
+        row_condition = self._row_permission_condition(doctype)
+        if row_condition is not None:
+            self.query = self.query.where(row_condition)
+
+    def _setup_child_source(self, doctype):
+        """Child tables have no permission model of their own — access is entirely
+        inherited from whichever parent doctype(s) embed them. Resolve the parent(s)
+        automatically (no input needed from the model), check read permission on
+        each, and scope returned rows to only those belonging to a parent record
+        the user can actually read."""
+        parent_doctypes = frappe.get_all(
+            "DocField",
+            filters={"fieldtype": ["in", ["Table", "Table MultiSelect"]], "options": doctype},
+            pluck="parent",
+            distinct=True,
+        )
+        if not parent_doctypes:
+            raise QueryBuildError(
+                f"'{doctype}' is a child table with no doctype referencing it as a Table field — "
+                f"can't determine read permissions for it."
+            )
+
+        for parent_dt in parent_doctypes:
+            if not frappe.has_permission(parent_dt, ptype="read"):
+                raise frappe.PermissionError(
+                    f"'{doctype}' rows belong to '{parent_dt}' records, which you don't have "
+                    f"permission to read."
+                )
+
+        self.source_dt = doctype
+        self.source_tbl = frappe.qb.DocType(doctype)
+        self.tables[doctype] = self.source_tbl
+        self.doctypes_used.append(doctype)
+        self.query = frappe.qb.from_(self.source_tbl)
+        allowed_subqueries = []
+        for parent_dt in parent_doctypes:
+            parent_tbl = frappe.qb.DocType(parent_dt)
+            sub = frappe.qb.from_(parent_tbl).select(parent_tbl.name)
+            row_condition = self._row_permission_condition(parent_dt)
+            if row_condition is not None:
+                sub = sub.where(row_condition)
+            allowed_subqueries.append(sub)
+
+        if len(allowed_subqueries) == 1:
+            self.query = self.query.where(self.source_tbl.parent.isin(allowed_subqueries[0]))
+        else:
+            # shared child table — a row is visible if its parent is permitted
+            # under ANY of the doctypes that use this child table
+            self.query = self.query.where(
+                Criterion.any(self.source_tbl.parent.isin(sub) for sub in allowed_subqueries)
+            )
 
     def _require_source(self):
         if self.query is None:
@@ -188,10 +265,17 @@ class _QueryContext:
             raise QueryBuildError("'join' requires 'doctype', 'left_field', and 'right_field'")
         if join_type not in ALLOWED_JOIN_TYPES:
             raise QueryBuildError(f"join_type must be one of {sorted(ALLOWED_JOIN_TYPES)}")
+        if doctype in self.tables:
+            raise QueryBuildError(f"'{doctype}' has already been joined — joining the same doctype twice isn't supported")
+        if self.join_count >= MAX_JOINS:
+            raise QueryBuildError(f"A single query supports at most {MAX_JOINS} joins")
 
-        right_tbl = self._get_table(doctype)
         self._check_field(self.source_dt, left_field)
         self._check_field(doctype, right_field)
+        self._warn_if_not_a_real_link(doctype, left_field, right_field)
+
+        right_tbl = self._get_table(doctype)  # existence/permission-checked here
+        self.join_count += 1
 
         left_col = getattr(self.source_tbl, left_field)
         right_col = getattr(right_tbl, right_field)
@@ -202,9 +286,31 @@ class _QueryContext:
         else:
             self.query = self.query.inner_join(right_tbl).on(condition)
 
+        row_condition = self._row_permission_condition(doctype)
+        if row_condition is not None:
+            self.query = self.query.where(row_condition)
+
         for f in select_fields:
             self._check_field(doctype, f)
             self.query = self.query.select(getattr(right_tbl, f).as_(f"{doctype}.{f}"))
+
+    def _warn_if_not_a_real_link(self, doctype, left_field, right_field):
+        """left_field/right_field existing doesn't mean they're actually related —
+        flag joins that don't look like a real Link relationship so a nonsensical
+        join produces a visible warning instead of a silent empty/garbage result."""
+        source_meta = self._get_meta(self.source_dt)
+        field_def = source_meta.get_field(left_field)
+        if field_def is not None and field_def.fieldtype == "Link":
+            if field_def.options != doctype:
+                self.warnings.append(
+                    f"'{self.source_dt}.{left_field}' is a Link to '{field_def.options}', not "
+                    f"'{doctype}' — this join may not return meaningful matches."
+                )
+        elif right_field != "name":
+            self.warnings.append(
+                f"'{self.source_dt}.{left_field}' doesn't appear to be a Link field to '{doctype}' — "
+                f"double-check this join is between actually related records."
+            )
 
     def _apply_select(self, op):
         self._require_source()
@@ -275,3 +381,13 @@ class _QueryContext:
         result = self.query.run(as_dict=True)
         return result
 
+    HANDLERS = {
+        "source": _apply_source,
+        "filter": _apply_filter,
+        "filter_group": _apply_filter_group,
+        "join": _apply_join,
+        "select": _apply_select,
+        "summarize": _apply_summarize,
+        "order_by": _apply_order_by,
+        "limit": _apply_limit,
+    }
