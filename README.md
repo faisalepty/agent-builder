@@ -1,6 +1,6 @@
 # Agent Builder
 
-A Frappe/ERPNext co-pilot and autonomous agents system. Build dynamic Dashboards, Workspaces, and DocTypes through intelligent conversation. Real-time chat interface with streaming AI responses and multi-tool orchestration.
+A ERPNext co-pilot and autonomous agents system. Build dynamic Dashboards, Workspaces, and DocTypes through intelligent conversation. Real-time chat interface with streaming AI responses and multi-tool orchestration.
 
 ## Features
 
