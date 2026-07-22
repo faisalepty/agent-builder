@@ -3,6 +3,8 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+import frappe
+
 from agent_builder.native_api.tools.decorator import ToolRegistry
 from agent_builder.native_api.tools.loader import load_tools
 from agent_builder.native_api.tools.skill_tools.list_skills import list_skills
@@ -22,7 +24,7 @@ _AGENT_DEF_CACHE: dict[str, dict] = {}
 IDENTITY = """\
 # Identity
 
-You are Omnis, an embedded Frappe/ERPNext operations assistant running natively inside
+You are APS Copilot, a ERPNext operations assistant running natively inside
 a Frappe Desk instance. You have direct ORM access to the live database through
 native Frappe tools — no HTTP calls, no API keys, no external auth. The session
 user is already authenticated and their permissions apply to every operation you
@@ -62,6 +64,14 @@ Load the relevant skill before any non-trivial Frappe operation.
   care. Correctness and auditability come before speed.
 - When listing records, return a concise summary first. Offer details only when
   asked or when details are required to take the next action.
+- Company scope matters: if the session context lists more than one permitted
+  company, confirm which company a query targets before running it rather
+  than silently assuming the default. Never omit a company filter on
+  transactional doctypes (GL Entry, Sales Invoice, Purchase Invoice, Payment
+  Entry, Loan, etc.) in a multi-company site.
+- Treat "this year" / "YTD" / "current fiscal year" as the fiscal year given
+  in the session context, not a value memorized from an earlier turn —
+  recompute-sensitive language should defer to that context each time.
 
 # Avoid
 
@@ -153,6 +163,148 @@ def get_tool_registry() -> ToolRegistry:
 	return _CACHED_REGISTRY
 
 
+# =========================================================================
+# Session context — company / currency / fiscal year / installed apps /
+# roles. Must be computed fresh per request; never baked into the cached
+# stable system prompt, since it varies per user and per session.
+# =========================================================================
+
+
+def get_session_context() -> dict:
+	"""Snapshot of session-scoped facts the model needs to ground its
+	queries.
+
+	Notes on sourcing, from things that have bitten real ERPNext deployments:
+	- Company: frappe.defaults.get_user_default requires the capitalized key
+	  "Company" — the lowercase "company" silently returns the site-wide
+	  Global Defaults value instead of the user's actual default, which is a
+	  long-standing footgun. Even with the right casing, a user restricted
+	  via User Permission rather than a plain default can get no value back,
+	  so we fall back to Global Defaults, and separately surface the full set
+	  of permitted companies so the agent can tell when scope is ambiguous.
+	- Currency: prefer the resolved company's currency over the bare system
+	  default, since multi-company Kenyan deployments frequently mix KES and
+	  USD entities.
+	- Fiscal year: derived from today's date against the Fiscal Year
+	  doctype's date range rather than trusting a stored "default fiscal
+	  year" value, since that concept is unreliable/version-dependent
+	  (ERPNext v15 removed the UI to set one explicitly).
+	- Installed apps: not every client site runs every module (e.g. Frappe
+	  Lending isn't installed everywhere), so the agent should check this
+	  before assuming a doctype exists.
+	"""
+	user = frappe.session.user
+
+	company = frappe.defaults.get_user_default("Company")
+	if not company:
+		company = frappe.db.get_single_value("Global Defaults", "default_company")
+
+	permitted_companies = frappe.db.get_list(
+		"User Permission",
+		filters={"user": user, "allow": "Company"},
+		pluck="for_value",
+	) or ([company] if company else [])
+
+	company_currency = None
+	if company:
+		company_currency = frappe.db.get_value("Company", company, "default_currency")
+	currency = company_currency or frappe.db.get_single_value(
+		"Global Defaults", "default_currency"
+	)
+
+	today = frappe.utils.today()
+	fiscal_year = frappe.db.get_value(
+		"Fiscal Year",
+		{"year_start_date": ("<=", today), "year_end_date": (">=", today)},
+		["name", "year_start_date", "year_end_date"],
+		as_dict=True,
+	)
+
+	try:
+		installed_apps = frappe.get_installed_apps()
+	except Exception as e:
+		logger.warning("Could not fetch installed apps: %s", e)
+		installed_apps = []
+
+	try:
+		roles = frappe.get_roles(user)
+	except Exception as e:
+		logger.warning("Could not fetch roles for %s: %s", user, e)
+		roles = []
+
+	return {
+		"user": user,
+		"roles": roles,
+		"default_company": company,
+		"permitted_companies": permitted_companies,
+		"currency": currency,
+		"fiscal_year": fiscal_year,
+		"installed_apps": installed_apps,
+		"timezone": frappe.db.get_single_value("System Settings", "time_zone"),
+		"date_format": frappe.db.get_single_value("System Settings", "date_format"),
+		"number_format": frappe.db.get_single_value("System Settings", "number_format"),
+	}
+
+
+def format_session_context(ctx: dict) -> str:
+	"""Render session context as compact prose for the volatile prompt tier."""
+	lines = []
+
+	role_list = ctx["roles"]
+	shown_roles = ", ".join(role_list[:6]) + ("..." if len(role_list) > 6 else "")
+	lines.append(f"Session user: {ctx['user']} (roles: {shown_roles})")
+
+	if ctx["default_company"]:
+		companies = ctx["permitted_companies"]
+		if len(companies) > 1:
+			lines.append(
+				f"Default company: {ctx['default_company']} — user is permitted on "
+				f"multiple companies ({', '.join(companies)}); confirm scope before "
+				f"running company-scoped queries."
+			)
+		else:
+			lines.append(f"Default company: {ctx['default_company']}")
+	else:
+		lines.append(
+			"No default company set for this user — confirm or infer scope "
+			"from context before running company-scoped queries."
+		)
+
+	if ctx["currency"]:
+		lines.append(f"Currency: {ctx['currency']}")
+
+	fy = ctx["fiscal_year"]
+	if fy:
+		lines.append(
+			f"Current fiscal year: {fy['name']} "
+			f"({fy['year_start_date']} to {fy['year_end_date']})"
+		)
+	else:
+		lines.append(
+			"No Fiscal Year record covers today's date — verify before "
+			"answering any 'this year' / YTD question."
+		)
+
+	if ctx["installed_apps"]:
+		lines.append(f"Installed apps: {', '.join(ctx['installed_apps'])}")
+
+	if ctx["timezone"]:
+		lines.append(f"Timezone: {ctx['timezone']}")
+
+	return "\n".join(lines)
+
+
+def _safe_session_context_block() -> str:
+	"""Session context is best-effort: if it fails for any reason (e.g. no
+	Frappe request context available, such as in isolated tests), degrade
+	to just the date rather than breaking prompt assembly."""
+	try:
+		return format_session_context(get_session_context())
+	except Exception as e:
+		logger.error("Failed to build session context: %s", e)
+		return ""
+
+
 def build_system_prompt_parts(
 	system_message: str | None = None,
 ) -> dict[str, str]:
@@ -175,7 +327,12 @@ def build_system_prompt_parts(
 	)
 
 	context = system_message or ""
-	volatile = f"Session started: {datetime.now().strftime('%A, %B %d, %Y')}"
+
+	volatile_parts = [f"Session started: {datetime.now().strftime('%A, %B %d, %Y')}"]
+	session_block = _safe_session_context_block()
+	if session_block:
+		volatile_parts.append(session_block)
+	volatile = "\n\n".join(volatile_parts)
 
 	return {
 		"stable": stable,
@@ -185,7 +342,15 @@ def build_system_prompt_parts(
 
 
 def get_system_prompt(system_message: str | None = None) -> str:
-	"""Build and cache the full system prompt."""
+	"""Build and cache the full system prompt.
+
+	NOTE: session context lives in `volatile` and is fetched fresh every
+	call to build_system_prompt_parts — but get_system_prompt itself caches
+	the *joined* result on first call. If per-session freshness is required
+	here (recommended, since company/roles/fiscal-year are user-specific),
+	callers should prefer build_system_prompt_parts() directly instead of
+	relying on this cached wrapper, or invalidate_prompt_cache() per session.
+	"""
 	global _CACHED_SYSTEM_PROMPT
 	if _CACHED_SYSTEM_PROMPT is None:
 		parts = build_system_prompt_parts(system_message=system_message)
