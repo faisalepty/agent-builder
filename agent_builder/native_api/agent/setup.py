@@ -2,7 +2,6 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict
 
 from agent_builder.native_api.tools.decorator import ToolRegistry
 from agent_builder.native_api.tools.loader import load_tools
@@ -12,9 +11,9 @@ logger = logging.getLogger(__name__)
 
 TOOLS_DIR = Path(__file__).resolve().parent.parent / "tools"
 
-_CACHED_REGISTRY: Optional[ToolRegistry] = None
-_CACHED_SYSTEM_PROMPT: Optional[str] = None
-_AGENT_DEF_CACHE: Dict[str, dict] = {}
+_CACHED_REGISTRY: ToolRegistry | None = None
+_CACHED_SYSTEM_PROMPT: str | None = None
+_AGENT_DEF_CACHE: dict[str, dict] = {}
 
 # =========================================================================
 # Prompt piece constants
@@ -48,8 +47,12 @@ Load the relevant skill before any non-trivial Frappe operation.
 # Defaults
 
 - Always verify before answering questions about live records, DocTypes,
-  workflows, accounts, or transactions — use frappe_get_doc or frappe_get_list
-  to confirm real state before responding.
+  workflows, accounts, or transactions — use frappe_get_doc, frappe_get_list,
+  or frappe_query to confirm real state before responding.
+- Before filtering, joining, grouping, or sorting on any field, confirm it
+  exists via frappe_get_doctype_info unless you've already seen that
+  doctype's schema earlier in this conversation — a fieldname isn't
+  confirmed just because it looked plausible or turned up somewhere else.
 - Before any destructive, irreversible, or financially significant operation,
   state clearly what you are about to do and why. Do not proceed silently.
 - When an operation fails, reason from the actual error — check validation
@@ -62,8 +65,8 @@ Load the relevant skill before any non-trivial Frappe operation.
 
 # Avoid
 
-- **CRITICAL**: You MUST NEVER guess, invent, or fabricate data. If a user asks for records, counts, or specific data, you MUST use the `frappe_get_list` or `frappe_get_doc` tools to query the live database before answering.
-- Never guess record names, field names, or DocType structures. Always pull the schema or data first.
+- **CRITICAL**: You MUST NEVER guess, invent, or fabricate data. If a user asks for records, counts, or specific data, you MUST use the `frappe_get_list`, `frappe_query`, or `frappe_get_doc` tools to query the live database before answering.
+- Never guess record names, field names, DocType structures, or filter/join fields. Always pull the schema (frappe_get_doctype_info) or data first.
 - Never expose raw Python tracebacks to the user. Translate errors into plain
   business language and suggest the corrective action.
 - Never operate outside the current user's Frappe permission scope.
@@ -74,17 +77,34 @@ Load the relevant skill before any non-trivial Frappe operation.
 """
 
 TOOL_USE_ENFORCEMENT = (
-    "You MUST use your tools to take action — do not describe what you "
-    "would do without doing it. When you say you will perform an action, "
-    "immediately make the corresponding tool call in the same response."
+	"You MUST use your tools to take action — do not describe what you "
+	"would do without doing it. When you say you will perform an action, "
+	"immediately make the corresponding tool call in the same response."
 )
 
 TASK_COMPLETION = (
-    "When the user asks you to build or verify something, the deliverable "
-    "is a working result backed by real tool output — not a description of "
-    "one. Do not stop after writing a stub or a single command. Keep working "
-    "until you have actually produced the requested result."
+	"When the user asks you to build or verify something, the deliverable "
+	"is a working result backed by real tool output — not a description of "
+	"one. Do not stop after writing a stub or a single command. Keep working "
+	"until you have actually produced the requested result."
 )
+
+QUERY_TOOL_GUIDANCE = """\
+# Querying data: which tool
+
+- `frappe_get_list`: simple, single-doctype listing/search, no join or aggregation.
+- `frappe_query`: filtering plus up to 3 joined doctypes, and/or grouped
+  aggregation (sum/count/avg/min/max) — use this instead of frappe_get_list
+  whenever the question needs a linked field alongside source rows, or needs
+  totals/counts by group. Do not sum or group raw rows by hand.
+- `frappe_generate_report`: use an existing Frappe report (financial
+  statements, analytics reports) instead of reconstructing its logic by hand.
+
+If frappe_query or frappe_generate_report errors on an unknown field, don't
+retry with another guess — call frappe_get_doctype_info, confirm the real
+fieldname, then retry once.\
+"""
+
 CHART_INSTRUCTIONS = """\
 # Charts
 
@@ -107,8 +127,8 @@ match that constructor's options object:
 
 Rules:
 - `type` must be one of: bar, line, scatter, pie, percentage, axis-mixed, heatmap.
-- Pull labels/values from real tool output (frappe_get_list / frappe_get_doc) — \
-never invent numbers to fill a chart.
+- Pull labels/values from real tool output (frappe_get_list / frappe_get_doc / \
+frappe_query / frappe_generate_report) — never invent numbers to fill a chart.
 - One ```chart block per chart. For multiple charts, use multiple blocks with \
 prose between them.
 - Never wrap the block in ```json — it must be ```chart exactly, or it will \
@@ -118,137 +138,138 @@ categories), prefer a table instead.\
 """
 
 SKILLS_INDEX_INTRO = (
-    "Below is an index of available skills. Use `skill_view` to read a "
-    "skill's full specification before acting on it."
+	"Below is an index of available skills. Use `skill_view` to read a "
+	"skill's full specification before acting on it."
 )
 
+
 def get_tool_registry() -> ToolRegistry:
-    """Load and cache the tool registry."""
-    global _CACHED_REGISTRY
-    if _CACHED_REGISTRY is None:
-        _CACHED_REGISTRY = ToolRegistry()
-        load_tools(_CACHED_REGISTRY, str(TOOLS_DIR))
-        logger.info("Setup: Loaded %d tools.", len(_CACHED_REGISTRY.get_tool_schemas()))
-    return _CACHED_REGISTRY
+	"""Load and cache the tool registry."""
+	global _CACHED_REGISTRY
+	if _CACHED_REGISTRY is None:
+		_CACHED_REGISTRY = ToolRegistry()
+		load_tools(_CACHED_REGISTRY, str(TOOLS_DIR))
+		logger.info("Setup: Loaded %d tools.", len(_CACHED_REGISTRY.get_tool_schemas()))
+	return _CACHED_REGISTRY
 
 
 def build_system_prompt_parts(
-    system_message: Optional[str] = None,
-) -> Dict[str, str]:
-    """Assemble the system prompt as three tiers."""
-    try:
-        skills_text = list_skills({"limit": 20})
-    except Exception as e:
-        logger.error("Failed to load skills: %s", e)
-        skills_text = "No skills loaded."
+	system_message: str | None = None,
+) -> dict[str, str]:
+	"""Assemble the system prompt as three tiers."""
+	try:
+		skills_text = list_skills({"limit": 20})
+	except Exception as e:
+		logger.error("Failed to load skills: %s", e)
+		skills_text = "No skills loaded."
 
-    stable = "\n\n".join([
-        IDENTITY,
-        TOOL_USE_ENFORCEMENT,
-        CHART_INSTRUCTIONS,
-        TASK_COMPLETION,
-        f"{SKILLS_INDEX_INTRO}\n\n{skills_text}",
-    ])
+	stable = "\n\n".join(
+		[
+			IDENTITY,
+			TOOL_USE_ENFORCEMENT,
+			QUERY_TOOL_GUIDANCE,
+			CHART_INSTRUCTIONS,
+			TASK_COMPLETION,
+			f"{SKILLS_INDEX_INTRO}\n\n{skills_text}",
+		]
+	)
 
-    context = system_message or ""
-    volatile = f"Session started: {datetime.now().strftime('%A, %B %d, %Y')}"
+	context = system_message or ""
+	volatile = f"Session started: {datetime.now().strftime('%A, %B %d, %Y')}"
 
-    return {
-        "stable": stable,
-        "context": context,
-        "volatile": volatile,
-    }
+	return {
+		"stable": stable,
+		"context": context,
+		"volatile": volatile,
+	}
 
 
-def get_system_prompt(system_message: Optional[str] = None) -> str:
-    """Build and cache the full system prompt."""
-    global _CACHED_SYSTEM_PROMPT
-    if _CACHED_SYSTEM_PROMPT is None:
-        parts = build_system_prompt_parts(system_message=system_message)
-        _CACHED_SYSTEM_PROMPT = "\n\n".join(p for p in parts.values() if p)
-    return _CACHED_SYSTEM_PROMPT
+def get_system_prompt(system_message: str | None = None) -> str:
+	"""Build and cache the full system prompt."""
+	global _CACHED_SYSTEM_PROMPT
+	if _CACHED_SYSTEM_PROMPT is None:
+		parts = build_system_prompt_parts(system_message=system_message)
+		_CACHED_SYSTEM_PROMPT = "\n\n".join(p for p in parts.values() if p)
+	return _CACHED_SYSTEM_PROMPT
 
 
 def invalidate_prompt_cache() -> None:
-    """Force a full rebuild on the next call to ``get_system_prompt``."""
-    global _CACHED_SYSTEM_PROMPT
-    _CACHED_SYSTEM_PROMPT = None
-    _AGENT_DEF_CACHE.clear()
+	"""Force a full rebuild on the next call to ``get_system_prompt``."""
+	global _CACHED_SYSTEM_PROMPT
+	_CACHED_SYSTEM_PROMPT = None
+	_AGENT_DEF_CACHE.clear()
 
 
 # =========================================================================
 # Agent Definition support — user-created agents (Agent Builder)
 # =========================================================================
 
+
 def get_agent_definition(agent_name: str) -> dict:
-    """Load an ``Agent Definition`` record, cached per process.
+	"""Load an ``Agent Definition`` record, cached per process.
 
-    Raises frappe.DoesNotExistError if the name isn't found; throws if
-    disabled.
-    """
-    if agent_name not in _AGENT_DEF_CACHE:
-        doc = frappe.get_doc("Agent Definition", agent_name)
-        if not doc.is_enabled:
-            frappe.throw(f"Agent '{agent_name}' is disabled.")
-        _AGENT_DEF_CACHE[agent_name] = {
-            "agent_name": doc.agent_name,
-            "instructions": doc.instructions or "",
-            "model": doc.model or None,
-            "temperature": doc.temperature,
-            "max_turns": doc.max_turns or 40,
-            "tool_mode": doc.tool_mode or "All",
-            "allowed_tools": [
-                t.strip() for t in (doc.allowed_tools or "").split(",") if t.strip()
-            ],
-        }
-    return _AGENT_DEF_CACHE[agent_name]
+	Raises frappe.DoesNotExistError if the name isn't found; throws if
+	disabled.
+	"""
+	if agent_name not in _AGENT_DEF_CACHE:
+		doc = frappe.get_doc("Agent Definition", agent_name)
+		if not doc.is_enabled:
+			frappe.throw(f"Agent '{agent_name}' is disabled.")
+		_AGENT_DEF_CACHE[agent_name] = {
+			"agent_name": doc.agent_name,
+			"instructions": doc.instructions or "",
+			"model": doc.model or None,
+			"temperature": doc.temperature,
+			"max_turns": doc.max_turns or 40,
+			"tool_mode": doc.tool_mode or "All",
+			"allowed_tools": [t.strip() for t in (doc.allowed_tools or "").split(",") if t.strip()],
+		}
+	return _AGENT_DEF_CACHE[agent_name]
 
 
-def get_default_agent_name() -> Optional[str]:
-    """Return the Agent Definition flagged is_default, if any (used by the
-    chat widget when no explicit agent is requested). None -> fall back to
-    the hardcoded Omnis identity, for backward compatibility."""
-    return frappe.db.get_value(
-        "Agent Definition", {"is_default": 1, "is_enabled": 1}, "agent_name"
-    )
+def get_default_agent_name() -> str | None:
+	"""Return the Agent Definition flagged is_default, if any (used by the
+	chat widget when no explicit agent is requested). None -> fall back to
+	the hardcoded Omnis identity, for backward compatibility."""
+	return frappe.db.get_value("Agent Definition", {"is_default": 1, "is_enabled": 1}, "agent_name")
 
 
-def get_agent_system_prompt(agent_name: Optional[str]) -> str:
-    """Build the system prompt for a specific Agent Definition, layering its
-    instructions on top of the same stable Identity/Style/Chart/Skills
-    scaffold every agent shares. Falls back to the default Omnis prompt when
-    agent_name is None."""
-    if not agent_name:
-        return get_system_prompt()
+def get_agent_system_prompt(agent_name: str | None) -> str:
+	"""Build the system prompt for a specific Agent Definition, layering its
+	instructions on top of the same stable Identity/Style/Chart/Skills
+	scaffold every agent shares. Falls back to the default Omnis prompt when
+	agent_name is None."""
+	if not agent_name:
+		return get_system_prompt()
 
-    agent_def = get_agent_definition(agent_name)
-    parts = build_system_prompt_parts(system_message=agent_def["instructions"])
-    return "\n\n".join(p for p in parts.values() if p)
+	agent_def = get_agent_definition(agent_name)
+	parts = build_system_prompt_parts(system_message=agent_def["instructions"])
+	return "\n\n".join(p for p in parts.values() if p)
 
 
-def get_tool_schemas_for(agent_name: Optional[str]) -> list:
-    """Return the tool schema list a given agent is allowed to see.
+def get_tool_schemas_for(agent_name: str | None) -> list:
+	"""Return the tool schema list a given agent is allowed to see.
 
-    This is a *soft* restriction: it narrows what the model is offered, not
-    what ToolRegistry can execute. Good enough to scope an agent's
-    behavior; it is not a hard permission boundary (Frappe's own doc
-    permissions still apply underneath every tool call).
-    """
-    all_schemas = get_tool_registry().get_tool_schemas()
-    if not agent_name:
-        return all_schemas
+	This is a *soft* restriction: it narrows what the model is offered, not
+	what ToolRegistry can execute. Good enough to scope an agent's
+	behavior; it is not a hard permission boundary (Frappe's own doc
+	permissions still apply underneath every tool call).
+	"""
+	all_schemas = get_tool_registry().get_tool_schemas()
+	if not agent_name:
+		return all_schemas
 
-    agent_def = get_agent_definition(agent_name)
-    mode = agent_def["tool_mode"]
-    allowed = set(agent_def["allowed_tools"])
-    if mode == "All" or not allowed:
-        return all_schemas
+	agent_def = get_agent_definition(agent_name)
+	mode = agent_def["tool_mode"]
+	allowed = set(agent_def["allowed_tools"])
+	if mode == "All" or not allowed:
+		return all_schemas
 
-    def _name(schema):
-        return schema.get("function", {}).get("name") or schema.get("name")
+	def _name(schema):
+		return schema.get("function", {}).get("name") or schema.get("name")
 
-    if mode == "Allow List":
-        return [s for s in all_schemas if _name(s) in allowed]
-    if mode == "Block List":
-        return [s for s in all_schemas if _name(s) not in allowed]
-    return all_schemas
+	if mode == "Allow List":
+		return [s for s in all_schemas if _name(s) in allowed]
+	if mode == "Block List":
+		return [s for s in all_schemas if _name(s) not in allowed]
+	return all_schemas
