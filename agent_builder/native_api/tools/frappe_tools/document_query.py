@@ -2,7 +2,7 @@
 
 import json
 import frappe
-from frappe.query_builder import Criterion, Order
+from frappe.query_builder import Criterion, Order, Field
 from frappe.query_builder.functions import Sum, Count, Avg, Min, Max
 from frappe.desk.reportview import build_match_conditions
 from agent_builder.native_api.tools.decorator import tool
@@ -97,7 +97,7 @@ class _QueryContext:
         self.doctypes_used = []
         self.join_count = 0
         self.group_by_fields = []
-        self.has_summarize = False
+        self.selected_aliases = set()   # every alias introduced via .as_() in select()
         self.limit_value = DEFAULT_LIMIT
         self.warnings = []
 
@@ -292,7 +292,11 @@ class _QueryContext:
 
         for f in select_fields:
             self._check_field(doctype, f)
-            self.query = self.query.select(getattr(right_tbl, f).as_(f"{doctype}.{f}"))
+            alias = f"{doctype}.{f}"
+            if alias in self.selected_aliases:
+                raise QueryBuildError(f"'{alias}' has already been selected in this query")
+            self.query = self.query.select(getattr(right_tbl, f).as_(alias))
+            self.selected_aliases.add(alias)
 
     def _warn_if_not_a_real_link(self, doctype, left_field, right_field):
         """left_field/right_field existing doesn't mean they're actually related —
@@ -322,7 +326,6 @@ class _QueryContext:
 
     def _apply_summarize(self, op):
         self._require_source()
-        self.has_summarize = True
         group_by = op.get("group_by") or []
         measures = op.get("measures") or []
 
@@ -341,10 +344,16 @@ class _QueryContext:
 
             if fn_name not in ALLOWED_AGG_FUNCTIONS:
                 raise QueryBuildError(f"Aggregate function must be one of {sorted(ALLOWED_AGG_FUNCTIONS)}")
+            if alias in self.selected_aliases:
+                raise QueryBuildError(
+                    f"Measure alias '{alias}' is already used by another measure or joined field "
+                    f"in this query — give it a distinct 'as' name."
+                )
 
             field = self._resolve_field(field_spec)
             agg_fn = ALLOWED_AGG_FUNCTIONS[fn_name]
             self.query = self.query.select(agg_fn(field).as_(alias))
+            self.selected_aliases.add(alias)
 
     def _apply_order_by(self, op):
         self._require_source()
@@ -353,17 +362,22 @@ class _QueryContext:
         if not field_spec:
             raise QueryBuildError("'order_by' requires 'field'")
 
-        # aggregated columns (aliases from summarize) aren't resolvable via
-        # _resolve_field, so fall back to ordering by raw alias name in that case
-        try:
-            field = self._resolve_field(field_spec)
-        except QueryBuildError:
-            if self.has_summarize:
-                field = field_spec
-            else:
-                raise
-
         order = Order.asc if direction == "asc" else Order.desc
+
+        # If field_spec is a SELECT alias (e.g. a 'summarize' measure alias, or an
+        # aliased joined field), it isn't a real column and _resolve_field would
+        # either raise or — worse — silently resolve to an unrelated real column.
+        # pypika only renders a bare alias in ORDER BY when the Field object passed
+        # in has .alias set AND that alias is present in the query's SELECT list
+        # (see pypika QueryBuilder._orderby_sql). Passing a raw string instead gets
+        # implicitly re-wrapped as Field(field_spec, table=<from-table>), which is
+        # exactly what produced "Unknown column 'tab<Source>.<alias>' in 'ORDER BY'".
+        if field_spec in self.selected_aliases:
+            alias_field = Field(field_spec).as_(field_spec)
+            self.query = self.query.orderby(alias_field, order=order)
+            return
+
+        field = self._resolve_field(field_spec)
         self.query = self.query.orderby(field, order=order)
 
     def _apply_limit(self, op):
