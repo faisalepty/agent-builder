@@ -233,6 +233,12 @@
     // State
     let isOpen = false, isThinking = false, currentChatId = null, currentView = 'list', isExpanded = false;
     let _currentJobId = null;
+    // True when the user hit Stop before dispatchChatRequest's `chat` call
+    // had come back with a chat_id — currentChatId is still null in that
+    // window, so the click handler below has nothing to send a stop for
+    // yet. When the callback finally resolves it checks this flag and
+    // fires stop_chat immediately instead of the request silently vanishing.
+    let _stopRequestedBeforeId = false;
 
     // Skills cache
     let _skills = [], _skillsLoaded = false, _skillsLoading = false, _skillsWaiters = [];
@@ -305,6 +311,7 @@
     function openConversation(chatId, title) {
         currentChatId = chatId;
         _currentJobId = null;
+        _stopRequestedBeforeId = false;
         ChatRealtime.setActiveSession(chatId);
         ChatList.setActive(chatId);
         _pendingFiles = [];
@@ -320,6 +327,7 @@
     function startNewChat() {
         currentChatId = null;
         _currentJobId = null;
+        _stopRequestedBeforeId = false;
         ChatRealtime.setActiveSession(null);
         _pendingFiles = [];
         renderAttachmentChips();
@@ -567,6 +575,14 @@
                 },
                 error: function () {},
             });
+        } else {
+            // First message of a new chat: the `chat` RPC hasn't returned
+            // a chat_id yet, so there's nothing to stop right now. Defer —
+            // dispatchChatRequest's callback will send stop_chat as soon
+            // as currentChatId is assigned. Without this, clicking Stop
+            // in this window did nothing server-side: the UI looked
+            // stopped but the background job kept running to completion.
+            _stopRequestedBeforeId = true;
         }
         _currentJobId = null;
     });
@@ -1018,6 +1034,18 @@
                         ChatList.prepend(r.message);
                         ChatList.setActive(currentChatId);
                         $('#ab-header-name').text(r.message.title || 'Chat');
+                    }
+
+                    // The user hit Stop while chat_id was still unknown —
+                    // the click handler couldn't send anything at the time,
+                    // so fire it now that we finally have a session to stop.
+                    if (_stopRequestedBeforeId) {
+                        _stopRequestedBeforeId = false;
+                        frappe.call({
+                            method: 'agent_builder.native_api.verify.stop_chat',
+                            args: { chat_id: currentChatId, job_id: _currentJobId || '' },
+                            error: function () {},
+                        });
                     }
                 }
             },
