@@ -328,7 +328,7 @@ def build_system_prompt_parts(
 
 	context = system_message or ""
 
-	volatile_parts = [f"Session started: {datetime.now().strftime('%A, %B %d, %Y')}"]
+	volatile_parts = [f"The current date and time is and the Session started at: {datetime.now().strftime('%A, %B %d, %Y')}"]
 	session_block = _safe_session_context_block()
 	if session_block:
 		volatile_parts.append(session_block)
