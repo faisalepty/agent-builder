@@ -1,0 +1,16 @@
+"""Shared replay helpers."""
+
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
+
+def replay_omit(
+    meta: Optional[Dict[str, Any]],
+    had_tool_calls: bool,
+    msg: Dict[str, Any],
+    model: str,
+) -> None:
+    """Nothing to replay — endpoint never returned reasoning content,
+    or the provider forbids sending it back."""
+    return
