@@ -46,6 +46,27 @@ Load the relevant skill before any non-trivial Frappe operation.
   names, or statuses when tools can verify them — use the tools.
 - No sycophancy. No filler. No unnecessary affirmations.
 
+# Personalization
+
+- The session context gives you the user's first name and a time-of-day
+  reading (morning/afternoon/evening/night). Use these naturally, the way a
+  competent colleague would — not mechanically.
+- On the first message of a session, or on a plain greeting ("hi", "morning",
+  "hey"), it's natural to greet back with the time-appropriate phrase and
+  their first name ("Morning, {first_name} — what are we looking at today?").
+  Don't do this on every subsequent turn; a person doesn't re-greet you mid-
+  conversation, and neither should you.
+- Address the user by first name when it reads naturally (confirming a
+  significant action, flagging something that needs their attention) — not
+  as a filler word bolted onto every sentence.
+- If asked directly who they are, answer with their resolved name — never
+  the raw session email — and offer role/company context only if relevant
+  to what they're asking.
+- Never force the time-of-day framing into unrelated answers (e.g. don't
+  open a GL reconciliation report with "Good afternoon" if the user didn't
+  greet you first) — read the room the way the Style section already asks
+  you to.
+
 # Defaults
 
 - Always verify before answering questions about live records, DocTypes,
@@ -83,7 +104,9 @@ Load the relevant skill before any non-trivial Frappe operation.
 - Never ask for clarification when the available tools can resolve the ambiguity
   directly.
 - Never produce long theoretical explanations when the user asked for an action.
-- Never repeat the same tool call with identical arguments if a tool returns results successfully.\
+- Never repeat the same tool call with identical arguments if a tool returns results successfully.
+- Never explain a trend, comparison, or breakdown in prose alone when a
+  ```chart block is warranted.\
 """
 
 TOOL_USE_ENFORCEMENT = (
@@ -118,11 +141,15 @@ fieldname, then retry once.\
 CHART_INSTRUCTIONS = """\
 # Charts
 
-When a chart would answer the question better than a table or prose (trends, \
-comparisons, distributions, proportions), emit a fenced ```chart block \
-containing ONLY valid JSON — no comments, no trailing commas, nothing before \
-or after the fence. The JSON is passed directly to frappe.Chart, so it must \
-match that constructor's options object:
+Emit a fenced ```chart block whenever the answer involves a trend, a \
+comparison across categories, a breakdown by dimension, or a proportion of \
+a whole. This is a default, not a suggestion — skip it only for a single \
+scalar, a single record's detail, or >12 categories/series. A table does \
+not substitute for a chart when one is warranted; use both if both help.
+
+The block must contain ONLY valid JSON — no comments, no trailing commas, \
+nothing before or after the fence. The JSON is passed directly to \
+frappe.Chart, so it must match that constructor's options object:
 
 ```chart
 {
@@ -165,8 +192,9 @@ def get_tool_registry() -> ToolRegistry:
 
 # =========================================================================
 # Session context — company / currency / fiscal year / installed apps /
-# roles. Must be computed fresh per request; never baked into the cached
-# stable system prompt, since it varies per user and per session.
+# roles / user identity. Must be computed fresh per request; never baked
+# into the cached stable system prompt, since it varies per user and per
+# session.
 # =========================================================================
 
 
@@ -175,6 +203,20 @@ def get_session_context() -> dict:
 	queries.
 
 	Notes on sourcing, from things that have bitten real ERPNext deployments:
+	- User identity: frappe.session.user is a login id (email), not a name
+	  a human would recognize themselves by — never surface it alone as
+	  "who the user is". Resolve the display name from the User doctype's
+	  full_name, falling back to first_name/last_name, then the email
+	  localpart, then the raw email if nothing else is populated (can
+	  happen for freshly-created or system accounts). A separate casual
+	  first name is resolved too, since "Good morning, Faiz Ahmed" reads
+	  stiffer than "Good morning, Faiz" — fall back to the first token of
+	  the display name if first_name isn't set.
+	- Time-of-day: compute the greeting period (morning/afternoon/evening/
+	  night) server-side from the resolved System Settings time_zone rather
+	  than handing the model a bare timestamp and expecting correct
+	  chronological reasoning about greeting conventions — that's a job for
+	  code, not inference.
 	- Company: frappe.defaults.get_user_default requires the capitalized key
 	  "Company" — the lowercase "company" silently returns the site-wide
 	  Global Defaults value instead of the user's actual default, which is a
@@ -194,6 +236,46 @@ def get_session_context() -> dict:
 	  before assuming a doctype exists.
 	"""
 	user = frappe.session.user
+
+	user_details = (
+		frappe.db.get_value(
+			"User", user, ["full_name", "first_name", "last_name"], as_dict=True
+		)
+		or {}
+	)
+	display_name = (
+		user_details.get("full_name")
+		or " ".join(
+			filter(None, [user_details.get("first_name"), user_details.get("last_name")])
+		)
+		or (user.split("@")[0] if user and "@" in user else user)
+		or user
+	)
+	first_name = (
+		user_details.get("first_name")
+		or display_name.split(" ")[0]
+	)
+
+	timezone = frappe.db.get_single_value("System Settings", "time_zone")
+	try:
+		local_now = (
+			frappe.utils.now_datetime().astimezone(frappe.utils.get_timezone(timezone))
+			if timezone
+			else datetime.now()
+		)
+	except Exception as e:
+		logger.warning("Could not resolve session timezone %r: %s", timezone, e)
+		local_now = datetime.now()
+
+	hour = local_now.hour
+	if 5 <= hour < 12:
+		time_of_day = "morning"
+	elif 12 <= hour < 17:
+		time_of_day = "afternoon"
+	elif 17 <= hour < 21:
+		time_of_day = "evening"
+	else:
+		time_of_day = "night"
 
 	company = frappe.defaults.get_user_default("Company")
 	if not company:
@@ -234,13 +316,16 @@ def get_session_context() -> dict:
 
 	return {
 		"user": user,
+		"user_display_name": display_name,
+		"user_first_name": first_name,
+		"time_of_day": time_of_day,
 		"roles": roles,
 		"default_company": company,
 		"permitted_companies": permitted_companies,
 		"currency": currency,
 		"fiscal_year": fiscal_year,
 		"installed_apps": installed_apps,
-		"timezone": frappe.db.get_single_value("System Settings", "time_zone"),
+		"timezone": timezone,
 		"date_format": frappe.db.get_single_value("System Settings", "date_format"),
 		"number_format": frappe.db.get_single_value("System Settings", "number_format"),
 	}
@@ -252,7 +337,11 @@ def format_session_context(ctx: dict) -> str:
 
 	role_list = ctx["roles"]
 	shown_roles = ", ".join(role_list[:6]) + ("..." if len(role_list) > 6 else "")
-	lines.append(f"Session user: {ctx['user']} (roles: {shown_roles})")
+	lines.append(
+		f"Session user: {ctx['user_display_name']} ({ctx['user']}), "
+		f"first name: {ctx['user_first_name']} — roles: {shown_roles}"
+	)
+	lines.append(f"Time of day for greeting purposes: {ctx['time_of_day']}")
 
 	if ctx["default_company"]:
 		companies = ctx["permitted_companies"]
@@ -347,9 +436,10 @@ def get_system_prompt(system_message: str | None = None) -> str:
 	NOTE: session context lives in `volatile` and is fetched fresh every
 	call to build_system_prompt_parts — but get_system_prompt itself caches
 	the *joined* result on first call. If per-session freshness is required
-	here (recommended, since company/roles/fiscal-year are user-specific),
-	callers should prefer build_system_prompt_parts() directly instead of
-	relying on this cached wrapper, or invalidate_prompt_cache() per session.
+	here (recommended, since company/roles/fiscal-year/user identity are
+	user-specific), callers should prefer build_system_prompt_parts()
+	directly instead of relying on this cached wrapper, or invalidate_prompt_cache()
+	per session.
 	"""
 	global _CACHED_SYSTEM_PROMPT
 	if _CACHED_SYSTEM_PROMPT is None:
