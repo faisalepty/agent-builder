@@ -147,6 +147,8 @@ a whole. This is a default, not a suggestion — skip it only for a single \
 scalar, a single record's detail, or >12 categories/series. A table does \
 not substitute for a chart when one is warranted; use both if both help.
 
+or if you generate a report and it can be visualised using a chart, you should generate a chart block for it.
+
 The block must contain ONLY valid JSON — no comments, no trailing commas, \
 nothing before or after the fence. The JSON is passed directly to \
 frappe.Chart, so it must match that constructor's options object:
