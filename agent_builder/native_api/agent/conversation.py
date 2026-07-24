@@ -77,6 +77,33 @@ def _gen_id() -> str:
 	return frappe.generate_hash(length=16)
 
 
+def _safe_tool_arguments(raw: str | None) -> str:
+	"""Guarantee the string we replay as tool_calls[].function.arguments is
+	valid JSON.
+
+	A malformed arguments string (bad JSON the model emitted, e.g. a stray
+	double comma) is caught and reported at execution time — the tool
+	executor returns a parse-error result and the turn completes normally.
+	But that raw broken string is what's persisted on the Agent Tool Call
+	row, and get_messages() replays it verbatim into every future request's
+	history. Some OpenRouter backends (observed: Novita) validate every
+	tool_call.function.arguments in the whole message array, not just the
+	newest one, and 400 the *entire* request the moment any historical call
+	has unparseable arguments — even though that call already failed
+	cleanly and is done.
+
+	Falling back to "{}" here only changes what gets replayed as history;
+	the tool-result row already on record (the "could not parse arguments"
+	error) is untouched, so nothing the user or model sees changes.
+	"""
+	raw = raw or "{}"
+	try:
+		json.loads(raw)
+		return raw
+	except (TypeError, ValueError):
+		return "{}"
+
+
 class Conversation:
 	def __init__(self, session_id=None, user=None):
 		self.user = user or frappe.session.user or "Guest"
@@ -219,7 +246,7 @@ class Conversation:
 							"type": "function",
 							"function": {
 								"name": tc.tool_name,
-								"arguments": tc.arguments or "{}",
+								"arguments": _safe_tool_arguments(tc.arguments),
 							},
 						}
 						for tc in tc_rows
@@ -429,7 +456,12 @@ class Conversation:
 		# Add tool call rows — with loop detection.
 		for tc in tool_calls:
 			fn = tc.get("function", {})
+			# Keep the raw string for loop-detection fingerprinting (below)
+			# and for whatever diagnostic value the exact malformed text
+			# has, but store a JSON-safe version on the row itself so
+			# get_messages() never has to repair it on every future read.
 			args_str = fn.get("arguments") or "{}"
+			stored_args_str = _safe_tool_arguments(args_str)
 
 			# Detect and short-circuit tool loops.
 			if self._detect_tool_loop(fn.get("name", ""), args_str):
@@ -447,7 +479,7 @@ class Conversation:
 						"call_id": tc.get("id") or _gen_id(),
 						"parent_message": msg_id,
 						"tool_name": fn.get("name", ""),
-						"arguments": args_str,
+						"arguments": stored_args_str,
 						"status": "error",
 						"error": (
 							"Error: Tool loop detected — the same tool was called "
@@ -469,7 +501,7 @@ class Conversation:
 					"call_id": tc.get("id") or _gen_id(),
 					"parent_message": msg_id,
 					"tool_name": fn.get("name", ""),
-					"arguments": args_str,
+					"arguments": stored_args_str,
 					"status": "pending",
 					"started_at": now_datetime(),
 				},
