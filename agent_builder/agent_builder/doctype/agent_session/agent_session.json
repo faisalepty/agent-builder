@@ -26,7 +26,14 @@
   "skill_content_hash",
   "user_feedback",
   "user_feedback_note",
-  "outcome"
+  "outcome",
+  "trigger_type",
+  "trigger_source",
+  "trigger_ref",
+  "agent_name",
+  "parent_session",
+  "delegated_skill",
+  "delegate_depth"
  ],
  "fields": [
   {
@@ -148,11 +155,59 @@
    "fieldtype": "Select",
    "label": "Outcome",
    "options": "\nSuccess\nPartial\nFailure\nUnclear"
+  },
+  {
+   "fieldname": "trigger_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Trigger Type",
+   "options": "Chat\nDocType Event\nScheduled\nWorkflow Step\nManual\nMCP\nWebhook\nDelegate"
+  },
+  {
+   "description": "e.g. 'Sales Order', 'daily-cron', parent session_id for delegates",
+   "fieldname": "trigger_source",
+   "fieldtype": "Data",
+   "label": "Trigger Source"
+  },
+  {
+   "description": "e.g. 'SO-0042', 'step-3', 'depth-1'",
+   "fieldname": "trigger_ref",
+   "fieldtype": "Data",
+   "label": "Trigger Ref"
+  },
+  {
+   "description": "Set when this session ran under a specific Agent Definition",
+   "fieldname": "agent_name",
+   "fieldtype": "Data",
+   "label": "Agent Definition"
+  },
+  {
+   "description": "Set only for delegate sub-runs \u2014 links back to the delegating session",
+   "fieldname": "parent_session",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Parent Session",
+   "options": "Agent session"
+  },
+  {
+   "description": "The Skill (is_agent=1) whose content was injected as this sub-run's instructions",
+   "fieldname": "delegated_skill",
+   "fieldtype": "Link",
+   "label": "Delegated As (Skill/Agent)",
+   "options": "Skill"
+  },
+  {
+   "default": "0",
+   "description": "0 = top-level session. Incremented each time a delegate spawns another delegate.",
+   "fieldname": "delegate_depth",
+   "fieldtype": "Int",
+   "label": "Delegate Depth"
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-07-13 12:53:27.732503",
+ "modified": "2026-07-25 08:38:06.269519",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Agent session",
