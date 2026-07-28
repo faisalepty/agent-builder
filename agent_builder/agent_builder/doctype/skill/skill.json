@@ -13,6 +13,7 @@
   "disable_model_invocation",
   "argument_hint",
   "column_break_1",
+  "is_agent",
   "parent_skill",
   "reference_slug",
   "domain",
@@ -111,7 +112,6 @@
    "in_list_view": 1,
    "label": "Name",
    "no_copy": 1,
-   "read_only": 1,
    "unique": 1
   },
   {
@@ -127,11 +127,17 @@
    "fieldname": "section_break_2",
    "fieldtype": "Section Break",
    "label": "Bundled Resources (optional)"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_agent",
+   "fieldtype": "Check",
+   "label": "Agent"
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-07-07 09:25:14.309357",
+ "modified": "2026-07-28 07:34:26.086334",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Skill",
