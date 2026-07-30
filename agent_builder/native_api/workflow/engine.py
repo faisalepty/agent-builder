@@ -1,27 +1,22 @@
 # agent_builder/native_api/workflow/engine.py
-"""Minimal workflow engine.
+"""Workflow engine.
 
-A workflow is a chain of steps stored as JSON on an `Agent Workflow` doc.
-There are exactly 3 step primitives:
+Step types: tool, branch, loop, note, trigger, workflow.
 
-  - tool:   dispatch a registered tool (this includes delegate_task —
-            delegate_task is NOT a special step type, it's just a tool
-            that happens to invoke a Skill marked is_agent=1)
-  - branch: deterministic jump based on the previous step's output
-  - loop:   deterministic repeat of a sub-sequence of step ids, based on
-            the previous step's output
+There is no dedicated "human_approval" step type — approval is just a
+regular Tool step calling the `human_approval` tool
+(tools/workflow_tools/human_approval.py). That tool returns a
+{"__workflow_pause__": True, ...} marker; _execute_tool_step below turns
+that into a WorkflowPaused exception, which the main loop catches to
+persist the run as Paused and hand control back to the caller — the same
+pause/resume mechanics as before, just triggered by tool output instead
+of a step-type branch. This keeps human_approval visible and usable
+anywhere a normal tool is (get_available_tools, an agent's own tool list,
+etc.) rather than being a workflow-only special case.
 
-Data flow is deliberately simple: each step sees only `output`, the raw
-result of the immediately preceding step (no accumulated context object).
-Steps reference it via "{{output.field.path}}" in string args; the same
-mechanism serves both "auto-pass whole output" (don't reference it, or
-reference "{{output}}" directly) and "explicit field mapping"
-("{{output.rows[0].id}}"-style dotted access).
-
-This engine intentionally shares NO infrastructure with the older
-Workflow/workflow_engine.py (Agent/HTTP/Condition/Transform/Frappe
-Action/Delay/Human Approval node system) — separate DocType, separate
-module, separate execution path.
+Every run is persisted as an "Agent Workflow Run" document from the
+moment it starts, enabling execution history, resume-after-pause, and an
+error_workflow payload on failure.
 """
 
 import asyncio
@@ -34,13 +29,36 @@ from simpleeval import EvalWithCompoundTypes
 from agent_builder.native_api.agent.setup import get_tool_registry
 from agent_builder.native_api.tools.executor import ToolExecutor
 
-REF = re.compile(r"\{\{output\.([\w.]+)\}\}")
+REF = re.compile(r"\{\{output(\.([\w.]+))?\}\}")
+
+# Sub-workflow ("workflow" step type) recursion guard. run_workflow is a
+# fresh asyncio.run() per call rather than one continuous task tree, so
+# depth is threaded explicitly through every recursive _run_workflow_async
+# call instead of relying on a contextvars.ContextVar the way Agent.run's
+# delegate_task does.
+MAX_WORKFLOW_DEPTH = 3
+
+
+class WorkflowPaused(Exception):
+	"""Raised when a tool's result carries the __workflow_pause__ marker
+	(currently only the human_approval tool does this). Caught by the
+	main loop in _run_workflow_async — never lets step-level retry or
+	continue_on_fail swallow it, since pausing isn't a failure.
+	"""
+
+	def __init__(self, info: dict):
+		self.info = info
+		super().__init__(info.get("message", "Workflow paused"))
 
 
 def resolve_refs(value, output):
-	"""Recursively substitute {{output.x.y}} references in strings/dicts/lists."""
 	if isinstance(value, str):
-		return REF.sub(lambda m: str(_dig(output, m.group(1))), value)
+		def repl(m):
+			path = m.group(2)
+			if not path:
+				return json.dumps(output, default=str)
+			return str(_dig(output, path))
+		return REF.sub(repl, value)
 	if isinstance(value, dict):
 		return {k: resolve_refs(v, output) for k, v in value.items()}
 	if isinstance(value, list):
@@ -51,92 +69,279 @@ def resolve_refs(value, output):
 def _dig(obj, path: str):
 	for part in path.split("."):
 		if isinstance(obj, dict):
-			obj = obj[part]
+			obj = obj.get(part)
 		elif isinstance(obj, list):
 			obj = obj[int(part)]
 		else:
-			obj = getattr(obj, part)
+			obj = getattr(obj, part, None)
 	return obj
 
 
 def _eval(expr: str, output) -> bool:
-	"""Restricted expression evaluation for branch/loop conditions.
-
-	Uses simpleeval rather than a stripped-builtins eval() — nulling
-	__builtins__ does NOT close off every code-execution gadget chain
-	(e.g. via __class__.__base__.__subclasses__()), whereas simpleeval
-	implements its own restricted grammar with no path to arbitrary code
-	execution at all. Matters because condition strings could plausibly
-	be authored by an LLM (via a future create_workflow-style tool), not
-	just typed by hand.
-	"""
 	evaluator = EvalWithCompoundTypes(names={"output": output})
 	return bool(evaluator.eval(expr))
 
 
-async def _execute_step(step: dict, output, executor: ToolExecutor):
-	if step["type"] != "tool":
-		raise ValueError(f"'{step['type']}' is a control-flow step, not directly executable")
-
+async def _execute_tool_step(step: dict, output, executor: ToolExecutor):
 	args = resolve_refs(step.get("args", {}), output)
 	raw = await executor._dispatch(step["tool"], json.dumps(args))
-	try:
-		return json.loads(raw)
-	except (json.JSONDecodeError, TypeError):
-		# Tool didn't return JSON (unexpected, but don't crash the workflow
-		# over it) — pass the raw string through as the next step's output.
-		return raw
+	parsed = json.loads(raw)
+
+	if isinstance(parsed, dict) and parsed.get("__workflow_pause__"):
+		raise WorkflowPaused(parsed)
+
+	if isinstance(parsed, dict) and parsed.get("error") and not step.get("continue_on_fail", False):
+		raise Exception(f"Tool '{step['tool']}' returned error: {parsed.get('error')}")
+	return parsed
 
 
-async def _run_workflow_async(workflow_name: str, initial_input: dict | None = None) -> dict:
+async def _execute_subworkflow_step(step: dict, output, depth: int):
+	"""Execute another Agent Workflow as a step — same depth-guard shape
+	as delegate_task's MAX_DELEGATE_DEPTH, just threaded as a plain
+	argument since run_workflow has no single running event loop to hang
+	a ContextVar off of across calls.
+	"""
+	if depth >= MAX_WORKFLOW_DEPTH:
+		return {
+			"error": f"Max sub-workflow depth ({MAX_WORKFLOW_DEPTH}) reached; "
+			"cannot call a workflow from within a workflow step at this depth.",
+			"error_type": "max_depth_exceeded",
+		}
+
+	sub_workflow_name = step.get("workflow_name")
+	if not sub_workflow_name:
+		raise ValueError(f"Step '{step['id']}' is type 'workflow' but has no workflow_name")
+
+	input_mapping = step.get("input_mapping", {})
+	sub_input = resolve_refs(input_mapping, output) if input_mapping else output
+
+	result = await _run_workflow_async(sub_workflow_name, sub_input, depth=depth + 1)
+	return result.get("final_output")
+
+
+async def _execute_step(step: dict, output, executor: ToolExecutor, depth: int = 0):
+	"""Execute a single 'tool' or 'workflow' step, with optional
+	step-level wait/retry layered on top of executor.py's own
+	tool-dispatch retry.
+
+	This retry is deliberately separate from executor.py's internal
+	_MAX_RETRIES: the executor retries transient exceptions inside a
+	single dispatch call, but treats a tool-returned {"error": ...}
+	payload as a valid, non-exception result. Step-level retry here
+	re-runs the whole step, which is what workflow authors actually mean
+	by "retry this step." WorkflowPaused is never retried or swallowed
+	by continue_on_fail — it always propagates immediately.
+	"""
+	if step["type"] not in ("tool", "workflow"):
+		raise ValueError(f"'{step['type']}' is a control-flow step, not directly executable via _execute_step")
+
+	wait_seconds = step.get("wait_seconds", 0)
+	if wait_seconds:
+		await asyncio.sleep(wait_seconds)
+
+	max_retries = int(step.get("max_retries", 0)) if step.get("retry_on_fail") else 0
+	wait_between_ms = int(step.get("wait_between_ms", 1000))
+
+	last_exc = None
+	for attempt in range(max_retries + 1):
+		try:
+			if step["type"] == "workflow":
+				return await _execute_subworkflow_step(step, output, depth)
+			return await _execute_tool_step(step, output, executor)
+		except WorkflowPaused:
+			raise
+		except Exception as e:
+			last_exc = e
+			if step.get("continue_on_fail", False):
+				return {"error": str(e), "failed_step": step["id"]}
+			if attempt < max_retries:
+				await asyncio.sleep(wait_between_ms / 1000)
+				continue
+			raise
+
+	raise last_exc  # pragma: no cover — loop above always returns or raises
+
+
+async def _run_workflow_async(
+	workflow_name: str,
+	initial_input: dict | None = None,
+	depth: int = 0,
+	resume_run: str | None = None,
+) -> dict:
+	"""Run a workflow, persisting it as an Agent Workflow Run throughout.
+
+	resume_run: name of an existing, Paused Agent Workflow Run to
+	continue from (used by resume_workflow() after a human_approval tool
+	call pauses a run). When given, initial_input is ignored — the run's
+	own resume_state carries the output to continue with.
+	"""
 	wf = frappe.get_doc("Agent Workflow", workflow_name)
 	if not wf.get("is_enabled", True):
 		raise frappe.ValidationError(f"Workflow '{workflow_name}' is disabled")
 
-	steps_list = frappe.parse_json(wf.steps)
+	steps_list = frappe.parse_json(wf.steps or "[]")
+	if not steps_list:
+		raise frappe.ValidationError(f"Workflow '{workflow_name}' has no steps.")
+
 	steps = {s["id"]: s for s in steps_list}
 	order = [s["id"] for s in steps_list]
 
 	executor = ToolExecutor(get_tool_registry())
-	output = initial_input or {}
-	log = []
 
-	idx = 0
-	while idx < len(order):
-		step = steps[order[idx]]
+	if resume_run:
+		run_doc = frappe.get_doc("Agent Workflow Run", resume_run)
+		state = frappe.parse_json(run_doc.resume_state or "{}")
+		output = state.get("output", initial_input or {})
+		log = frappe.parse_json(run_doc.log or "[]")
+		idx = state.get("idx", 0)
+	else:
+		run_doc = frappe.get_doc(
+			{
+				"doctype": "Agent Workflow Run",
+				"workflow": workflow_name,
+				"status": "Running",
+				"started_at": frappe.utils.now_datetime(),
+				"log": "[]",
+			}
+		)
+		run_doc.insert(ignore_permissions=True)
+		frappe.db.commit()
+		output = initial_input or {}
+		log = []
+		idx = 0
 
-		if step["type"] == "branch":
-			target = step["if_true"] if _eval(step["condition"], output) else step["if_false"]
-			log.append({"step": step["id"], "type": "branch", "took": target})
-			idx = order.index(target)
-			continue
+	try:
+		while idx < len(order):
+			step = steps[order[idx]]
 
-		if step["type"] == "loop":
-			iterations = 0
-			max_iter = step.get("max_iterations", 10)
-			while _eval(step["condition"], output) and iterations < max_iter:
-				for body_id in step["body"]:
-					output = await _execute_step(steps[body_id], output, executor)
-					log.append({"step": body_id, "type": steps[body_id]["type"], "output": output})
-				iterations += 1
-			log.append({"step": step["id"], "type": "loop", "iterations": iterations})
+			# Notes (canvas annotations) and triggers (declarative
+			# entry-point definitions) never execute.
+			if step["type"] in ("note", "trigger"):
+				idx += 1
+				continue
+
+			if step["type"] == "branch":
+				target = step["if_true"] if _eval(step["condition"], output) else step["if_false"]
+				if not target:
+					raise ValueError(f"Branch '{step['id']}' has no target for the evaluated condition.")
+				log.append({"step": step["id"], "type": "branch", "took": target})
+				idx = order.index(target)
+				continue
+
+			if step["type"] == "loop":
+				iterations = 0
+				max_iter = step.get("max_iterations", 10)
+				while _eval(step["condition"], output) and iterations < max_iter:
+					for body_id in step["body"]:
+						output = await _execute_step(steps[body_id], output, executor, depth=depth)
+						log.append(
+							{
+								"step": body_id,
+								"type": steps[body_id]["type"],
+								"tool": steps[body_id].get("tool"),
+								"output": output,
+							}
+						)
+					iterations += 1
+				log.append({"step": step["id"], "type": "loop", "iterations": iterations})
+				idx += 1
+				continue
+
+			try:
+				output = await _execute_step(step, output, executor, depth=depth)
+			except WorkflowPaused as p:
+				# A Tool step (almost always human_approval) asked to
+				# pause. Persist exactly enough state (next idx + current
+				# output) to continue via resume_workflow() later — this
+				# coroutine does not stay alive across the wait.
+				run_doc.status = "Paused"
+				run_doc.paused_step = step["id"]
+				run_doc.log = frappe.as_json(log)
+				run_doc.resume_state = frappe.as_json({"idx": idx + 1, "output": output})
+				run_doc.save(ignore_permissions=True)
+				frappe.db.commit()
+				return {
+					"final_output": output,
+					"log": log,
+					"status": "Paused",
+					"run_name": run_doc.name,
+					"paused_step": step["id"],
+					"message": p.info.get("message"),
+					"channel": p.info.get("channel"),
+				}
+
+			log.append({"step": step["id"], "type": step["type"], "tool": step.get("tool"), "output": output})
 			idx += 1
-			continue
 
-		output = await _execute_step(step, output, executor)
-		log.append({"step": step["id"], "type": step["type"], "tool": step.get("tool"), "output": output})
-		idx += 1
+		run_doc.status = "Success"
+		run_doc.finished_at = frappe.utils.now_datetime()
+		run_doc.log = frappe.as_json(log)
+		run_doc.final_output = frappe.as_json(output, default=str)
+		run_doc.save(ignore_permissions=True)
+		frappe.db.commit()
 
-	return {"final_output": output, "log": log}
+		return {"final_output": output, "log": log, "status": "Success", "run_name": run_doc.name}
+
+	except Exception as e:
+		run_doc.status = "Failed"
+		run_doc.finished_at = frappe.utils.now_datetime()
+		run_doc.log = frappe.as_json(log)
+		run_doc.error = str(e)
+		run_doc.save(ignore_permissions=True)
+		frappe.db.commit()
+
+		error_workflow = wf.get("error_workflow")
+		if error_workflow and error_workflow != workflow_name:
+			try:
+				frappe.enqueue(
+					method="agent_builder.native_api.workflow.engine.run_workflow",
+					queue="short",
+					timeout=300,
+					workflow_name=error_workflow,
+					initial_input={
+						"failed_workflow": workflow_name,
+						"failed_run": run_doc.name,
+						"error": str(e),
+						"log": log,
+					},
+				)
+			except Exception:
+				frappe.log_error(title="Error Workflow Dispatch Failed", message=frappe.get_traceback())
+
+		raise
 
 
-def run_workflow(workflow_name: str, initial_input: dict | None = None) -> dict:
-	"""Synchronous entry point — mirrors runner.py's asyncio.run(...) wrapping
-	pattern for consistency across the codebase.
+def run_workflow(workflow_name: str, initial_input: dict | None = None, depth: int = 0) -> dict:
+	return asyncio.run(_run_workflow_async(workflow_name, initial_input, depth=depth))
 
-	No session/depth seeding needed here: delegate_task now derives depth
-	by looking up its parent Agent Session's own delegate_depth in the DB
-	(defaulting to 0 when there's no parent, which is exactly the
-	top-level-workflow case), rather than reading any in-memory context.
+
+def resume_workflow(run_name: str, decision: str, edited_output: dict | None = None) -> dict:
+	"""Resume a run paused by a human_approval tool call.
+
+	decision: "approve" continues the run from where it paused.
+	"reject" ends it as Failed — the same terminal state any other
+	workflow failure reaches.
+
+	edited_output: optional replacement for `output` before the run
+	continues.
 	"""
-	return asyncio.run(_run_workflow_async(workflow_name, initial_input))
+	run_doc = frappe.get_doc("Agent Workflow Run", run_name)
+	if run_doc.status != "Paused":
+		raise frappe.ValidationError(f"Run '{run_name}' is not paused (status: {run_doc.status})")
+
+	if decision == "reject":
+		run_doc.status = "Failed"
+		run_doc.finished_at = frappe.utils.now_datetime()
+		run_doc.error = "Rejected at human approval step"
+		run_doc.save(ignore_permissions=True)
+		frappe.db.commit()
+		return {"status": "Failed", "run_name": run_name}
+
+	if edited_output is not None:
+		state = frappe.parse_json(run_doc.resume_state or "{}")
+		state["output"] = edited_output
+		run_doc.resume_state = frappe.as_json(state)
+		run_doc.save(ignore_permissions=True)
+		frappe.db.commit()
+
+	return asyncio.run(_run_workflow_async(run_doc.workflow, resume_run=run_name))
