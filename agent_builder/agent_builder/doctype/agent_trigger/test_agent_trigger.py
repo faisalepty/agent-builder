@@ -11,9 +11,9 @@ EXTRA_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
-class IntegrationTestAgentsession(IntegrationTestCase):
+class IntegrationTestAgentTrigger(IntegrationTestCase):
 	"""
-	Integration tests for Agentsession.
+	Integration tests for AgentTrigger.
 	Use this class for testing interactions between multiple components.
 	"""
 

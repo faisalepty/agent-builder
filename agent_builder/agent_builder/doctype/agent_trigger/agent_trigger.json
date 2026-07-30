@@ -1,0 +1,158 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "autoname": "field:trigger_name",
+ "creation": "2026-07-15 12:01:40.193130",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "trigger_name",
+  "is_enabled",
+  "agent_name",
+  "run_as_user",
+  "column_break_1",
+  "trigger_type",
+  "doctype_name",
+  "doctype_event",
+  "cron_expression",
+  "webhook_token",
+  "section_break_1",
+  "input_template",
+  "condition",
+  "workflow_name"
+ ],
+ "fields": [
+  {
+   "fieldname": "trigger_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Trigger Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Is Enabled"
+  },
+  {
+   "description": "Fires this Agent. Set this OR Workflow (not required to set both, but at least one is required \u2014 enforced in agent_trigger.py's validate()).",
+   "fieldname": "agent_name",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Agent to Run",
+   "options": "Skill"
+  },
+  {
+   "default": "Administrator",
+   "description": "The Frappe user this trigger's runs execute (and are permission-scoped) as. Use a dedicated service user for anything beyond low-stakes read-only agents.",
+   "fieldname": "run_as_user",
+   "fieldtype": "Link",
+   "label": "Run As User",
+   "options": "User"
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "trigger_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Trigger Type",
+   "options": "DocType Event\nScheduled\nWebhook\nMCP",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.trigger_type=='DocType Event'",
+   "fieldname": "doctype_name",
+   "fieldtype": "Link",
+   "label": "DocType",
+   "options": "DocType"
+  },
+  {
+   "depends_on": "eval:doc.trigger_type=='DocType Event'",
+   "fieldname": "doctype_event",
+   "fieldtype": "Select",
+   "label": "Event",
+   "options": "after_insert\non_update\non_submit\non_cancel\non_trash"
+  },
+  {
+   "depends_on": "eval:doc.trigger_type=='Scheduled'",
+   "description": "Standard cron expression, e.g. '0 * * * *' for hourly.",
+   "fieldname": "cron_expression",
+   "fieldtype": "Data",
+   "label": "Cron Expression"
+  },
+  {
+   "depends_on": "eval:doc.trigger_type=='Webhook'",
+   "description": "Generated secret required in the webhook call's payload to authorize it.",
+   "fieldname": "webhook_token",
+   "fieldtype": "Data",
+   "label": "Webhook Token",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_1",
+   "fieldtype": "Section Break",
+   "label": "Run Configuration"
+  },
+  {
+   "description": "Jinja template rendered with the trigger's context (e.g. {{ doc.name }}, {{ doc.customer }} for a DocType Event) to build the message the agent receives as its first user turn, or the initial_input a workflow receives.",
+   "fieldname": "input_template",
+   "fieldtype": "Code",
+   "label": "Input Template",
+   "options": "Jinja",
+   "reqd": 1
+  },
+  {
+   "description": "Optional Jinja/Python-expression guard evaluated against the same context before firing \u2014 e.g. 'doc.status == \"Overdue\"'. Leave blank to always fire.",
+   "fieldname": "condition",
+   "fieldtype": "Code",
+   "label": "Condition (optional)"
+  },
+  {
+   "description": "Fires this Workflow instead of (or alongside) an Agent. When set, the rendered input_template/context is passed as the workflow's initial_input.",
+   "fieldname": "workflow_name",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Workflow to Run",
+   "options": "Agent Workflow"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-30 14:50:01.602117",
+ "modified_by": "Administrator",
+ "module": "Agent Builder",
+ "name": "Agent Trigger",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "trigger_name"
+}

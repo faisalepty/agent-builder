@@ -2,6 +2,7 @@
  "actions": [],
  "allow_bulk_edit": 1,
  "allow_rename": 1,
+ "autoname": "field:workflow_name",
  "creation": "2026-07-25 10:53:18.640480",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -10,7 +11,8 @@
   "workflow_name",
   "description",
   "is_enabled",
-  "steps"
+  "steps",
+  "error_workflow"
  ],
  "fields": [
   {
@@ -36,18 +38,26 @@
    "label": "Is Enabled"
   },
   {
-   "description": "Array of step objects. Each step is one of: {\"type\": \"tool\", \"id\", \"tool\", \"args\"} | {\"type\": \"branch\", \"id\", \"condition\", \"if_true\", \"if_false\"} | {\"type\": \"loop\", \"id\", \"condition\", \"body\": [step_id, ...], \"max_iterations\"}. String values inside \"args\"/\"task\" may reference the previous step's output via {{output.field.path}}.",
+   "description": "Array of step objects. Each step is one of: {\"type\": \"tool\", \"id\", \"tool\", \"args\", \"continue_on_fail\", \"retry_on_fail\", \"max_retries\", \"wait_between_ms\", \"wait_seconds\"} | {\"type\": \"branch\", \"id\", \"condition\", \"if_true\", \"if_false\"} | {\"type\": \"loop\", \"id\", \"condition\", \"body\": [step_id, ...], \"max_iterations\"} | {\"type\": \"note\", \"id\", \"description\"} | {\"type\": \"trigger\", \"id\", \"trigger_kind\": \"manual\"|\"schedule\"|\"webhook\"|\"doctype_event\"} (declarative only, never executed; must be the first step to be enforced by trigger.py) | {\"type\": \"workflow\", \"id\", \"workflow_name\", \"input_mapping\", \"continue_on_fail\", \"retry_on_fail\", \"max_retries\", \"wait_between_ms\", \"wait_seconds\"} (calls another Agent Workflow, depth-limited) | {\"type\": \"human_approval\", \"id\", \"message\"} (pauses the run; resume via resume_workflow). String values inside \"args\"/\"input_mapping\" may reference the previous step's output via {{output.field.path}}.",
    "fieldname": "steps",
    "fieldtype": "Code",
    "label": "Steps (JSON)",
    "options": "JSON",
    "reqd": 1
+  },
+  {
+   "description": "Optional. If this workflow fails, this workflow is enqueued with {failed_workflow, failed_run, error, log} as its initial input. Leave blank to fail silently (Agent Workflow Run record still gets marked Failed either way).",
+   "fieldname": "error_workflow",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Error Workflow",
+   "options": "Agent Workflow"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-25 10:53:18.640480",
+ "modified": "2026-07-29 14:46:55.987917",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Agent Workflow",

@@ -1,0 +1,129 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "creation": "2026-07-29 14:52:15.519313",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "workflow",
+  "status",
+  "trigger_source",
+  "column_break_1",
+  "started_at",
+  "finished_at",
+  "paused_step",
+  "section_break_1",
+  "final_output",
+  "error",
+  "section_break_2",
+  "log",
+  "resume_state"
+ ],
+ "fields": [
+  {
+   "fieldname": "workflow",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Workflow",
+   "options": "Agent Workflow",
+   "reqd": 1
+  },
+  {
+   "default": "Running",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Running\nSuccess\nFailed\nPaused",
+   "reqd": 1
+  },
+  {
+   "fieldname": "trigger_source",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Trigger Source"
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Started At"
+  },
+  {
+   "fieldname": "finished_at",
+   "fieldtype": "Datetime",
+   "label": "Finished At"
+  },
+  {
+   "fieldname": "paused_step",
+   "fieldtype": "Data",
+   "label": "Paused At Step"
+  },
+  {
+   "fieldname": "section_break_1",
+   "fieldtype": "Section Break",
+   "label": "Result"
+  },
+  {
+   "fieldname": "final_output",
+   "fieldtype": "Long Text",
+   "label": "Final Output"
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Long Text",
+   "label": "Error"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_2",
+   "fieldtype": "Section Break",
+   "label": "Internals"
+  },
+  {
+   "fieldname": "log",
+   "fieldtype": "Long Text",
+   "label": "Step Log"
+  },
+  {
+   "fieldname": "resume_state",
+   "fieldtype": "Long Text",
+   "label": "Resume State"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-29 14:52:15.519313",
+ "modified_by": "Administrator",
+ "module": "Agent Builder",
+ "name": "Agent Workflow Run",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

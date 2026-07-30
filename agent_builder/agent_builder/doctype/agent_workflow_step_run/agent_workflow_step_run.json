@@ -1,0 +1,86 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "creation": "2026-07-15 12:38:08.597071",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+"field_order": [
+   "step_name",
+   "step_type",
+   "agent_name",
+   "session",
+   "status",
+   "output",
+   "error"
+ ],
+ "fields": [
+{
+    "fieldname": "step_name",
+    "fieldtype": "Data",
+    "in_list_view": 1,
+    "label": "Step Name",
+    "read_only": 1
+   },
+   {
+    "depends_on": "eval:doc.step_type=='Agent'",
+    "fieldname": "agent_name",
+    "fieldtype": "Link",
+    "in_list_view": 1,
+    "label": "Agent",
+    "options": "Agent Definition",
+    "read_only": 1
+   },
+   {
+    "description": "The Agent session this step\u2019s closed-loop run produced \u2014 full message/tool-call ledger lives there.",
+    "fieldname": "session",
+    "fieldtype": "Link",
+    "label": "Session",
+    "options": "Agent session",
+    "read_only": 1
+   },
+   {
+    "fieldname": "step_type",
+    "fieldtype": "Data",
+    "label": "Step Type",
+    "read_only": 1
+   },
+  {
+   "default": "pending",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "pending\nrunning\nsuccess\nerror",
+   "read_only": 1
+  },
+  {
+   "fieldname": "output",
+   "fieldtype": "Long Text",
+   "label": "Output",
+   "read_only": 1
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Long Text",
+   "label": "Error",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-15 12:38:08.597071",
+ "modified_by": "Administrator",
+ "module": "Agent Builder",
+ "name": "Agent Workflow Step Run",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
