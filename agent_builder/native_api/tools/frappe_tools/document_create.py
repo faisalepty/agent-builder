@@ -6,6 +6,24 @@ import frappe
 
 from agent_builder.native_api.tools.decorator import tool
 
+# Fields an LLM-constructed payload should never be able to set directly —
+# these bypass normal document lifecycle/permission semantics if set via
+# doc.set() instead of Frappe's own controllers (docstatus decides
+# submitted/cancelled state outside doc.submit(); owner/creation/modified*
+# are bookkeeping Frappe sets itself; workflow_state should only move via
+# an actual workflow transition, not a raw field write; amended_from wires
+# up amendment lineage that should only ever come from doc.amend()).
+_BLOCKED_FIELDS = {
+	"owner",
+	"docstatus",
+	"amended_from",
+	"workflow_state",
+	"creation",
+	"modified",
+	"modified_by",
+	"idx",
+}
+
 
 @tool(schema_name="frappe_create_doc")
 def frappe_create_doc(args: dict, **kwargs) -> str:
@@ -28,6 +46,8 @@ def frappe_create_doc(args: dict, **kwargs) -> str:
 			}
 		)
 
+	blocked_requested = [f for f in data if f in _BLOCKED_FIELDS]
+
 	try:
 		doc = frappe.get_doc({"doctype": doctype})
 		doc.check_permission("create")
@@ -39,6 +59,8 @@ def frappe_create_doc(args: dict, **kwargs) -> str:
 		# Set field values, handling child tables explicitly
 		for field, value in data.items():
 			if field == "doctype":
+				continue
+			if field in _BLOCKED_FIELDS:
 				continue
 			if field in table_fields:
 				if not isinstance(value, list):
@@ -111,6 +133,9 @@ def frappe_create_doc(args: dict, **kwargs) -> str:
 			"status": "created",
 			"submitted": False,
 		}
+
+		if blocked_requested:
+			result["ignored_fields"] = blocked_requested
 
 		if submit and doc.docstatus == 0:
 			try:

@@ -3,15 +3,15 @@ import json
 
 import frappe
 
-from agent_builder.native_api.agent.agent import current_session_id
-from agent_builder.native_api.agent.runner import SessionProvenance, run_headless_agent
+from agent_builder.native_api.agent.agent import current_delegate_depth, current_session_id
+from agent_builder.native_api.agent.runner import SessionProvenance, run_headless_agent_async
 from agent_builder.native_api.tools.decorator import tool
 
 MAX_DELEGATE_DEPTH = 2
 
 
 @tool(schema_name="delegate_task")
-def delegate_task(args: dict, **kwargs) -> str:
+async def delegate_task(args: dict, **kwargs) -> str:
 	"""Delegate a self-contained sub-task to a named agent (a Skill with
 	is_agent=1), running it as a fresh, isolated agent loop. Only the final
 	answer crosses back to the caller.
@@ -21,18 +21,25 @@ def delegate_task(args: dict, **kwargs) -> str:
 	    reuses the caller's session_id, which is what keeps the sub-run's
 	    tool_start/tool_result/token events off the parent's realtime
 	    channel (no cross-tab bleed, no UI noise in chat).
-	  - Always uses the non-streaming runner path (run_headless_agent).
-	    Delegates are headless; nothing about their intermediate turns
-	    reaches on_token/on_reasoning callbacks.
-	  - Depth-limited via frappe.local.delegate_depth, which Agent.run()
-	    seeds to 0 and this tool increments for the duration of the
-	    sub-run, then restores. This works identically whether the caller
-	    is the interactive agent loop or the workflow engine, since both
-	    set frappe.local.current_session_id / delegate_depth the same way.
+	  - Async, and awaits run_headless_agent_async directly rather than
+	    the sync run_headless_agent wrapper — this tool always runs from
+	    inside an already-running event loop (dispatched mid Agent.run()),
+	    and the sync wrapper's asyncio.run() would raise "cannot be called
+	    from a running event loop" if called from here.
+	  - Depth-limited via the current_delegate_depth ContextVar, which is
+	    correct the instant it's set (unlike a DB read of the parent
+	    session's own delegate_depth field, which only gets written by
+	    the *next* level down after a run finishes — always one run
+	    behind whoever's actually asking mid-run). Same propagation
+	    mechanism as current_session_id: sets once per delegate_task call,
+	    inherited by whatever the child run itself spawns.
 	  - This tool is itself just a registered tool like any other — it is
 	    NOT a special step type in the workflow engine. A workflow step
 	    that calls "delegate_task" is dispatched through the exact same
 	    ToolExecutor._dispatch path as frappe_get_list, create_skill, etc.
+	    A workflow-triggered delegate_task has no ambient current_session_id
+	    (engine.py never sets it), so depth for a workflow-originated chain
+	    correctly starts at 0 from wherever the workflow first delegates.
 	  - Cost/telemetry still roll up as a real Agent Session row
 	    (trigger_type="Delegate", trigger_source=parent session id,
 	    parent_session/delegated_skill/delegate_depth stamped after the
@@ -65,16 +72,7 @@ def delegate_task(args: dict, **kwargs) -> str:
 	# and doesn't depend on OS thread/greenlet identity the way
 	# frappe.local does (that dependency is what broke chat under RQ).
 	parent_session_id = current_session_id.get()
-
-	# Depth is read from the PARENT session's own stamped delegate_depth —
-	# not from any in-memory context — because a delegate's sub-run starts
-	# a brand new asyncio.run() call stack in runner.py, which is outside
-	# this ContextVar's scope. Looking it up from the persisted Agent
-	# Session row is slightly more DB I/O but is correct regardless of
-	# which event loop / worker / task the call happens on.
-	depth = 0
-	if parent_session_id and frappe.db.exists("Agent session", parent_session_id):
-		depth = frappe.db.get_value("Agent session", parent_session_id, "delegate_depth") or 0
+	depth = current_delegate_depth.get()
 
 	if depth >= MAX_DELEGATE_DEPTH:
 		return json.dumps(
@@ -91,8 +89,9 @@ def delegate_task(args: dict, **kwargs) -> str:
 		trigger_ref=f"depth-{depth + 1}",
 	)
 
+	token = current_delegate_depth.set(depth + 1)
 	try:
-		result = run_headless_agent(
+		result = await run_headless_agent_async(
 			agent_name=None,  # not an Agent Definition — instructions come from the skill instead
 			input_message=task,
 			provenance=provenance,
@@ -102,10 +101,14 @@ def delegate_task(args: dict, **kwargs) -> str:
 	except Exception as e:
 		frappe.log_error(title="Delegate Task Error", message=f"agent={agent_skill_name!r} task={task!r}: {e!s}")
 		return json.dumps({"error": str(e)})
+	finally:
+		current_delegate_depth.reset(token)
 
 	# Stamp lineage fields the runner doesn't know about — parent_session,
 	# delegated_skill, delegate_depth aren't part of SessionProvenance since
-	# they're delegate-specific, not general trigger metadata.
+	# they're delegate-specific, not general trigger metadata. Purely
+	# informational bookkeeping now — actual depth enforcement above no
+	# longer depends on this having landed yet.
 	frappe.db.set_value(
 		"Agent session",
 		result.session_id,
