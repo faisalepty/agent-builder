@@ -1,6 +1,6 @@
 model:
-  default: gpt-4o
-  provider: openai-api
+  default: nvidia/nemotron-3-ultra-550b-a55b
+  provider: nvidia
 plugins:
   disabled: []
   enabled:

@@ -1,0 +1,23 @@
+{
+ "app": "agent_builder",
+ "bg_color": "gray",
+ "creation": "2026-06-19 09:30:44.312756",
+ "docstatus": 0,
+ "doctype": "Desktop Icon",
+ "hidden": 0,
+ "icon": "brain",
+ "icon_image": "/assets/agent_builder/images/azania.jpeg",
+ "icon_type": "App",
+ "idx": 0,
+ "label": "Azania",
+ "link_to": "Azania",
+ "link_type": "Workspace Sidebar",
+ "modified": "2026-07-30 12:22:00.000000",
+ "modified_by": "Administrator",
+ "name": "Azania",
+ "owner": "Administrator",
+ "restrict_removal": 0,
+ "roles": [],
+ "sidebar": "Azania",
+ "standard": 1
+}

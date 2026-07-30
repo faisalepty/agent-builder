@@ -44,7 +44,7 @@ FRAPPE_GET_LIST = {
             "fields": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Fields to return e.g. [\"name\", \"status\", \"grand_total\"]. Defaults to [\"name\"].",
+                "description": "Fields to return e.g. [\"name\", \"status\", \"grand_total\"]. Defaults to [\"name\"]. Use [\"*\"] to fetch all fields.",
             },
             "limit": {
                 "type": "integer",
@@ -161,5 +161,43 @@ FRAPPE_EXECUTE_REPORT = {
             },
         },
         "required": ["report_name"],
+    },
+}
+
+FRAPPE_GET_META = {
+    "name": "frappe_get_meta",
+    "description": (
+        "Fetch the metadata (schema) for a given DocType. "
+        "Use this to understand what fields, fieldtypes, and child tables are available "
+        "before querying or inserting data. This prevents guessing field names."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "doctype": {
+                "type": "string",
+                "description": "The DocType name e.g. 'Item', 'Sales Order'",
+            },
+        },
+        "required": ["doctype"],
+    },
+}
+
+FRAPPE_RUN_SQL = {
+    "name": "frappe_run_sql",
+    "description": (
+        "Execute a read-only SQL query against the MariaDB database. "
+        "Use this for complex aggregations, joins, or when you need data across multiple tables. "
+        "Only SELECT statements are allowed. Table names must be prefixed with 'tab' e.g. 'tabItem'."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "The SELECT SQL query to execute",
+            },
+        },
+        "required": ["query"],
     },
 }

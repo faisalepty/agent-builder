@@ -46,6 +46,18 @@ def register(ctx):
         schema=schemas.FRAPPE_EXECUTE_REPORT,
         handler=tools.frappe_execute_report,
     )
+    ctx.register_tool(
+        name="frappe_get_meta",
+        toolset="frappe_tools",
+        schema=schemas.FRAPPE_GET_META,
+        handler=tools.frappe_get_meta,
+    )
+    ctx.register_tool(
+        name="frappe_run_sql",
+        toolset="frappe_tools",
+        schema=schemas.FRAPPE_RUN_SQL,
+        handler=tools.frappe_run_sql,
+    )
 
     # Bundle the skill
     # skills_dir = Path(__file__).parent / "skills"

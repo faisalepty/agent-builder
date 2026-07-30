@@ -214,6 +214,7 @@
 }
 .ab-hbtn:hover { background: var(--control-bg); color: var(--text-color); }
 .ab-hbtn svg { width: 18px; height: 18px; }
+.ab-new-chat-text-btn { width: auto; padding: 0 12px; font-size: 13px; font-weight: 500; gap: 6px; }
 
 /* ── Views Setup ──────────────────────────────────────────────── */
 #ab-views { flex: 1; overflow: hidden; position: relative; display: flex; }

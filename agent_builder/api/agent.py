@@ -56,13 +56,15 @@ def setup_environment():
         else:
             config = {}
 
-        config["model"] = {
+        new_model_config = {
             "provider": hermes_provider,
             "default":  effective_model,
         }
 
-        with open(config_path, "w") as f:
-            _yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
+        if config.get("model") != new_model_config:
+            config["model"] = new_model_config
+            with open(config_path, "w") as f:
+                _yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
             
         # Synchronize agent name into SOUL.md
         agent_name = agent_setup.get("agent_name") or "Omnis"
@@ -432,7 +434,7 @@ def process_agent_chat(message, chat_id, attachments, user):
             quiet_mode=False,
             platform="frappe",
             ephemeral_system_prompt=skills_prompt,
-            enabled_toolsets=["frappe_tools","clarify","delegation", "skills", "memory", "todo", "search", "session-search"],
+            enabled_toolsets=["frappe_tools", "skills"],
             stream_delta_callback=on_token,
             tool_start_callback=on_tool_start,
             tool_complete_callback=on_tool_done,

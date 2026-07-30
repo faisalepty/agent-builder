@@ -107,7 +107,7 @@ $(document).ready(function () {
                         <span id="ab-status-text">Online</span>
                     </div>
                 </div>
-                <button id="ab-new-chat" class="ab-hbtn" title="New Chat">${ICONS.newchat}</button>
+                <button id="ab-new-chat" class="ab-hbtn ab-new-chat-text-btn" title="New Chat">New Chat ${ICONS.newchat}</button>
                 <button id="ab-expand"   class="ab-hbtn" title="Expand">${ICONS.expand}</button>
                 <button id="ab-close"    class="ab-hbtn" title="Close">${ICONS.close}</button>
             </div>

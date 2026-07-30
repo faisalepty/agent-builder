@@ -325,3 +325,45 @@ def frappe_execute_report(args: dict, **kwargs) -> str:
                 return json.dumps({"error": error_msg, "ref_doctype": ref_doctype})
                 
         return json.dumps({"error": error_msg})
+
+def frappe_get_meta(args: dict, **kwargs) -> str:
+    try:
+        doctype = args.get("doctype")
+        if not doctype:
+            return json.dumps({"error": "doctype is required"})
+            
+        meta = frappe.get_meta(doctype)
+        fields = [
+            {
+                "fieldname": df.fieldname,
+                "fieldtype": df.fieldtype,
+                "label": df.label,
+                "options": df.options
+            }
+            for df in meta.fields
+        ]
+        return json.dumps({"doctype": meta.name, "fields": fields})
+    except frappe.DoesNotExistError:
+        return json.dumps({"error": f"DocType '{doctype}' does not exist"})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+def frappe_run_sql(args: dict, **kwargs) -> str:
+    try:
+        query = args.get("query", "").strip()
+        if not query:
+            return json.dumps({"error": "query is required"})
+            
+        # Strict safeguard: only allow SELECT queries
+        if not query.lower().startswith("select"):
+            return json.dumps({"error": "Only SELECT queries are allowed."})
+            
+        result = frappe.db.sql(query, as_dict=True)
+        
+        # Truncate if too large to fit in context window
+        if isinstance(result, list) and len(result) > 50:
+            result = result[:50] + [{"_omitted": f"... [{len(result) - 50} rows omitted] ..."}]
+            
+        return json.dumps(result, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)})

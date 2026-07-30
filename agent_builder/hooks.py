@@ -1,8 +1,8 @@
 app_name = "agent_builder"
 app_title = "Agent Builder"
-app_publisher = "Faisal Imali"
+app_publisher = "Solidad Kimeu"
 app_description = "Frappe/ErpNext Co-pilot"
-app_email = "faisalimali1@gmail.com"
+app_email = "solidadkimeu@gmail.com"
 app_license = "mit"
 
 # Apps
