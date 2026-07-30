@@ -1,5 +1,6 @@
 # agent_builder/native_api/trigger.py
-"""Runs Agent Triggers: 'when X happens, run agent Y'.
+"""Runs Agent Triggers: 'when X happens, run agent Y' (or workflow Y, if
+the trigger's workflow_name is set instead of/alongside agent_name).
 
 Deliberately thin. It builds a Conversation exactly like verify.py's chat
 path does, stamps trigger provenance onto the session, renders the
@@ -7,6 +8,10 @@ trigger's input_template into the first user message, then calls the same
 Agent.run() closed loop — no streaming callbacks, since nothing is watching
 live. Everything downstream (checkpointing, cost tracking, tool_calls,
 ended_reason) is identical to a chat session for free.
+
+Workflow-targeted triggers skip all of that and go straight to
+workflow.engine.run_workflow with the raw context as initial_input — see
+fire_trigger below.
 """
 
 import logging
@@ -26,16 +31,33 @@ logger = logging.getLogger(__name__)
 
 @frappe.whitelist()
 def fire_trigger(trigger_name: str, context: dict):
-	"""Enqueue a headless agent run for the given Agent Trigger.
+	"""Enqueue a headless agent (or workflow) run for the given Agent Trigger.
 
 	context: whatever data the trigger needs to render input_template /
 	evaluate condition — e.g. {"doc": doc.as_dict()} for a DocType Event.
+
+	If workflow_name is set, this fires the workflow directly with
+	`context` as its initial_input — no agent involved, no input_template
+	rendering (a workflow's Trigger step is declarative-only and doesn't
+	consume input_template the way an agent's first user turn does).
+	agent_name is unused in that case even if also set; a trigger with
+	both fields set fires the workflow, not the agent.
 	"""
 	trigger = frappe.get_cached_doc("Agent Trigger", trigger_name)
 	if not trigger.is_enabled:
 		return
 
 	if trigger.condition and not _evaluate_condition(trigger.condition, context):
+		return
+
+	if trigger.get("workflow_name"):
+		frappe.enqueue(
+			method="agent_builder.native_api.workflow.engine.run_workflow",
+			queue="short",
+			timeout=300,
+			workflow_name=trigger.workflow_name,
+			initial_input=context,
+		)
 		return
 
 	frappe.enqueue(

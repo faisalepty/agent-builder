@@ -152,6 +152,14 @@ def run_headless_agent(
 	Creates a Conversation, stamps provenance, runs the agent loop,
 	returns the final response and session metadata.
 
+	NOTE: wraps the loop in asyncio.run() and therefore must only be
+	called from *synchronous* code with no event loop already running
+	(e.g. a background job's top-level function, like trigger.py's
+	run_triggered_agent). Calling it from inside an already-running loop
+	(e.g. a tool executed mid Agent.run(), such as delegate_task) raises
+	"asyncio.run() cannot be called from a running event loop" — use
+	run_headless_agent_async for that case instead.
+
 	Args:
 	    agent_name: Name of Agent Definition record.
 	    input_message: First user message (already rendered from template).
@@ -173,6 +181,33 @@ def run_headless_agent(
 		conversation.add_system_message(skill_injection)
 	conversation.add_user_message(input_message)
 	return run_agent_conversation(conversation, agent_name=agent_name, stream_callbacks=False)
+
+
+async def run_headless_agent_async(
+	agent_name: str,
+	input_message: str,
+	provenance: SessionProvenance,
+	user: str = "Administrator",
+	session_id: str | None = None,
+	skill_injection: str | None = None,
+) -> RunResult:
+	"""Same as run_headless_agent, but awaited directly instead of wrapping
+	in asyncio.run() — safe to call from code already running inside an
+	event loop, i.e. a tool dispatched mid Agent.run() (delegate_task).
+	This is the version delegate_task must use; the sync version would
+	nest asyncio.run() inside the parent's already-running loop and crash.
+	"""
+	conversation = create_conversation(
+		user=user,
+		session_id=session_id,
+		agent_name=agent_name,
+		provenance=provenance,
+	)
+	if skill_injection:
+		conversation.add_system_message(skill_injection)
+	conversation.add_user_message(input_message)
+	agent = Agent(agent_name=agent_name)
+	return await _run_agent_loop(conversation, agent, stream_callbacks=False)
 
 
 def run_headless_agent_streaming(

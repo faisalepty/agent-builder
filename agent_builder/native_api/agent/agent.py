@@ -34,6 +34,20 @@ current_session_id: contextvars.ContextVar[str] = contextvars.ContextVar(
 	"current_session_id", default=""
 )
 
+# Same propagation mechanism as current_session_id, for the same reason.
+# delegate_task previously re-read delegate_depth from the DB, but a
+# session's delegate_depth row is only stamped *after* that session's run
+# finishes (by whoever delegated to it) — so while a session is still
+# running and itself calls delegate_task, its own row always reads the
+# pre-run default. Every session in a chain saw depth=0 for itself, so
+# MAX_DELEGATE_DEPTH was never actually enforced. A ContextVar set right
+# before awaiting a child run (in delegate_task) is correct immediately,
+# with no DB lag, and — like current_session_id — is copied into any
+# child task the coroutine spawns.
+current_delegate_depth: contextvars.ContextVar[int] = contextvars.ContextVar(
+	"current_delegate_depth", default=0
+)
+
 
 class MaxTurnsError(Exception):
 	pass
