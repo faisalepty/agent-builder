@@ -1,0 +1,23 @@
+{
+ "content": null,
+ "creation": "2026-07-28 09:04:20.004833",
+ "docstatus": 0,
+ "doctype": "Page",
+ "idx": 0,
+ "modified": "2026-07-28 09:04:20.004833",
+ "modified_by": "Administrator",
+ "module": "Agent Builder",
+ "name": "workflow-builder-1",
+ "owner": "Administrator",
+ "page_name": "workflow-builder-1",
+ "roles": [
+  {
+   "role": "Omnis User"
+  }
+ ],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Workflow Builder"
+}

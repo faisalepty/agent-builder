@@ -1,5 +1,6 @@
 # agent_builder/native_api/agent/agent.py
 import asyncio
+import contextvars
 import json
 import logging
 import random
@@ -21,6 +22,31 @@ from agent_builder.native_api.providers.openai_api import OpenAIProvider
 from agent_builder.native_api.tools.executor import ToolExecutor
 
 logger = logging.getLogger(__name__)
+
+# Task-scoped (not thread-scoped) session id, readable by any tool running
+# within this async call stack — including tools launched via
+# asyncio.gather, which copy the context at task-creation time. Unlike
+# frappe.local (keyed by OS thread/greenlet identity, which RQ/gevent
+# workers can reuse or tear down out of step with the async call stack),
+# ContextVar is the correct primitive for this and fails safe: a tool
+# reading it outside any run() call just gets the default.
+current_session_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+	"current_session_id", default=""
+)
+
+# Same propagation mechanism as current_session_id, for the same reason.
+# delegate_task previously re-read delegate_depth from the DB, but a
+# session's delegate_depth row is only stamped *after* that session's run
+# finishes (by whoever delegated to it) — so while a session is still
+# running and itself calls delegate_task, its own row always reads the
+# pre-run default. Every session in a chain saw depth=0 for itself, so
+# MAX_DELEGATE_DEPTH was never actually enforced. A ContextVar set right
+# before awaiting a child run (in delegate_task) is correct immediately,
+# with no DB lag, and — like current_session_id — is copied into any
+# child task the coroutine spawns.
+current_delegate_depth: contextvars.ContextVar[int] = contextvars.ContextVar(
+	"current_delegate_depth", default=0
+)
 
 
 class MaxTurnsError(Exception):
@@ -95,6 +121,12 @@ class Agent:
 		# stop request queued against it yet, so it's always safe to clear
 		# here before the loop starts.
 		conversation.clear_stop_flag(conversation.session_id)
+
+		# Set once per run — copied automatically into any child task this
+		# coroutine spawns (e.g. the tool-call tasks in
+		# _execute_tool_calls_parallel's asyncio.gather), so delegate_task
+		# can read it no matter which parallel branch it's called from.
+		current_session_id.set(conversation.session_id)
 
 		last_fp: tuple[str, str] | None = None
 		loop_strikes = 0
