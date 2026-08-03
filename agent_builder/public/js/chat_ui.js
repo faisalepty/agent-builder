@@ -6,7 +6,7 @@
  */
  $(document).ready(function () {
 
-     if (!frappe.user.has_role('Omnis User')) {
+     if (!frappe.user.has_role('Co-pilot User')) {
         return;
     }
 

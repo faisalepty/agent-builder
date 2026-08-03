@@ -7,9 +7,9 @@
   "home_page": null,
   "is_custom": 0,
   "modified": "2026-07-08 07:37:12.885882",
-  "name": "Omnis User",
+  "name": "Co-pilot User",
   "restrict_to_domain": null,
-  "role_name": "Omnis User",
+  "role_name": "Co-pilot User",
   "two_factor_auth": 0
  }
 ]

@@ -1,0 +1,24 @@
+{
+ "app": "agent_builder",
+ "bg_color": "gray",
+ "creation": "2026-08-03 10:27:05.254473",
+ "docstatus": 0,
+ "doctype": "Desktop Icon",
+ "hidden": 0,
+ "icon_type": "Link",
+ "idx": 0,
+ "label": "Aps Copilot",
+ "link_to": "APS Copilot",
+ "link_type": "Workspace Sidebar",
+ "modified": "2026-08-03 10:28:01.451235",
+ "modified_by": "Administrator",
+ "name": "Aps Copilot",
+ "owner": "Administrator",
+ "restrict_removal": 0,
+ "roles": [
+  {
+   "role": "Co-pilot User"
+  }
+ ],
+ "standard": 1
+}

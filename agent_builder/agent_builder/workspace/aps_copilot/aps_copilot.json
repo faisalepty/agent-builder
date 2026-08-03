@@ -1,0 +1,38 @@
+{
+ "app": "agent_builder",
+ "charts": [],
+ "content": "[{\"id\":\"NSxbQxgC4k\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">APS Copilot</span>\",\"col\":12}},{\"id\":\"6Fk5O5Jv09\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Copilot Setup\",\"col\":3}}]",
+ "creation": "2026-07-22 14:12:13.595659",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "hide_custom": 0,
+ "icon": "comment",
+ "idx": 0,
+ "indicator_color": "green",
+ "is_hidden": 0,
+ "label": "APS Copilot",
+ "link_type": "DocType",
+ "links": [],
+ "modified": "2026-07-22 14:21:33.093998",
+ "modified_by": "Administrator",
+ "module": "Agent Builder",
+ "name": "APS Copilot",
+ "number_cards": [],
+ "owner": "Administrator",
+ "public": 1,
+ "quick_lists": [],
+ "roles": [],
+ "sequence_id": 0.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Copilot Setup",
+   "link_to": "Agent Setup",
+   "type": "DocType"
+  }
+ ],
+ "title": "APS Copilot",
+ "type": "Workspace"
+}

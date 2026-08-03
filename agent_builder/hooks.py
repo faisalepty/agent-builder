@@ -143,23 +143,14 @@ app_license = "mit"
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"agent_builder.tasks.all"
-# 	],
-# 	"daily": [
-# 		"agent_builder.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"agent_builder.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"agent_builder.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"agent_builder.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+	"hourly": [
+		"agent_builder.tasks.analyze_pending_anomalies",
+	],
+	"daily": [
+		"agent_builder.tasks.promote_ready_drafts",
+	],
+}
 
 # Testing
 # -------
@@ -237,13 +228,22 @@ app_license = "mit"
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
-fixtures = [
-     {"dt": "Role", "filters": [["name", "=", "Omnis User"]]}
-]
+fixtures = [{"dt": "Role", "filters": [["name", "=", "Co-pilot User"]]}]
 app_include_js = [
-    "/assets/agent_builder/js/chat_list.js",
-    "/assets/agent_builder/js/chat_messages.js",
-    "/assets/agent_builder/js/chat_realtime.js",
-    "/assets/agent_builder/js/chat_ui.js",
+	"/assets/agent_builder/js/chat_list.js",
+	"/assets/agent_builder/js/chat_messages.js",
+	"/assets/agent_builder/js/chat_realtime.js",
+	"/assets/agent_builder/js/chat_ui.js",
 ]
 app_include_css = ["/assets/agent_builder/css/Chat_Ui.css"]
+
+doc_events = {
+    "*": {
+        "after_insert": "agent_builder.native_api.trigger.handle_doctype_event",
+        "on_update": "agent_builder.native_api.trigger.handle_doctype_event",
+        "on_submit": "agent_builder.native_api.trigger.handle_doctype_event",
+        "on_cancel": "agent_builder.native_api.trigger.handle_doctype_event",
+        "on_trash": "agent_builder.native_api.trigger.handle_doctype_event",
+    }
+}
+
