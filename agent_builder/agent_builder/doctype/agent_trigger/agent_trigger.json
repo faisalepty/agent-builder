@@ -11,6 +11,7 @@
   "trigger_name",
   "is_enabled",
   "agent_name",
+  "workflow_name",
   "run_as_user",
   "column_break_1",
   "trigger_type",
@@ -18,10 +19,10 @@
   "doctype_event",
   "cron_expression",
   "webhook_token",
+  "last_triggered_at",
   "section_break_1",
   "input_template",
-  "condition",
-  "workflow_name"
+  "condition"
  ],
  "fields": [
   {
@@ -104,12 +105,11 @@
    "label": "Run Configuration"
   },
   {
-   "description": "Jinja template rendered with the trigger's context (e.g. {{ doc.name }}, {{ doc.customer }} for a DocType Event) to build the message the agent receives as its first user turn, or the initial_input a workflow receives.",
+   "description": "Jinja template rendered with the trigger's context (e.g. {{ doc.name }}, {{ doc.customer }} for a DocType Event). For an Agent-targeted trigger this becomes the agent's first message (required). For a Workflow-targeted trigger, leave this BLANK to pass the whole context \u2014 including the full 'doc' \u2014 straight through as the workflow's initial_input, unchanged; only fill this in if you want to reshape it, in which case it's rendered as Jinja then parsed as JSON (e.g. '{\"customer\": \"{{ doc.customer }}\"}').",
    "fieldname": "input_template",
    "fieldtype": "Code",
    "label": "Input Template",
-   "options": "Jinja",
-   "reqd": 1
+   "options": "Jinja"
   },
   {
    "description": "Optional Jinja/Python-expression guard evaluated against the same context before firing \u2014 e.g. 'doc.status == \"Overdue\"'. Leave blank to always fire.",
@@ -124,12 +124,20 @@
    "in_list_view": 1,
    "label": "Workflow to Run",
    "options": "Agent Workflow"
+  },
+  {
+   "depends_on": "eval:doc.trigger_type=='Scheduled'",
+   "description": "Set automatically by run_due_scheduled_triggers() \u2014 used to dedupe cron fires, not user-editable.",
+   "fieldname": "last_triggered_at",
+   "fieldtype": "Datetime",
+   "label": "Last Triggered At",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-30 14:50:01.602117",
+ "modified": "2026-07-31 08:53:44.494750",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Agent Trigger",

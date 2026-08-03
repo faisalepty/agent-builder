@@ -18,9 +18,6 @@ const DRAWFLOW_JS = 'https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflo
 const DRAWFLOW_CSS = 'https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.css';
 const MODULE_PATH = 'agent_builder.agent_builder.page.agent_builder.agent_builder';
 
-// Control-flow step types (everything that ISN'T 'tool'). 'tool' steps
-// get their look from TOOL_VISUALS below instead of a flat per-type color
-// — that's the actual "different nodes look different" part.
 const STEP_TYPE_LABEL = { branch: 'Branch', loop: 'Loop', note: 'Note', trigger: 'Trigger', workflow: 'Sub-workflow' };
 const STEP_VISUAL = {
     branch: { icon: 'fa-code-fork', color: '#805ad5' },
@@ -29,10 +26,6 @@ const STEP_VISUAL = {
     workflow: { icon: 'fa-sitemap', color: '#319795' },
 };
 
-// Per-tool icon/color, keyed by exact name or prefix. This is the n8n
-// "every node looks like its service" idea, scoped to the tools you
-// actually have. Falls through to DEFAULT_TOOL_VISUAL for anything
-// unlisted, so new tools never render broken — just generic.
 const TOOL_VISUALS = {
     frappe_get_list: { icon: 'fa-list', color: '#3182ce' },
     frappe_get_doc: { icon: 'fa-file-text-o', color: '#3182ce' },
@@ -45,6 +38,10 @@ const TOOL_VISUALS = {
 };
 const DEFAULT_TOOL_VISUAL = { icon: 'fa-wrench', color: '#4c51bf' };
 
+// Matches strings containing Jinja syntax like {{ output }} or {{ doc.field }}
+// Uses [\s\S] instead of the s flag for older JS engine compatibility.
+const jinjaRegex = /\{\{[\s\S]*?\}\}/;
+
 function toolVisual(toolName) {
     if (!toolName) return DEFAULT_TOOL_VISUAL;
     if (TOOL_VISUALS[toolName]) return TOOL_VISUALS[toolName];
@@ -56,15 +53,25 @@ function esc(s) {
     return frappe.utils.escape_html(s == null ? '' : String(s));
 }
 
+function humanizeToolName(name) {
+    if (!name) return '';
+    const stripped = name.replace(/^frappe_/, '');
+    return stripped.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
 function summarizeArgs(args) {
-    if (!args || typeof args !== 'object') return 'No arguments set';
+    if (!args) return 'No arguments set';
+    if (typeof args === 'string') {
+        const trimmed = args.replace(/\s+/g, ' ').trim();
+        if (!trimmed) return 'No arguments set';
+        return trimmed.length > 30 ? trimmed.slice(0, 30) + '…' : trimmed;
+    }
+    if (typeof args !== 'object') return 'No arguments set';
     const entries = Object.entries(args).filter(([, v]) => v !== '' && v != null && !(Array.isArray(v) && !v.length));
     if (!entries.length) return 'No arguments set';
     return entries.slice(0, 2).map(([k, v]) => `${k}: ${String(v).slice(0, 28)}`).join('  ·  ');
 }
 
-// Step types that participate in automatic sequential chaining when the
-// user doesn't manually wire a connection (branch/loop wire explicitly).
 const CHAINABLE_TYPES = ['tool', 'workflow', 'trigger'];
 
 class WorkflowBuilder {
@@ -233,9 +240,6 @@ class WorkflowBuilder {
         const schemasRes = await schemasCall;
         const namesRes = await namesCall;
 
-        // 'trigger' is a synthetic, non-tool-step entry in this list
-        // (see agent_builder.py) — exclude it from the Tool step's own
-        // picker since Trigger is already its own toolbar button/step type.
         this.tools = (toolsRes.message || []).filter((t) => t !== 'trigger');
         this.toolSchemas = {};
         (schemasRes.message || []).forEach((s) => { this.toolSchemas[s.name] = s; });
@@ -297,8 +301,6 @@ class WorkflowBuilder {
         return steps.some((s) => s.if_true === stepId || s.if_false === stepId || (s.body || []).includes(stepId));
     }
 
-    // ── Node rendering ──
-
     stepTitle(step) {
         if (step.type === 'tool') return step.tool || 'Select a tool';
         return STEP_TYPE_LABEL[step.type] || step.type;
@@ -307,7 +309,7 @@ class WorkflowBuilder {
     stepSubtitle(step) {
         if (step.type === 'tool') return step.tool ? summarizeArgs(step.args) : 'No tool selected';
         if (step.type === 'workflow') return step.workflow_name || 'No workflow selected';
-        if (step.type === 'trigger') return step.trigger_kind || 'doctype_event';
+        if (step.type === 'trigger') return step.trigger_type || 'DocType Event';
         return step.condition || 'No condition set';
     }
 
@@ -375,7 +377,7 @@ class WorkflowBuilder {
         if (type === 'branch') Object.assign(step, { condition: 'output.status == "ok"', if_true: '', if_false: '' });
         if (type === 'loop') Object.assign(step, { condition: 'output.remaining > 0', body: [], max_iterations: 10 });
         if (type === 'note') Object.assign(step, { description: 'New Note' });
-        if (type === 'trigger') Object.assign(step, { trigger_kind: 'doctype_event' });
+        if (type === 'trigger') Object.assign(step, { trigger_type: 'DocType Event', is_enabled: true, run_as_user: 'Administrator' });
         if (type === 'workflow') Object.assign(step, { workflow_name: '', input_mapping: {}, continue_on_fail: false });
 
         const inputs = (type === 'note' || type === 'trigger') ? 0 : 1;
@@ -387,6 +389,7 @@ class WorkflowBuilder {
     }
 
     selectNode(nodeId) {
+        this.selectedNodeId = nodeId;
         if (nodeId == null) {
             this.renderSidebarEmpty();
             return;
@@ -450,10 +453,6 @@ class WorkflowBuilder {
     }
 
     groupToolsForSelect() {
-        // Mirrors n8n's node-panel categories, scoped to what actually
-        // exists here: AI (agent delegation), Approval (human_approval
-        // needs its own bucket — it's neither AI nor a plain CRUD tool),
-        // Core (everything else, mostly the frappe_* tools).
         const groups = { AI: [], Approval: [], Core: [] };
         this.tools.forEach((t) => {
             if (t === 'delegate_task') groups.AI.push(t);
@@ -463,32 +462,89 @@ class WorkflowBuilder {
         return groups;
     }
 
-    renderToolEditor($panel, step, node) {
+    renderToolPicker($panel, step, node) {
         const groups = this.groupToolsForSelect();
-        const optgroupsHtml = Object.entries(groups)
-            .filter(([, tools]) => tools.length)
-            .map(([label, tools]) => {
-                const opts = tools.map((t) => `<option value="${t}" ${t === step.tool ? 'selected' : ''}>${t}</option>`).join('');
-                return `<optgroup label="${label}">${opts}</optgroup>`;
-            })
-            .join('');
-        $panel.append(`
+        const current = step.tool ? toolVisual(step.tool) : null;
+
+        const $wrap = $(`
             <div class="wb-field">
                 <label>Tool</label>
-                <select class="form-control wb-tool-select"><option value="">Choose a tool…</option>${optgroupsHtml}</select>
+                <div class="wb-combo">
+                    <button type="button" class="wb-combo-trigger">
+                        ${step.tool
+                            ? `<span class="wb-combo-icon" style="background:${current.color}"><i class="fa ${current.icon}"></i></span><span class="wb-combo-label">${esc(humanizeToolName(step.tool))}</span>`
+                            : `<span class="wb-combo-placeholder">Choose a tool…</span>`}
+                        <i class="fa fa-caret-down wb-combo-caret"></i>
+                    </button>
+                    <div class="wb-combo-menu">
+                        <input type="text" class="form-control wb-combo-search" placeholder="Search tools…" />
+                        <div class="wb-combo-list"></div>
+                    </div>
+                </div>
             </div>
         `);
+        $panel.append($wrap);
 
-        $panel.find('.wb-tool-select').on('change', (e) => {
-            step.tool = e.target.value;
-            const schema = this.toolSchemas && this.toolSchemas[step.tool];
-            step.args = this.generateDefaultArgs(schema);
-            this.updateNodeLabel(node, step);
-            this.renderSidebar(node);
-            this.markDirty();
+        const $menu = $wrap.find('.wb-combo-menu');
+        const $list = $wrap.find('.wb-combo-list');
+        const $search = $wrap.find('.wb-combo-search');
+        const $trigger = $wrap.find('.wb-combo-trigger');
+
+        const renderList = (filterText) => {
+            $list.empty();
+            const ft = (filterText || '').toLowerCase();
+            let anyMatch = false;
+            Object.entries(groups).forEach(([label, tools]) => {
+                const filtered = tools.filter((t) => t.toLowerCase().includes(ft) || humanizeToolName(t).toLowerCase().includes(ft));
+                if (!filtered.length) return;
+                anyMatch = true;
+                $list.append(`<div class="wb-combo-group-label">${label}</div>`);
+                filtered.forEach((t) => {
+                    const v = toolVisual(t);
+                    const $item = $(`
+                        <div class="wb-combo-item ${t === step.tool ? 'wb-combo-item-active' : ''}" data-tool="${t}">
+                            <span class="wb-combo-icon" style="background:${v.color}"><i class="fa ${v.icon}"></i></span>
+                            <div class="wb-combo-item-text">
+                                <div class="wb-combo-item-title">${esc(humanizeToolName(t))}</div>
+                                <div class="wb-combo-item-sub">${esc(t)}</div>
+                            </div>
+                        </div>
+                    `);
+                    $item.on('click', () => {
+                        step.tool = t;
+                        const schema = this.toolSchemas && this.toolSchemas[step.tool];
+                        step.args = this.generateDefaultArgs(schema);
+                        step.args_invalid = null; // Reset invalid state on tool change
+                        this.updateNodeLabel(node, step);
+                        this.renderSidebar(node);
+                        this.markDirty();
+                    });
+                    $list.append($item);
+                });
+            });
+            if (!anyMatch) $list.append(`<div class="wb-combo-empty">No tools match "${esc(filterText)}".</div>`);
+        };
+
+        $trigger.on('click', (e) => {
+            e.stopPropagation();
+            const opening = !$menu.hasClass('wb-combo-open');
+            $('.wb-combo-menu').removeClass('wb-combo-open');
+            if (opening) {
+                $menu.addClass('wb-combo-open');
+                renderList('');
+                $search.val('').focus();
+            }
         });
+        $search.on('input', (e) => renderList(e.target.value));
+        $search.on('click', (e) => e.stopPropagation());
+        $menu.on('click', (e) => e.stopPropagation());
 
-        // Known tools get a purpose-built editor instead of raw JSON args.
+        $(document).off('click.wbCombo').on('click.wbCombo', () => $('.wb-combo-menu').removeClass('wb-combo-open'));
+    }
+
+    renderToolEditor($panel, step, node) {
+        this.renderToolPicker($panel, step, node);
+
         if (step.tool === 'delegate_task') {
             this.renderDelegateFields($panel, step, node);
         } else if (step.tool === 'human_approval') {
@@ -520,12 +576,18 @@ class WorkflowBuilder {
         const schema = this.toolSchemas && this.toolSchemas[step.tool];
         const paramHint = schema ? schema.description : 'No schema loaded.';
 
+        const argsText = step.args_invalid 
+            ? step.args_invalid 
+            : (typeof step.args === 'string' ? step.args : JSON.stringify(step.args || {}, null, 2));
+        const hasInvalid = !!step.args_invalid;
+
         $panel.append(`
             <div class="wb-field">
-                <label>Args <span class="wb-hint-inline">supports {{output.field}}</span></label>
+                <label>Args <span class="wb-hint-inline">supports {{output.field}} and {{output}}</span></label>
                 <div class="wb-hint wb-hint-ok">${esc(paramHint)}</div>
-                <textarea class="form-control wb-args wb-code" rows="8">${esc(JSON.stringify(step.args || {}, null, 2))}</textarea>
-                <div class="wb-hint wb-hint-ok">Must be valid JSON.</div>
+                <textarea class="form-control wb-args wb-code ${hasInvalid ? 'wb-json-error' : ''}" rows="8">${esc(argsText)}</textarea>
+                <div class="wb-json-error-msg" style="display:${hasInvalid ? 'block' : 'none'};">Invalid JSON — fix the syntax or ensure Jinja braces are balanced.</div>
+                <div class="wb-hint wb-hint-ok">Must be valid JSON or a Jinja template. Use {{output.field}} to inject a field, or {{output}} to pass the entire previous output.</div>
             </div>
             <div class="wb-field">
                 <button class="btn btn-xs btn-default wb-test-step">
@@ -536,13 +598,33 @@ class WorkflowBuilder {
         `);
 
         $panel.find('.wb-args').on('input', (e) => {
+            const val = e.target.value;
             try {
-                step.args = JSON.parse(e.target.value);
+                step.args = JSON.parse(val);
+                step.args_invalid = null; // Clear invalid state
                 this.editor.updateNodeDataFromId(node.id, { step });
                 this.updateNodeLabel(node, step);
                 this.markDirty();
+                
+                $panel.find('.wb-args').removeClass('wb-json-error');
+                $panel.find('.wb-json-error-msg').hide();
             } catch (err) {
-                // invalid json — leave step.args as last-valid until fixed
+                if (jinjaRegex.test(val)) {
+                    step.args = val; 
+                    step.args_invalid = null;
+                    this.editor.updateNodeDataFromId(node.id, { step });
+                    this.updateNodeLabel(node, step);
+                    this.markDirty();
+                    
+                    $panel.find('.wb-args').removeClass('wb-json-error');
+                    $panel.find('.wb-json-error-msg').hide();
+                } else {
+                    step.args_invalid = val;
+                    this.editor.updateNodeDataFromId(node.id, { step });
+                    
+                    $panel.find('.wb-args').addClass('wb-json-error');
+                    $panel.find('.wb-json-error-msg').show();
+                }
             }
         });
 
@@ -573,8 +655,9 @@ class WorkflowBuilder {
                 <div class="wb-hint">Skills marked is_agent=1. Depth-limited to 2 levels of nested delegation.</div>
             </div>
             <div class="wb-field">
-                <label>Task <span class="wb-hint-inline">supports {{output.field}}</span></label>
+                <label>Task <span class="wb-hint-inline">supports {{output.field}} and {{output}}</span></label>
                 <textarea class="form-control wb-delegate-task-text" rows="5">${esc(step.args.task || '')}</textarea>
+                <div class="wb-hint">Use {{output.field}} to inject a specific field, or {{output}} to include the entire previous step's output in the task description.</div>
             </div>
         `);
         $panel.find('.wb-delegate-agent').on('change', (e) => {
@@ -684,200 +767,119 @@ class WorkflowBuilder {
         });
     }
 
-    async renderTriggerEditor($panel, step, node) {
-        // step.agent_trigger holds the linked Agent Trigger's docname
-        // once saved. Until then, the node is an unlinked placeholder —
-        // it must be linked (existing or newly created) before the
-        // workflow can actually be fired by anything.
-        const $mount = $('<div class="wb-trigger-editor"></div>').appendTo($panel);
-        $mount.html('<div class="wb-hint">Loading triggers…</div>');
-
-        let existing = [];
-        try {
-            const res = await frappe.call(`${MODULE_PATH}.get_workflow_triggers`, { workflow_name: this.workflowName });
-            existing = res.message || [];
-        } catch (err) {
-            existing = [];
-        }
-
-        if (step.agent_trigger) {
-            await this.renderTriggerFormMode($mount, step, node, existing);
-        } else {
-            this.renderTriggerPickMode($mount, step, node, existing);
-        }
-    }
-
-    renderTriggerPickMode($mount, step, node, existing) {
-        const options = existing
-            .map((t) => `<option value="${t.name}">${esc(t.trigger_name)} (${t.trigger_type})</option>`)
-            .join('');
-        $mount.html(`
-            <div class="wb-field">
-                <label>Agent Trigger</label>
-                <select class="form-control wb-trigger-pick">
-                    <option value="">+ Create new…</option>
-                    ${options}
-                </select>
-                <div class="wb-hint">Not yet saved to Save the workflow — this node needs a linked Agent Trigger before anything can actually fire it.</div>
-            </div>
-        `);
-        $mount.find('.wb-trigger-pick').on('change', async (e) => {
-            const val = e.target.value;
-            if (!val) {
-                await this.renderTriggerFormMode($mount, step, node, existing);
-                return;
-            }
-            step.agent_trigger = val;
-            const detail = await frappe.call(`${MODULE_PATH}.get_trigger`, { trigger_name: val });
-            step.trigger_kind = this.triggerTypeToKind(detail.message.trigger_type);
-            this.editor.updateNodeDataFromId(node.id, { step });
-            this.updateNodeLabel(node, step);
-            this.markDirty();
-            await this.renderTriggerFormMode($mount, step, node, existing, detail.message);
-        });
-    }
-
-    triggerTypeToKind(triggerType) {
-        return { 'DocType Event': 'doctype_event', Scheduled: 'schedule', Webhook: 'webhook', MCP: 'mcp' }[triggerType] || 'doctype_event';
-    }
-
-    kindToTriggerType(kind) {
-        return { doctype_event: 'DocType Event', schedule: 'Scheduled', webhook: 'Webhook', mcp: 'MCP' }[kind] || 'DocType Event';
-    }
-
-    async renderTriggerFormMode($mount, step, node, existing, detail) {
-        const isNew = !step.agent_trigger;
-        const t = detail || {
-            trigger_name: '',
-            is_enabled: 1,
-            trigger_type: 'DocType Event',
-            doctype_name: '',
-            doctype_event: 'after_insert',
-            cron_expression: '',
-            webhook_token: '',
-            run_as_user: 'Administrator',
-            input_template: '',
-            condition: '',
-        };
+    renderTriggerEditor($panel, step, node) {
+        step.trigger_type = step.trigger_type || 'DocType Event';
+        step.run_as_user = step.run_as_user || 'Administrator';
+        if (step.is_enabled === undefined) step.is_enabled = true;
 
         const typeOptions = ['DocType Event', 'Scheduled', 'Webhook', 'MCP']
-            .map((v) => `<option value="${v}" ${v === t.trigger_type ? 'selected' : ''}>${v}</option>`)
+            .map((v) => `<option value="${v}" ${v === step.trigger_type ? 'selected' : ''}>${v}</option>`)
             .join('');
         const eventOptions = ['after_insert', 'on_update', 'on_submit', 'on_cancel', 'on_trash']
-            .map((v) => `<option value="${v}" ${v === t.doctype_event ? 'selected' : ''}>${v}</option>`)
+            .map((v) => `<option value="${v}" ${v === step.doctype_event ? 'selected' : ''}>${v}</option>`)
             .join('');
+        const doctypeListId = `wb-doctype-list-${step.id}`;
 
-        $mount.html(`
-            ${!isNew ? '<button class="btn btn-xs btn-default wb-trigger-unlink" style="margin-bottom:10px;"><i class="fa fa-chain-broken"></i> Pick a different trigger</button>' : ''}
+        $panel.append(`
             <div class="wb-field">
-                <label>Trigger Name</label>
-                <input class="form-control wb-t-name" value="${esc(t.trigger_name)}" ${isNew ? '' : 'disabled'} placeholder="e.g. new-lead-followup" />
-            </div>
-            <div class="wb-field">
-                <div class="checkbox"><label><input type="checkbox" class="wb-t-enabled" ${t.is_enabled ? 'checked' : ''}> Enabled</label></div>
+                <div class="checkbox"><label><input type="checkbox" class="wb-t-enabled" ${step.is_enabled ? 'checked' : ''}> Enabled</label></div>
             </div>
             <div class="wb-field">
                 <label>Trigger Type</label>
                 <select class="form-control wb-t-type">${typeOptions}</select>
             </div>
-            <div class="wb-t-doctype-fields" style="${t.trigger_type === 'DocType Event' ? '' : 'display:none;'}">
+            <div class="wb-t-doctype-fields" style="${step.trigger_type === 'DocType Event' ? '' : 'display:none;'}">
                 <div class="wb-field">
                     <label>DocType</label>
-                    <input class="form-control wb-t-doctype" value="${esc(t.doctype_name || '')}" placeholder="Start typing a DocType name…" list="wb-doctype-list" />
-                    <datalist id="wb-doctype-list"></datalist>
+                    <input class="form-control wb-t-doctype" value="${esc(step.doctype_name || '')}" placeholder="Start typing a DocType name…" list="${doctypeListId}" />
+                    <datalist id="${doctypeListId}"></datalist>
                 </div>
                 <div class="wb-field">
                     <label>Event</label>
                     <select class="form-control wb-t-event">${eventOptions}</select>
                 </div>
             </div>
-            <div class="wb-t-cron-fields" style="${t.trigger_type === 'Scheduled' ? '' : 'display:none;'}">
+            <div class="wb-t-cron-fields" style="${step.trigger_type === 'Scheduled' ? '' : 'display:none;'}">
                 <div class="wb-field">
                     <label>Cron Expression</label>
-                    <input class="form-control wb-t-cron wb-code" value="${esc(t.cron_expression || '')}" placeholder="0 * * * *" />
+                    <input class="form-control wb-t-cron wb-code" value="${esc(step.cron_expression || '')}" placeholder="0 * * * *" />
                 </div>
             </div>
-            <div class="wb-t-webhook-fields" style="${t.trigger_type === 'Webhook' ? '' : 'display:none;'}">
+            <div class="wb-t-webhook-fields" style="${step.trigger_type === 'Webhook' ? '' : 'display:none;'}">
                 <div class="wb-field">
                     <label>Webhook Token</label>
-                    <input class="form-control wb-code" value="${esc(t.webhook_token || 'generated on save')}" readonly />
-                    <div class="wb-hint">Required in the webhook call's payload to authorize it.</div>
+                    <input class="form-control wb-code" value="${esc(step.webhook_token || 'generated the first time you Save')}" readonly />
+                    <div class="wb-hint">Required in the webhook call's payload to authorize it. Filled in automatically after Save.</div>
                 </div>
             </div>
             <div class="wb-field">
                 <label>Run As User</label>
-                <input class="form-control wb-t-user" value="${esc(t.run_as_user || 'Administrator')}" />
+                <input class="form-control wb-t-user" value="${esc(step.run_as_user)}" />
             </div>
             <div class="wb-field">
-                <label>Input Template <span class="wb-hint-inline">Jinja, rendered into the workflow's initial_input</span></label>
-                <textarea class="form-control wb-t-input-template wb-code" rows="4">${esc(t.input_template || '')}</textarea>
+                <label>Input Template <span class="wb-hint-inline">Jinja, optional</span></label>
+                <textarea class="form-control wb-t-input-template wb-code" rows="4">${esc(step.input_template || '')}</textarea>
+                <div class="wb-hint">Leave blank to pass the whole trigger context — including the full <code>doc</code> — straight through as the workflow's input, unchanged. Use <code>{{ doc.field }}</code> to inject a specific field, or <code>{{ doc }}</code> to pass the whole doc as JSON. Rendered as Jinja, then parsed as JSON, e.g. <code>{"customer": "{{ doc.customer }}"}</code>.</div>
             </div>
             <div class="wb-field">
                 <label>Condition (optional)</label>
-                <input class="form-control wb-t-condition wb-code" value="${esc(t.condition || '')}" placeholder='e.g. doc.status == "Overdue"' />
+                <input class="form-control wb-t-condition wb-code" value="${esc(step.condition || '')}" placeholder='e.g. doc.status == "Overdue"' />
             </div>
-            <button class="btn btn-sm btn-primary wb-t-save"><i class="fa fa-check"></i> ${isNew ? 'Create Trigger' : 'Save Trigger'}</button>
         `);
 
-        if (t.doctype_name === undefined) {
-            // no-op — placeholder to keep lint happy about unused var patterns
-        }
+        $panel.find('.wb-t-enabled').on('change', (e) => {
+            step.is_enabled = e.target.checked;
+            this.editor.updateNodeDataFromId(node.id, { step });
+            this.markDirty();
+        });
 
-        // Lazy doctype search, debounced-ish via input event.
-        $mount.find('.wb-t-doctype').on('input', async (e) => {
+        $panel.find('.wb-t-type').on('change', (e) => {
+            step.trigger_type = e.target.value;
+            $panel.find('.wb-t-doctype-fields').toggle(step.trigger_type === 'DocType Event');
+            $panel.find('.wb-t-cron-fields').toggle(step.trigger_type === 'Scheduled');
+            $panel.find('.wb-t-webhook-fields').toggle(step.trigger_type === 'Webhook');
+            this.updateNodeLabel(node, step);
+            this.markDirty();
+        });
+
+        $panel.find('.wb-t-doctype').on('input', async (e) => {
+            step.doctype_name = e.target.value;
+            this.editor.updateNodeDataFromId(node.id, { step });
+            this.markDirty();
             const txt = e.target.value;
             if (txt.length < 2) return;
-            const res = await frappe.call(`${MODULE_PATH}.search_doctypes`, { txt });
-            const $list = $mount.find('#wb-doctype-list');
-            $list.empty();
-            (res.message || []).forEach((name) => $list.append(`<option value="${esc(name)}"></option>`));
-        });
-
-        $mount.find('.wb-t-type').on('change', (e) => {
-            const val = e.target.value;
-            $mount.find('.wb-t-doctype-fields').toggle(val === 'DocType Event');
-            $mount.find('.wb-t-cron-fields').toggle(val === 'Scheduled');
-            $mount.find('.wb-t-webhook-fields').toggle(val === 'Webhook');
-        });
-
-        if (!isNew) {
-            $mount.find('.wb-trigger-unlink').on('click', () => {
-                step.agent_trigger = null;
-                this.editor.updateNodeDataFromId(node.id, { step });
-                this.renderTriggerPickMode($mount, step, node, existing);
-            });
-        }
-
-        $mount.find('.wb-t-save').on('click', async () => {
-            const triggerType = $mount.find('.wb-t-type').val();
-            const payload = {
-                name: step.agent_trigger || undefined,
-                trigger_name: $mount.find('.wb-t-name').val() || step.id,
-                is_enabled: $mount.find('.wb-t-enabled').is(':checked') ? 1 : 0,
-                trigger_type: triggerType,
-                doctype_name: $mount.find('.wb-t-doctype').val() || null,
-                doctype_event: $mount.find('.wb-t-event').val() || null,
-                cron_expression: $mount.find('.wb-t-cron').val() || null,
-                run_as_user: $mount.find('.wb-t-user').val() || 'Administrator',
-                input_template: $mount.find('.wb-t-input-template').val() || '',
-                condition: $mount.find('.wb-t-condition').val() || null,
-            };
             try {
-                const res = await frappe.call(`${MODULE_PATH}.save_workflow_trigger`, {
-                    workflow_name: this.workflowName,
-                    trigger_data: JSON.stringify(payload),
-                });
-                step.agent_trigger = res.message.name;
-                step.trigger_kind = this.triggerTypeToKind(res.message.trigger_type);
-                this.editor.updateNodeDataFromId(node.id, { step });
-                this.updateNodeLabel(node, step);
-                this.markDirty();
-                frappe.show_alert({ message: 'Trigger saved', indicator: 'green' });
-                const refreshed = await frappe.call(`${MODULE_PATH}.get_trigger`, { trigger_name: step.agent_trigger });
-                await this.renderTriggerFormMode($mount, step, node, existing, refreshed.message);
-            } catch (err) {
-                frappe.msgprint('Could not save this trigger — check required fields (Trigger Name, Input Template).');
-            }
+                const res = await frappe.call(`${MODULE_PATH}.search_doctypes`, { txt });
+                const $list = $panel.find(`#${doctypeListId}`);
+                $list.empty();
+                (res.message || []).forEach((name) => $list.append(`<option value="${esc(name)}"></option>`));
+            } catch (err) {}
+        });
+
+        $panel.find('.wb-t-event').on('change', (e) => {
+            step.doctype_event = e.target.value;
+            this.editor.updateNodeDataFromId(node.id, { step });
+            this.markDirty();
+        });
+        $panel.find('.wb-t-cron').on('input', (e) => {
+            step.cron_expression = e.target.value;
+            this.editor.updateNodeDataFromId(node.id, { step });
+            this.markDirty();
+        });
+        $panel.find('.wb-t-user').on('input', (e) => {
+            step.run_as_user = e.target.value;
+            this.editor.updateNodeDataFromId(node.id, { step });
+            this.markDirty();
+        });
+        $panel.find('.wb-t-input-template').on('input', (e) => {
+            step.input_template = e.target.value;
+            this.editor.updateNodeDataFromId(node.id, { step });
+            this.markDirty();
+        });
+        $panel.find('.wb-t-condition').on('input', (e) => {
+            step.condition = e.target.value;
+            this.editor.updateNodeDataFromId(node.id, { step });
+            this.markDirty();
         });
     }
 
@@ -886,6 +888,12 @@ class WorkflowBuilder {
             .filter((w) => w.name !== this.workflowName)
             .map((w) => `<option value="${w.name}" ${w.name === step.workflow_name ? 'selected' : ''}>${esc(w.workflow_name || w.name)}</option>`)
             .join('');
+            
+        const mappingText = step.input_mapping_invalid 
+            ? step.input_mapping_invalid 
+            : (typeof step.input_mapping === 'string' ? step.input_mapping : JSON.stringify(step.input_mapping || {}, null, 2));
+        const hasInvalidMapping = !!step.input_mapping_invalid;
+
         $panel.append(`
             <div class="wb-field">
                 <label>Workflow to call</label>
@@ -893,9 +901,10 @@ class WorkflowBuilder {
                 <div class="wb-hint">Depth-limited to 3 levels of nested sub-workflow calls.</div>
             </div>
             <div class="wb-field">
-                <label>Input Mapping <span class="wb-hint-inline">supports {{output.field}}</span></label>
-                <textarea class="form-control wb-input-mapping wb-code" rows="6">${esc(JSON.stringify(step.input_mapping || {}, null, 2))}</textarea>
-                <div class="wb-hint">Leave as <code>{}</code> to pass this step's entire current output through unchanged.</div>
+                <label>Input Mapping <span class="wb-hint-inline">supports {{output.field}} and {{output}}</span></label>
+                <textarea class="form-control wb-input-mapping wb-code ${hasInvalidMapping ? 'wb-json-error' : ''}" rows="6">${esc(mappingText)}</textarea>
+                <div class="wb-json-error-msg" style="display:${hasInvalidMapping ? 'block' : 'none'};">Invalid JSON — fix the syntax or ensure Jinja braces are balanced.</div>
+                <div class="wb-hint">Leave as <code>{}</code> to pass this step's entire current output through unchanged. Use <code>{{output.field}}</code> to map a specific field, or <code>{{output}}</code> to pass the whole previous output.</div>
             </div>
             <div class="wb-field">
                 <div class="checkbox">
@@ -909,12 +918,31 @@ class WorkflowBuilder {
             this.markDirty();
         });
         $panel.find('.wb-input-mapping').on('input', (e) => {
+            const val = e.target.value;
             try {
-                step.input_mapping = JSON.parse(e.target.value);
+                step.input_mapping = JSON.parse(val);
+                step.input_mapping_invalid = null;
                 this.editor.updateNodeDataFromId(node.id, { step });
                 this.markDirty();
+                
+                $panel.find('.wb-input-mapping').removeClass('wb-json-error');
+                $panel.find('.wb-json-error-msg').hide();
             } catch (err) {
-                // invalid json
+                if (jinjaRegex.test(val)) {
+                    step.input_mapping = val;
+                    step.input_mapping_invalid = null;
+                    this.editor.updateNodeDataFromId(node.id, { step });
+                    this.markDirty();
+                    
+                    $panel.find('.wb-input-mapping').removeClass('wb-json-error');
+                    $panel.find('.wb-json-error-msg').hide();
+                } else {
+                    step.input_mapping_invalid = val;
+                    this.editor.updateNodeDataFromId(node.id, { step });
+                    
+                    $panel.find('.wb-input-mapping').addClass('wb-json-error');
+                    $panel.find('.wb-json-error-msg').show();
+                }
             }
         });
         $panel.find('.wb-err-toggle').on('change', (e) => {
@@ -965,8 +993,6 @@ class WorkflowBuilder {
             this.markDirty();
         });
     }
-
-    // ── Execution: Run button, per-node status pips, approval dialog ──
 
     clearRunOverlay() {
         $('#wb-drawflow .wb-status-pip').removeClass('wb-pip-success wb-pip-error wb-pip-paused').empty();
@@ -1091,8 +1117,26 @@ class WorkflowBuilder {
     stepsOut() {
         const exported = this.editor.export().drawflow.Home.data;
         const nodes = Object.values(exported);
-        const steps = nodes.map((n) => Object.assign({}, n.data.step, { position: { x: n.pos_x, y: n.pos_y } }));
+        const steps = nodes.map((n) => {
+            const step = Object.assign({}, n.data.step, { position: { x: n.pos_x, y: n.pos_y } });
+            delete step.args_invalid;
+            delete step.input_mapping_invalid;
+            return step;
+        });
         return steps;
+    }
+
+    applyWebhookTokens(tokens) {
+        if (!tokens) return;
+        const data = this.editor.export().drawflow.Home.data;
+        Object.entries(data).forEach(([nodeId, n]) => {
+            const step = n.data && n.data.step;
+            if (!step || step.type !== 'trigger') return;
+            if (tokens[step.id] === undefined) return;
+            step.webhook_token = tokens[step.id];
+            this.editor.updateNodeDataFromId(nodeId, { step });
+            if (this.selectedNodeId === nodeId) this.renderSidebar(this.editor.getNodeFromId(nodeId));
+        });
     }
 
     async save() {
@@ -1122,10 +1166,11 @@ class WorkflowBuilder {
                     if (!createRes.message || !createRes.message.name) return;
 
                     this.workflowName = createRes.message.name;
-                    await frappe.call(`${MODULE_PATH}.save_workflow_steps`, {
+                    const saveRes = await frappe.call(`${MODULE_PATH}.save_workflow_steps`, {
                         workflow_name: this.workflowName,
                         steps: JSON.stringify(steps),
                     });
+                    this.applyWebhookTokens(saveRes.message && saveRes.message.webhook_tokens);
                     this.dirty = false;
                     this.updateStatusBadge();
                     frappe.show_alert({ message: 'Workflow created and saved', indicator: 'green' });
@@ -1139,10 +1184,11 @@ class WorkflowBuilder {
             return;
         }
 
-        await frappe.call(`${MODULE_PATH}.save_workflow_steps`, {
+        const saveRes = await frappe.call(`${MODULE_PATH}.save_workflow_steps`, {
             workflow_name: this.workflowName,
             steps: JSON.stringify(steps),
         });
+        this.applyWebhookTokens(saveRes.message && saveRes.message.webhook_tokens);
         this.dirty = false;
         this.updateStatusBadge();
         frappe.show_alert({ message: 'Workflow saved', indicator: 'green' });
@@ -1180,14 +1226,32 @@ class WorkflowBuilder {
             .wb-field { margin-bottom: 14px; }
             .wb-code { font-family: var(--font-monospace) !important; font-size: 11.5px !important; }
             .wb-hint-inline { font-weight: normal; font-size: 10.5px; color: var(--text-muted); text-transform: none; }
+            .wb-hint-warn { color: var(--orange-600, #c05621); display: flex; gap: 6px; align-items: flex-start; }
+            
+            .wb-json-error { border-color: var(--red-500, #e53e3e) !important; background-color: var(--red-50, #fff5f5); }
+            .wb-json-error-msg { color: var(--red-600, #c53030); font-size: 11px; margin-top: 4px; display: none; }
 
-            /* Node shell — n8n-style: the Drawflow node box is locked to
-               EXACTLY the icon square's size (72x72). Labels are pulled
-               out of that box via absolute positioning (top:100%) so
-               they never affect how tall Drawflow thinks the node is —
-               that's what previously made the ports drift depending on
-               label text length. Ports can now just use top:50%,
-               unconditionally correct regardless of label content. */
+            .wb-combo { position: relative; }
+            .wb-combo-trigger { width: 100%; display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--control-bg, var(--fg-color)); border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; text-align: left; font-size: 13px; color: var(--text-color); }
+            .wb-combo-trigger:hover { border-color: var(--text-muted); }
+            .wb-combo-placeholder { color: var(--text-muted); flex: 1; }
+            .wb-combo-label { flex: 1; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .wb-combo-caret { color: var(--text-muted); font-size: 11px; }
+            .wb-combo-icon { flex-shrink: 0; width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; }
+
+            .wb-combo-menu { display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 50; background: var(--fg-color); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.16); max-height: 320px; display: none; flex-direction: column; }
+            .wb-combo-menu.wb-combo-open { display: flex; }
+            .wb-combo-search { margin: 8px; width: calc(100% - 16px); }
+            .wb-combo-list { overflow-y: auto; padding: 0 4px 6px; }
+            .wb-combo-group-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); padding: 6px 8px 3px; }
+            .wb-combo-item { display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+            .wb-combo-item:hover { background: var(--control-bg, var(--gray-100, #f3f4f6)); }
+            .wb-combo-item-active { background: var(--gray-100, #f3f4f6); }
+            .wb-combo-item-text { min-width: 0; flex: 1; }
+            .wb-combo-item-title { font-size: 12.5px; font-weight: 500; color: var(--text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .wb-combo-item-sub { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .wb-combo-empty { padding: 10px 8px; font-size: 12px; color: var(--text-muted); text-align: center; }
+
             #wb-drawflow .drawflow-node { background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important; width: 72px !important; height: 72px !important; }
             #wb-drawflow .drawflow-node .drawflow_content_node { background: transparent !important; border: none !important; width: 100% !important; height: 100% !important; padding: 0 !important; overflow: visible !important; }
 
@@ -1198,8 +1262,6 @@ class WorkflowBuilder {
 
             .wb-node-icon-lg { width: 100%; height: 100%; border-radius: 18px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 27px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -6px 10px rgba(0,0,0,0.12); }
 
-            /* Absolutely positioned below the fixed-size node box — out
-               of Drawflow's own layout flow entirely, purely decorative. */
             .wb-node-labels { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); width: 150px; margin-top: 8px; text-align: center; pointer-events: none; }
             .wb-node-label-below { font-size: 12.5px; font-weight: 600; color: var(--text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
             .wb-node-sub-below { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
@@ -1209,30 +1271,22 @@ class WorkflowBuilder {
             .wb-badge-err { background: var(--red-500); }
             .wb-badge-retry { background: var(--blue-500); }
 
-            /* Corner status pip — set by markNodeStatus() after a Run */
             .wb-status-pip { position: absolute; top: -6px; left: -6px; width: 17px; height: 17px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 8px; border: 2px solid var(--fg-color, #fff); opacity: 0; transition: opacity 120ms; z-index: 2; }
             .wb-status-pip.wb-pip-success { opacity: 1; background: var(--green-500); }
             .wb-status-pip.wb-pip-error { opacity: 1; background: var(--red-500); }
             .wb-status-pip.wb-pip-paused { opacity: 1; background: var(--orange-500); }
 
-            /* Trigger nodes get a distinct rounded-flag shape, no left port */
             .wb-node-trigger-shape { border-radius: 8px 26px 26px 8px; }
             #wb-drawflow .wb-node-trigger .input { display: none !important; }
 
-            /* Branch — TRUE/FALSE tags shown as a small centered row under the subtitle */
             .wb-branch-rows { margin-top: 4px; display: flex; gap: 6px; justify-content: center; }
             .wb-branch-tag { font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 4px; }
             .wb-branch-tag.wb-true { background: var(--green-100, #c6f6d5); color: var(--green-700, #276749); }
             .wb-branch-tag.wb-false { background: var(--red-100, #fed7d7); color: var(--red-700, #9b2c2c); }
 
-            /* Note Node (n8n style) — unlike other nodes, this one keeps
-               its full card body since it's freeform text, not a fixed icon. */
             #wb-drawflow .wb-node-note { width: 300px; background: var(--yellow-100, #fff9c4); border: 1px dashed var(--yellow-500, #ecc94b); border-radius: 8px; padding: 12px; font-size: 13px; color: var(--text-color); box-shadow: none; }
             #wb-drawflow .wb-node-note .wb-node-note-body { white-space: pre-wrap; word-wrap: break-word; }
 
-            /* Ports — the node box is now exactly the icon's size, so
-               top:50% is unconditionally correct; no more fixed-px math
-               that broke depending on label length. */
             #wb-drawflow .drawflow-node .input, #wb-drawflow .drawflow-node .output { width: 14px !important; height: 14px !important; background: var(--fg-color) !important; border: 2px solid var(--text-muted) !important; border-radius: 50% !important; top: 50% !important; transform: translateY(-50%) !important; }
             #wb-drawflow .drawflow-node .input { left: -7px !important; }
             #wb-drawflow .drawflow-node .output { right: -7px !important; }

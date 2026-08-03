@@ -151,7 +151,16 @@ def test_step(tool, args):
     from agent_builder.native_api.agent.setup import get_tool_registry
     from agent_builder.native_api.tools.executor import ToolExecutor
 
-    parsed_args = frappe.parse_json(args) if isinstance(args, str) else (args or {})
+    parsed_args = args
+    if isinstance(args, str):
+        try:
+            parsed_args = frappe.parse_json(args)
+        except Exception:
+            # Not valid JSON (e.g. a Jinja template like "{{output}}").
+            # Pass the raw string to the executor — the executor will
+            # handle it or fail gracefully.
+            parsed_args = args
+
     executor = ToolExecutor(get_tool_registry())
     raw = asyncio.run(executor._dispatch(tool, frappe.as_json(parsed_args)))
     try:
@@ -217,7 +226,11 @@ def create_workflow(workflow_name, description=None):
 
 @frappe.whitelist()
 def save_workflow_steps(workflow_name, steps):
-    """Overwrite the full steps array in one call."""
+    """Overwrite the full steps array in one call, and sync every
+    'trigger' step to its own Agent Trigger record — see
+    _sync_trigger_steps. There is no separate 'save this trigger'
+    action anywhere: saving the workflow is saving its triggers.
+    """
     steps_parsed = frappe.parse_json(steps) if isinstance(steps, str) else steps
     ids = [s.get("id") for s in steps_parsed]
     if len(ids) != len(set(ids)):
@@ -229,8 +242,71 @@ def save_workflow_steps(workflow_name, steps):
         "steps",
         frappe.as_json(steps_parsed),
     )
+
+    webhook_tokens = _sync_trigger_steps(workflow_name, steps_parsed)
+
     frappe.db.commit()
-    return {"status": "saved", "step_count": len(steps_parsed)}
+    return {"status": "saved", "step_count": len(steps_parsed), "webhook_tokens": webhook_tokens}
+
+
+def _sync_trigger_steps(workflow_name, steps):
+    """Each 'trigger' step on the canvas IS an Agent Trigger record,
+    1:1, named after the step's own id (Agent Trigger autonames by
+    trigger_name — using the step id directly means the link is
+    implicit, no separate 'agent_trigger' reference field needed, and
+    no separate picker/save UI on the node).
+
+    Returns {step_id: webhook_token} for any Webhook-type triggers,
+    so the frontend can display the server-generated token without a
+    second round trip.
+    """
+    webhook_tokens = {}
+    for step in steps:
+        if step.get("type") != "trigger":
+            continue
+
+        trigger_docname = step["id"]
+        fields = {
+            "trigger_name": trigger_docname,
+            "is_enabled": 1 if step.get("is_enabled", True) else 0,
+            "workflow_name": workflow_name,
+            "trigger_type": step.get("trigger_type") or "DocType Event",
+            "doctype_name": step.get("doctype_name") or None,
+            "doctype_event": step.get("doctype_event") or None,
+            "cron_expression": step.get("cron_expression") or None,
+            "run_as_user": step.get("run_as_user") or "Administrator",
+            "input_template": step.get("input_template") or "",
+            "condition": step.get("condition") or None,
+        }
+
+        if frappe.db.exists("Agent Trigger", trigger_docname):
+            doc = frappe.get_doc("Agent Trigger", trigger_docname)
+            doc.update(fields)
+        else:
+            doc = frappe.get_doc({"doctype": "Agent Trigger", **fields})
+
+        doc.save(ignore_permissions=True)
+
+        if doc.trigger_type == "Webhook":
+            webhook_tokens[trigger_docname] = doc.webhook_token
+
+    return webhook_tokens
+
+
+@frappe.whitelist()
+def search_doctypes(txt=""):
+    """Lightweight DocType name search for the Trigger node's 'DocType'
+    field — a plain text input with autocomplete rather than a full
+    Frappe Link control, since this sidebar isn't a real Frappe form.
+    """
+    return frappe.get_all(
+        "DocType",
+        filters={"name": ["like", f"%{txt}%"]},
+        fields=["name"],
+        order_by="name asc",
+        limit_page_length=20,
+        pluck="name",
+    )
 
 
 @frappe.whitelist()
@@ -327,106 +403,6 @@ def resume_workflow(run_name, decision, edited_output=None):
 
     parsed_output = frappe.parse_json(edited_output) if isinstance(edited_output, str) else edited_output
     return _resume(run_name, decision, edited_output=parsed_output)
-
-
-@frappe.whitelist()
-def get_workflow_triggers(workflow_name):
-    """Agent Trigger records already targeting this workflow — populates
-    the Trigger node sidebar's 'existing triggers' picker.
-    """
-    return frappe.get_all(
-        "Agent Trigger",
-        filters={"workflow_name": workflow_name},
-        fields=[
-            "name",
-            "trigger_name",
-            "is_enabled",
-            "trigger_type",
-            "doctype_name",
-            "doctype_event",
-            "cron_expression",
-            "webhook_token",
-            "run_as_user",
-            "input_template",
-            "condition",
-        ],
-        order_by="modified desc",
-    )
-
-
-@frappe.whitelist()
-def get_trigger(trigger_name):
-    """Full detail for one Agent Trigger — used when the sidebar switches
-    from the picker into edit mode for an existing record.
-    """
-    doc = frappe.get_doc("Agent Trigger", trigger_name)
-    return {
-        "name": doc.name,
-        "trigger_name": doc.trigger_name,
-        "is_enabled": doc.is_enabled,
-        "agent_name": doc.agent_name,
-        "workflow_name": doc.workflow_name,
-        "run_as_user": doc.run_as_user,
-        "trigger_type": doc.trigger_type,
-        "doctype_name": doc.doctype_name,
-        "doctype_event": doc.doctype_event,
-        "cron_expression": doc.cron_expression,
-        "webhook_token": doc.webhook_token,
-        "input_template": doc.input_template,
-        "condition": doc.condition,
-    }
-
-
-@frappe.whitelist()
-def save_workflow_trigger(workflow_name, trigger_data):
-    """Create or update an Agent Trigger targeting this workflow, from the
-    canvas's Trigger node sidebar. trigger_data.name (if present) means
-    "update this existing record"; otherwise a new one is created.
-
-    workflow_name is always force-set here — the Trigger node lives on
-    one specific workflow's canvas, so there's no scenario where the
-    sidebar should be allowed to silently repoint an existing trigger at
-    a different workflow.
-    """
-    data = frappe.parse_json(trigger_data) if isinstance(trigger_data, str) else (trigger_data or {})
-    data["workflow_name"] = workflow_name
-    # agent_name is irrelevant on a workflow-targeted trigger (fire_trigger
-    # ignores it once workflow_name is set) — don't let a stray leftover
-    # value confuse the Agent Trigger list view.
-    data.pop("agent_name", None)
-
-    existing_name = data.pop("name", None)
-    if existing_name and frappe.db.exists("Agent Trigger", existing_name):
-        doc = frappe.get_doc("Agent Trigger", existing_name)
-        doc.update(data)
-    else:
-        doc = frappe.get_doc({"doctype": "Agent Trigger", **data})
-
-    doc.save(ignore_permissions=True)
-    frappe.db.commit()
-
-    return {
-        "name": doc.name,
-        "trigger_name": doc.trigger_name,
-        "trigger_type": doc.trigger_type,
-        "webhook_token": doc.webhook_token,
-    }
-
-
-@frappe.whitelist()
-def search_doctypes(txt=""):
-    """Lightweight DocType name search for the Trigger node's 'DocType'
-    field — a plain text input with autocomplete rather than a full
-    Frappe Link control, since this sidebar isn't a real Frappe form.
-    """
-    return frappe.get_all(
-        "DocType",
-        filters={"name": ["like", f"%{txt}%"]},
-        fields=["name"],
-        order_by="name asc",
-        limit_page_length=20,
-        pluck="name",
-    )
 
 
 @frappe.whitelist()
