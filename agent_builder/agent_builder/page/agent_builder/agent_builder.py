@@ -103,11 +103,75 @@ def get_available_tools():
 @frappe.whitelist()
 def get_tool_schemas():
     """Full JSON schema (name, description, parameters) for every tool,
-    plus the same synthetic 'trigger' entry as get_available_tools."""
+    plus the same synthetic 'trigger' entry as get_available_tools.
+
+    Robust against multiple shapes returned by
+    `registry.get_tool_schemas()`:
+      * list of OpenAI-wrapped: [{"type": "function", "function": {...}}, ...]
+      * list of flat:           [{"name": ..., "description": ..., "parameters": ...}, ...]
+      * dict mapping name → schema
+
+    A single malformed entry (or a different storage convention than the
+    caller assumed) used to raise KeyError here, 500-ing the whole
+    endpoint. The JS wraps the call in `.catch(() => ({ message: [] }))`,
+    so a 500 silently produced an empty list — which is why the sidebar
+    showed "No schema loaded" for EVERY tool, not just one. Now each
+    entry is normalized independently and any per-entry failure is
+    logged without aborting the call.
+    """
     from agent_builder.native_api.agent.setup import get_tool_registry
 
+    def _normalize(entry):
+        """Coerce a single raw schema entry to the flat shape the JS
+        expects: {name, description, parameters}. Returns None if the
+        entry can't be normalized (caller will fall back to a
+        placeholder for that tool name)."""
+        if not isinstance(entry, dict):
+            return None
+        # OpenAI-style wrapper: {"type": "function", "function": {...}}
+        fn = entry.get("function") if isinstance(entry.get("function"), dict) else entry
+        if not isinstance(fn, dict):
+            return None
+        name = fn.get("name")
+        if not name:
+            return None
+        params = fn.get("parameters")
+        if not isinstance(params, dict):
+            params = {"type": "object", "properties": {}}
+        elif "properties" not in params:
+            params = dict(params, properties={})
+        return {
+            "name": name,
+            "description": fn.get("description") or "",
+            "parameters": params,
+        }
+
     registry = get_tool_registry()
-    schema_by_name = {s["function"]["name"]: s["function"] for s in registry.get_tool_schemas()}
+
+    schema_by_name = {}
+    try:
+        raw = registry.get_tool_schemas() or []
+        # dict form: {tool_name: schema_dict}
+        if isinstance(raw, dict):
+            items = []
+            for k, v in raw.items():
+                if isinstance(v, dict) and "name" not in v and "function" not in v:
+                    v = dict(v, name=k)
+                items.append(v)
+        else:
+            items = list(raw)
+
+        for entry in items:
+            norm = _normalize(entry)
+            if norm:
+                schema_by_name[norm["name"]] = norm
+    except Exception:
+        # Don't let a registry bug tank the whole picker — log it so
+        # it's visible in Error Log, then fall through to placeholders.
+        frappe.log_error(
+            title="get_tool_schemas: registry.get_tool_schemas() failed",
+            message=frappe.get_traceback(),
+        )
 
     out = []
     for name in sorted(registry.executors.keys()):
