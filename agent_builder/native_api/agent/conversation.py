@@ -448,6 +448,13 @@ class Conversation:
 		stream ended without finish_reason). The caller can catch this to
 		attempt recovery or surface the partial content.
 		"""
+		# Track whether reasoning was buffered via emit_reasoning. When the
+		# caller provides their own on_reasoning callback (e.g. verify.chat
+		# for SSE streaming), emit_reasoning is never called, the buffer
+		# stays empty, and _flush_reasoning() below persists nothing. We
+		# need to know this so we can fall through to persisting from
+		# message_obj["reasoning"] instead of silently dropping it.
+		buffer_had_reasoning = bool(self._reasoning_buffer)
 		self._flush_reasoning()
 
 		content = message_obj.get("content") or ""
@@ -455,10 +462,6 @@ class Conversation:
 		reasoning_meta = message_obj.get("reasoning_meta")
 		reasoning_text = message_obj.get("reasoning")
 		chain_break = message_obj.get("chain_break")
-		# Populated by OpenAIProvider.generate() — see openai_api.py. Handles
-		# both Chat Completions (prompt_tokens/completion_tokens) and
-		# Anthropic/Responses-style (input_tokens/output_tokens) usage shapes
-		# so this layer stays provider-agnostic.
 		usage = message_obj.get("usage") or {}
 		model = message_obj.get("model")
 		input_tokens = usage.get("prompt_tokens") or usage.get("input_tokens") or 0
@@ -469,11 +472,19 @@ class Conversation:
 
 		self._turn_index = getattr(self, "_turn_index", 0) + 1
 
-		# If this call wasn't streamed, reasoning text never went through
-		# emit_reasoning()/_flush_reasoning() above, so it would otherwise
-		# be silently dropped. Persist it now as its own reasoning-role row
-		# so UI/timeline reconstruction still works for non-streamed turns.
-		if reasoning_text and not streamed:
+		# Persist reasoning text as a separate reasoning-role row.
+		#
+		# Three cases:
+		#   1. Non-streamed: buffer was never populated → persist from
+		#      message_obj["reasoning"]. (Original behavior, unchanged.)
+		#   2. Streamed via conversation.emit_reasoning: buffer was populated
+		#      and already flushed above → skip to avoid duplication.
+		#   3. Streamed via a custom on_reasoning callback (e.g. verify.chat
+		#      SSE): buffer was never populated because emit_reasoning wasn't
+		#      called → persist from message_obj["reasoning"]. THIS WAS THE
+		#      BUG — previously skipped by `not streamed`, losing all
+		#      reasoning text for the most common chat path.
+		if reasoning_text and not buffer_had_reasoning:
 			self.doc.append(
 				"messages",
 				{
@@ -492,12 +503,7 @@ class Conversation:
 				"role": "assistant",
 				"content": content,
 				"is_error": bool(message_obj.get("is_error")),
-				# Raw, provider-specific reasoning payload (reasoning_details,
-				# signatures, etc.) — kept verbatim so it can be replayed back
-				# correctly later. Requires a "reasoning_meta" Long Text/JSON
-				# field on the Agent Message child table.
 				"reasoning_meta": json.dumps(reasoning_meta) if reasoning_meta else None,
-				# Store chain break info for debugging and analytics.
 				"chain_break": json.dumps(chain_break) if chain_break else None,
 				"turn_index": self._turn_index,
 				"model": model,
