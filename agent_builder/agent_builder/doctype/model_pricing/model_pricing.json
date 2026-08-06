@@ -9,6 +9,16 @@
  "engine": "InnoDB",
  "field_order": [
   "model",
+  "provider",
+  "active",
+  "column_break_capabilities",
+  "context_window",
+  "max_output_tokens",
+  "supports_tools",
+  "supports_vision",
+  "supports_reasoning",
+  "reasoning_efforts",
+  "section_break_pricing",
   "input_price_per_million",
   "output_price_per_million",
   "cached_price_per_million",
@@ -56,12 +66,72 @@
    "fieldname": "notes",
    "fieldtype": "Small Text",
    "label": "Notes"
+  },
+  {
+   "description": "Must match a provider key in registry.py's PROVIDERS dict",
+   "fieldname": "provider",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Provider",
+   "options": "openai\nanthropic\ngoogle\nmistral\nxai\ndeepseek\nopenrouter\ngroq\ncerebras\nfireworks\ntogether\ndeepinfra\nnvidia\nhuggingface\ndashscope\nnebius\nvllm\nperplexity",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_capabilities",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "context_window",
+   "fieldtype": "Int",
+   "label": "Context Window (tokens)"
+  },
+  {
+   "fieldname": "max_output_tokens",
+   "fieldtype": "Int",
+   "label": "Max Output Tokens"
+  },
+  {
+   "default": "0",
+   "fieldname": "supports_tools",
+   "fieldtype": "Check",
+   "label": "Supports Tool Calling"
+  },
+  {
+   "default": "0",
+   "fieldname": "supports_vision",
+   "fieldtype": "Check",
+   "label": "Supports Vision"
+  },
+  {
+   "default": "0",
+   "fieldname": "supports_reasoning",
+   "fieldtype": "Check",
+   "label": "Supports Reasoning"
+  },
+  {
+   "depends_on": "supports_reasoning",
+   "description": "Comma-separated, e.g. none,low,medium,high. Must be valid values for this provider's reasoning_strategy.",
+   "fieldname": "reasoning_efforts",
+   "fieldtype": "Small Text",
+   "label": "Reasoning Effort Levels"
+  },
+  {
+   "fieldname": "section_break_pricing",
+   "fieldtype": "Section Break",
+   "label": "Pricing"
+  },
+  {
+   "default": "0",
+   "fieldname": "active",
+   "fieldtype": "Check",
+   "label": "Active"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-10 07:42:49.624898",
+ "modified": "2026-08-03 12:13:50.219545",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Model Pricing",
