@@ -169,6 +169,17 @@ def receive_webhook(trigger_name: str, token: str, **payload):
 
 
 def handle_doctype_event(doc, event):
+    # Wired to doc_events["*"], so this fires on every doctype's insert —
+    # including internal doctype-sync inserts that bench migrate itself
+    # performs while importing other doctypes' JSON definitions. At that
+    # point in the migrate sequence Agent Trigger's own table may not
+    # exist yet, so skip entirely during migrate/install rather than
+    # querying a table that might not be there.
+    if frappe.flags.in_migrate or frappe.flags.in_install:
+        return
+    if not frappe.db.table_exists("Agent Trigger"):
+        return
+
     matches = frappe.get_all(
         "Agent Trigger",
         filters={
