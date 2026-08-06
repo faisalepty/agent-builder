@@ -203,12 +203,10 @@ class AgentManagement {
                         ${frappe.utils.escape_html(a.description || 'No description provided')}
                     </div>
                     <div class="am-card-actions">
-                        <button class="btn btn-sm btn-default btn-block" data-action="chat">
-                            <i class="fa fa-comments"></i> Open Chat
+                         <button class="btn btn-sm btn-default btn-block" data-action="edit_agent" title="Edit Agent">
+                            <i class="fa fa-pencil"></i> Edit Prompt
                         </button>
-                        <button class="btn btn-sm btn-default" data-action="edit_agent" title="Edit Agent">
-                            <i class="fa fa-pencil"></i>
-                        </button>
+                        
                     </div>
                 </div>
             `).appendTo($grid);
