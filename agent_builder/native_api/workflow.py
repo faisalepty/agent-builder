@@ -100,7 +100,7 @@ def execute_workflow(
 		start_idx = 0
 
 		if workflow.status != "Active":
-			logger.info("Workflow '%s' is not Active, skipping.", workflow.name)
+			frappe.log_error(f"Workflow '{workflow.name}' is not Active, skipping.")
 			return
 
 		run = frappe.get_doc(

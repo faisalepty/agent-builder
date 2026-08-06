@@ -206,7 +206,7 @@ def run_due_scheduled_triggers():
     try:
         import croniter
     except ImportError:
-        logger.error("croniter is not installed — Scheduled Agent Triggers cannot fire.")
+        frappe.log_error("croniter is not installed — Scheduled Agent Triggers cannot fire.")
         return
 
     triggers = frappe.get_all(
@@ -230,7 +230,7 @@ def run_due_scheduled_triggers():
             # Passing get_datetime throws a TypeError which gets silently caught.
             next_due = croniter.croniter(t.cron_expression, base).get_next()
         except Exception:
-            logger.warning("Agent Trigger %s has an invalid cron_expression: %s", t.name, t.cron_expression)
+            frappe.log_error(f"Agent Trigger {t.name} has an invalid cron_expression: {t.cron_expression}")
             continue
 
         if next_due <= now:
@@ -397,5 +397,7 @@ def _evaluate_condition(condition: str, context: dict) -> bool:
         safe_globals.update(context)
         return bool(frappe.safe_eval(condition, safe_globals))
     except Exception:
-        logger.warning("Agent Trigger condition failed to evaluate: %s", condition)
+        frappe.log_error(f"Agent Trigger condition failed to evaluate: {condition}")
         return False
+
+

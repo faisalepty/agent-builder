@@ -1,4 +1,5 @@
 # agent_builder/native_api/verify.py
+import logging
 import re
 
 import frappe
@@ -241,6 +242,83 @@ def _slugify(value):
 	return re.sub(r"[^a-z0-9]+", "-", str(value).strip().lower()).strip("-")
 
 
+_MODEL_OPTIONS_CACHE_KEY = "agent_builder:model_options"
+
+
+@frappe.whitelist()
+def get_model_options():
+	"""Model catalog for the chat widget's model/reasoning picker.
+
+	Scoped to whichever provider is currently configured on Agent Setup
+	(a model_override only makes sense for a model the active provider —
+	or an OpenRouter passthrough — can actually serve, so there's no
+	point showing models from other providers). Returns active
+	(is_active=1) Model Pricing rows with pricing + capability fields,
+	plus the site's current defaults so the widget can show what "Auto"
+	(no override) actually resolves to.
+
+	Cached for 5 minutes per site: this list changes rarely (a handful of
+	manual Model Pricing edits at most) but the chat widget may call it
+	every time it opens, across many users — caching avoids a DB round
+	trip per widget open for data that's effectively static.
+	"""
+	cached = frappe.cache().get_value(_MODEL_OPTIONS_CACHE_KEY)
+	if cached is not None:
+		return cached
+
+	provider = frappe.db.get_single_value("Agent Setup", "provider")
+	default_model = frappe.db.get_single_value("Agent Setup", "model")
+
+	# reasoning_effort is an optional field — Agent Setup may not have it
+	# (see agent_setup.json history); guard rather than assume.
+	setup_meta = frappe.get_meta("Agent Setup")
+	default_effort = (
+		frappe.db.get_single_value("Agent Setup", "reasoning_effort")
+		if setup_meta.has_field("reasoning_effort")
+		else None
+	)
+
+	rows = frappe.get_all(
+		"Model Pricing",
+		filters={"provider": provider, "active": 1},
+		fields=[
+			"model",
+			"context_window",
+			"max_output_tokens",
+			"supports_tools",
+			"supports_vision",
+			"supports_reasoning",
+			"reasoning_efforts",
+			"input_price_per_million",
+			"output_price_per_million",
+			"cached_price_per_million",
+		],
+		order_by="model asc",
+	)
+
+	payload = {
+		"provider": provider,
+		"default_model": default_model,
+		"default_reasoning_effort": default_effort,
+		"models": rows,
+	}
+	frappe.cache().set_value(_MODEL_OPTIONS_CACHE_KEY, payload, expires_in_sec=300)
+	return payload
+
+
+def clear_model_options_cache():
+	"""Call from doc_events (Model Pricing / Agent Setup on_update/on_trash
+	in hooks.py) so a manual edit is reflected immediately instead of
+	waiting out the 5-minute TTL. E.g. in hooks.py:
+
+	    doc_events = {
+	        "Model Pricing": {"on_update": "...clear_model_options_cache", "on_trash": "...clear_model_options_cache"},
+	        "Agent Setup": {"on_update": "...clear_model_options_cache"},
+	    }
+	"""
+	frappe.cache().delete_value(_MODEL_OPTIONS_CACHE_KEY)
+
+
 @frappe.whitelist()
 def get_skills():
 	"""Return all skills available to the agent for the frontend.
@@ -309,12 +387,20 @@ def get_chats():
 
 
 @frappe.whitelist()
-def chat(message, chat_id=None, attachments=None, agent_name=None):
+def chat(message, chat_id=None, attachments=None, agent_name=None, model=None, reasoning_effort=None):
 	"""API Endpoint: Queues the message for background processing.
 
 	agent_name: optional name of an Agent Definition (Agent Builder) to run
 	this turn with, instead of the default Omnis agent. The chat widget
 	doesn't need to pass this — omit it and behavior is unchanged.
+	model: optional explicit model id for this turn only (e.g. a model
+	    picker in the chat widget), overriding the Agent Definition's own
+	    model, which itself overrides the Agent Setup default. Omit for
+	    unchanged behavior.
+	reasoning_effort: optional explicit reasoning effort for this turn
+	    only — this is the "enable thinking" toggle. Pass "none" to
+	    explicitly disable reasoning for this turn even if Agent Setup
+	    has an effort configured; omit to use the Agent Setup default.
 	"""
 	user = frappe.session.user
 	attachments = frappe.parse_json(attachments) if attachments else []
@@ -334,6 +420,8 @@ def chat(message, chat_id=None, attachments=None, agent_name=None):
 		attachments=attachments,
 		user=user,
 		agent_name=agent_name,
+		model_override=model,
+		reasoning_effort=reasoning_effort,
 	)
 
 	# frappe.enqueue returns the RQ Job object (None in `now=True` sync-test
@@ -386,69 +474,166 @@ def stop_chat(chat_id, job_id=None):
 	return {"status": "stopping"}
 
 
-def process_agent_chat(message, chat_id, attachments, user, agent_name=None):
-	"""Background Job: Executes the agent loop.
+def _safe_error_message(e: Exception) -> str:
+	"""Short, safe-to-display error summary for the chat widget.
 
-	agent_name: name of an Agent Definition to run this session's turn
-	with. None -> the default Omnis agent (unchanged behavior).
+	Always includes the exception type and a truncated message — enough
+	to tell "rate limited" from "unknown model" from "a tool crashed"
+	apart without asking the user to screenshot a blank "something went
+	wrong" and guess. Capped short and intentionally NOT the full
+	traceback (that only ever goes to frappe.log_error, via
+	frappe.get_traceback(), never to the frontend) so nothing like a
+	file path or internal detail leaks into the UI.
 	"""
-	# ── Extract slash-command skill invocations ──
-	skill_slugs, cleaned_message = _extract_skill_commands(message)
-	invoked_skills, not_found = _load_invoked_skills(skill_slugs)
+	msg = str(e).strip()
+	if len(msg) > 300:
+		msg = msg[:300] + "…"
+	label = type(e).__name__
+	return f"{label}: {msg}" if msg else label
 
-	# Use cleaned message; fall back to original if slash commands
-	# were the entire message (e.g. user typed only "/summarize")
-	agent_message = cleaned_message if cleaned_message else message
 
-	# If some skills weren't found, append a note so the model
-	# can inform the user rather than silently ignoring
-	if not_found:
-		missing = ", ".join(f"/{s}" for s in not_found)
-		agent_message = f"{agent_message}\n\n[Skills not found: {missing}]"
+def process_agent_chat(
+    message,
+    chat_id,
+    attachments,
+    user,
+    agent_name=None,
+    model_override=None,
+    reasoning_effort=None,
+):
+    """Background Job: Executes the agent loop.
 
-	if attachments:
-		file_lines = "\n".join(
-			f"- {a.get('file_name', 'file')}: {a.get('file_url', '')}" for a in attachments
-		)
-		agent_message = f"{agent_message}\n\n[Attached files]\n{file_lines}".strip()
+    agent_name: name of an Agent Definition to run this session's turn
+    with. None -> the default Omnis agent (unchanged behavior).
 
-	skill_injection = None
-	if invoked_skills:
-		skill_injection = _build_skill_injection(invoked_skills)
+    model_override / reasoning_effort: per-turn overrides forwarded from
+    the chat() endpoint's model/reasoning_effort params — see chat()'s
+    docstring and Agent.__init__ for precedence and the "none" tri-state.
 
-	provenance = SessionProvenance(trigger_type="Chat", trigger_source="Chat", trigger_ref=chat_id)
-	conversation = Conversation(session_id=chat_id) if chat_id else None
+    Deliberately one big try/except around the ENTIRE body, not just the
+    agent run: this is a background job (frappe.enqueue), so any
+    exception here — including one raised while just building the
+    Conversation or rendering skill text, before the agent even starts —
+    needs to (a) always be logged via frappe.log_error with the full
+    traceback, and (b) always reach the frontend as *something*
+    meaningful, not silently vanish into the job queue.
+    """
 
-	try:
-		result = run_headless_agent_streaming(
-			agent_name=agent_name or "",
-			input_message=agent_message,
-			provenance=provenance,
-			user=user,
-			session_id=chat_id,
-			on_token=conversation.emit_token if conversation else None,
-			on_reasoning=conversation.emit_reasoning if conversation else None,
-			skill_injection=skill_injection,
-		)
+    conversation = None
 
-		frappe.db.commit()
-		if conversation:
-			conversation.emit_done(result.response)
+    try:
+        conversation = (
+            Conversation(session_id=chat_id, user=user)
+            if chat_id
+            else None
+        )
 
-	except MaxTurnsError as e:
-		frappe.db.commit()
-		if conversation:
-			conversation.emit_error("Agent took too long.")
-		frappe.log_error("Agent Max Turns", str(e))
+        # ── Extract slash-command skill invocations ──────────────────────
+        skill_slugs, cleaned_message = _extract_skill_commands(message)
+        invoked_skills, not_found = _load_invoked_skills(skill_slugs)
 
-	except StoppedByUser:
-		frappe.db.commit()
-		if conversation:
-			conversation.emit_done("")
+        # Use the cleaned message unless the slash command consumed the
+        # entire message (e.g. "/summarize"), in which case preserve the
+        # original message.
+        agent_message = cleaned_message if cleaned_message else message
 
-	except Exception as e:
-		frappe.db.commit()
-		error_text = str(e) if frappe.conf.get("developer_mode") else "Sorry, something went wrong."
-		if conversation:
-			conversation.emit_error(error_text)
-		frappe.log_error("Agent Chat Error", frappe.get_traceback())
+        # Tell the model which requested skills could not be found.
+        if not_found:
+            missing = ", ".join(f"/{slug}" for slug in not_found)
+            agent_message = (
+                f"{agent_message}\n\n[Skills not found: {missing}]"
+            )
+
+        # Attachments are passed separately and converted into multimodal
+        # content by Conversation.get_messages().
+
+        skill_injection = None
+        if invoked_skills:
+            skill_injection = _build_skill_injection(invoked_skills)
+
+        provenance = SessionProvenance(
+            trigger_type="Chat",
+            trigger_source="Chat",
+            trigger_ref=chat_id,
+        )
+
+        result = run_headless_agent_streaming(
+            agent_name=agent_name or "",
+            input_message=agent_message,
+            provenance=provenance,
+            user=user,
+            session_id=chat_id,
+            on_token=conversation.emit_token if conversation else None,
+            on_reasoning=conversation.emit_reasoning if conversation else None,
+            skill_injection=skill_injection,
+            model_override=model_override,
+            reasoning_effort=reasoning_effort,
+            attachments=attachments,
+        )
+
+        frappe.db.commit()
+
+        if conversation:
+            conversation.emit_done(result.response)
+
+    except MaxTurnsError as e:
+        frappe.db.rollback()
+
+        frappe.log_error(
+            title="Agent Max Turns",
+            message=frappe.get_traceback(),
+        )
+
+        if conversation:
+            conversation.emit_error(
+                f"The agent ran too many turns without finishing ({e})."
+            )
+
+    except StoppedByUser:
+        frappe.db.rollback()
+
+        if conversation:
+            conversation.emit_done("")
+
+    except Exception as e:
+        frappe.db.rollback()
+
+        error_text = _safe_error_message(e)
+
+        try:
+            frappe.log_error(
+                title="Agent Chat Error",
+                message=frappe.get_traceback(),
+            )
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "frappe.log_error failed while handling process_agent_chat error"
+            )
+
+        if conversation:
+            conversation.emit_error(error_text)
+        else:
+            logger = logging.getLogger(__name__)
+
+            logger.error(
+                "process_agent_chat failed before Conversation "
+                "was created (chat_id=%s user=%s): %s",
+                chat_id,
+                user,
+                error_text,
+            )
+
+            try:
+                frappe.publish_realtime(
+                    event="agent_error",
+                    message={
+                        "session_id": chat_id,
+                        "response": error_text,
+                    },
+                    user=user,
+                )
+            except Exception:
+                logger.exception(
+                    "publish_realtime failed while handling "
+                    "process_agent_chat error"
+                )
