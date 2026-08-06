@@ -93,3 +93,13 @@ def get_provider(name: str) -> Provider:
 		(name or "").strip().lower(),
 		PROVIDERS[_DEFAULT_PROVIDER_NAME],
 	)
+
+
+def get_provider_choices() -> list[str]:
+	"""Ordered list of valid provider keys.
+
+	Single source of truth for the `provider` Select options on both
+	Agent Setup and Model Pricing — keep those DocType JSON option lists
+	equal to this list when a provider is added or removed here.
+	"""
+	return list(PROVIDERS.keys())

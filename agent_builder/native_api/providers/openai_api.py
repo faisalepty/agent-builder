@@ -73,22 +73,74 @@ def _enforce_int(value: Any) -> int | None:
 	return int(value) if value is not None else None
 
 
+def _has_file_part(messages: MessageList) -> bool:
+	"""True if any message's content-parts array includes a `file` part
+	(a PDF attachment — see agent.attachments.build_content_parts).
+
+	Used to decide whether to send OpenRouter's `plugins` request field
+	configuring the PDF-parsing engine. Content is usually a plain string;
+	only user turns with attachments carry a parts list."""
+	for m in messages:
+		content = m.get("content")
+		if not isinstance(content, list):
+			continue
+		for part in content:
+			if isinstance(part, dict) and part.get("type") == "file":
+				return True
+	return False
+
+
 # ── Main client ────────────────────────────────────────────────────
 
 
 class OpenAIProvider:
 	"""Holds a single provider connection and exposes generate()."""
 
-	def __init__(self) -> None:
+	def __init__(
+		self,
+		model_override: str | None = None,
+		reasoning_effort_override: str | None = None,
+	) -> None:
+		"""
+		model_override: model id to use instead of Agent Setup's saved
+		    `model`. Provider is still always the one configured in Agent
+		    Setup — a model_override only makes sense for a model the
+		    same provider (or OpenRouter) can actually serve; callers are
+		    responsible for that (e.g. Agent resolves it from an Agent
+		    Definition's own `model` field, or a caller-supplied model at
+		    the entry point).
+		reasoning_effort_override: reasoning effort to use instead of
+		    Agent Setup's saved `reasoning_effort`. Tri-state:
+		      - None (default): fall back to Agent Setup's saved value.
+		      - "none": explicitly disable reasoning for this call, even
+		        if Agent Setup has an effort configured.
+		      - any other string ("low"/"medium"/"high"/etc): use it,
+		        provider validates the vocabulary.
+		"""
 		doc = frappe.get_doc("Agent Setup")
 		name = (doc.provider or "").strip().lower() or "openrouter"
 		provider: Provider = get_provider(name)
 
 		self.provider: Provider = provider
-		self.model: str = doc.model
-		self.reasoning_effort: str | None = (
-			getattr(doc, "reasoning_effort", None) or ""
-		).strip().lower() or None
+		self.model: str = model_override or doc.model
+
+		if reasoning_effort_override is not None:
+			effort = reasoning_effort_override.strip().lower()
+		else:
+			effort = (getattr(doc, "reasoning_effort", None) or "").strip().lower()
+		# "none" is a valid, explicit "reasoning off" signal from either
+		# source — normalize it the same way whether it came from the
+		# Agent Setup default or an explicit override, so downstream
+		# reasoning_strategy callables see one consistent shape.
+		self.reasoning_effort: str | None = effort or None
+
+		# PDF-parsing engine for OpenRouter's `plugins` request field —
+		# only meaningful when self.provider.name == "openrouter" and a
+		# PDF attachment is present (see _build_request_kwargs). Optional
+		# Agent Setup field; falls back to OpenRouter's own recommended
+		# default ("mistral-ocr" — OCR + embedded-image extraction) when
+		# unset. Use "pdf-text" for free, text-only extraction instead.
+		self.pdf_engine: str = (getattr(doc, "pdf_engine", None) or "mistral-ocr").strip().lower()
 
 		self.client = AsyncOpenAI(
 			api_key=doc.get_password("api_key"),
@@ -139,30 +191,19 @@ class OpenAIProvider:
 				return await self._generate_once(kwargs)
 
 			except APIStatusError as exc:
-				if exc.status_code in _PERMANENT_STATUS:
-					logger.error(
-						"Permanent provider error %d — not retrying: %s",
-						exc.status_code,
-						exc.message,
+					if exc.status_code in _PERMANENT_STATUS:
+						frappe.log_error(
+							f"Permanent provider error {exc.status_code} — not retrying: {exc.message}",
+						)
+						raise
+					last_exc = exc
+					frappe.log_error(
+						f"Transient provider error {exc.status_code} (attempt {attempt+1}/{_MAX_RETRIES}): {exc.message}",
 					)
-					raise
-				last_exc = exc
-				logger.warning(
-					"Transient provider error %d (attempt %d/%d): %s",
-					exc.status_code,
-					attempt + 1,
-					_MAX_RETRIES,
-					exc.message,
-				)
 
 			except APIConnectionError as exc:
 				last_exc = exc
-				logger.warning(
-					"Provider connection error (attempt %d/%d): %s",
-					attempt + 1,
-					_MAX_RETRIES,
-					exc,
-				)
+				frappe.log_error(f"Provider connection error (attempt {attempt+1}/{_MAX_RETRIES}): {exc}")
 
 			if attempt < _MAX_RETRIES - 1:
 				delay = _BASE_BACKOFF * (2**attempt) + random.uniform(0, 0.5)
@@ -206,10 +247,8 @@ class OpenAIProvider:
 		if self.reasoning_effort and p.reasoning_strategy is not None:
 			p.reasoning_strategy(self.reasoning_effort, kwargs, self.model)
 		elif self.reasoning_effort:
-			logger.info(
-				"No reasoning strategy for provider %r — reasoning_effort=%r will not be sent.",
-				p.name,
-				self.reasoning_effort,
+			frappe.log_error(
+				f"No reasoning strategy for provider {p.name} — reasoning_effort={self.reasoning_effort!r} will not be sent."
 			)
 
 		# Tools + parallel_tool_calls.
@@ -222,6 +261,20 @@ class OpenAIProvider:
 			)
 			if should_disable_parallel:
 				kwargs["parallel_tool_calls"] = False
+
+		# PDF attachment handling — OpenRouter-specific `plugins` field
+		# selecting the parsing engine (mistral-ocr / pdf-text). Only
+		# OpenRouter understands this field; other OpenAI-compatible
+		# providers would reject an unknown top-level param, so it's only
+		# sent when p.name == "openrouter". Native-file-capable models
+		# still get the raw `file` content part either way (set in
+		# agent.attachments.build_content_parts) — this just configures
+		# OpenRouter's fallback parser for models that don't.
+		if p.name == "openrouter" and _has_file_part(messages):
+			kwargs["extra_body"] = {
+				**kwargs.get("extra_body", {}),
+				"plugins": [{"id": "file-parser", "pdf": {"engine": self.pdf_engine}}],
+			}
 
 		return kwargs
 

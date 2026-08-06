@@ -79,12 +79,9 @@ class ToolExecutor:
 
             except Exception as exc:
                 last_error = f"Execution error in '{func_name}': {exc}"
-                logger.warning(
-                    "Tool '%s' attempt %d/%d failed: %s",
-                    func_name,
-                    attempt + 1,
-                    _MAX_RETRIES + 1,
-                    exc,
+                frappe.log_error(
+                    f"Tool '{func_name}' attempt {attempt+1}/{_MAX_RETRIES+1} failed: {exc}",
+                    frappe.get_traceback(),
                 )
 
                 if isinstance(exc, (TypeError, ValueError, KeyError)):
