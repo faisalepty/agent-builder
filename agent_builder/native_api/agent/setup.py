@@ -207,138 +207,135 @@ def get_tool_registry() -> ToolRegistry:
 # session.
 # =========================================================================
 
-
 def get_session_context() -> dict:
-	"""Snapshot of session-scoped facts the model needs to ground its
-	queries.
+    """Snapshot of session-scoped facts the model needs to ground its
+    queries.
 
-	Notes on sourcing, from things that have bitten real ERPNext deployments:
-	- User identity: frappe.session.user is a login id (email), not a name
-	  a human would recognize themselves by — never surface it alone as
-	  "who the user is". Resolve the display name from the User doctype's
-	  full_name, falling back to first_name/last_name, then the email
-	  localpart, then the raw email if nothing else is populated (can
-	  happen for freshly-created or system accounts). A separate casual
-	  first name is resolved too, since "Good morning, Faiz Ahmed" reads
-	  stiffer than "Good morning, Faiz" — fall back to the first token of
-	  the display name if first_name isn't set.
-	- Time-of-day: compute the greeting period (morning/afternoon/evening/
-	  night) server-side from the resolved System Settings time_zone rather
-	  than handing the model a bare timestamp and expecting correct
-	  chronological reasoning about greeting conventions — that's a job for
-	  code, not inference.
-	- Company: frappe.defaults.get_user_default requires the capitalized key
-	  "Company" — the lowercase "company" silently returns the site-wide
-	  Global Defaults value instead of the user's actual default, which is a
-	  long-standing footgun. Even with the right casing, a user restricted
-	  via User Permission rather than a plain default can get no value back,
-	  so we fall back to Global Defaults, and separately surface the full set
-	  of permitted companies so the agent can tell when scope is ambiguous.
-	- Currency: prefer the resolved company's currency over the bare system
-	  default, since multi-company Kenyan deployments frequently mix KES and
-	  USD entities.
-	- Fiscal year: derived from today's date against the Fiscal Year
-	  doctype's date range rather than trusting a stored "default fiscal
-	  year" value, since that concept is unreliable/version-dependent
-	  (ERPNext v15 removed the UI to set one explicitly).
-	- Installed apps: not every client site runs every module (e.g. Frappe
-	  Lending isn't installed everywhere), so the agent should check this
-	  before assuming a doctype exists.
-	"""
-	user = frappe.session.user
+    Notes on sourcing, from things that have bitten real ERPNext deployments:
+    - User identity: frappe.session.user is a login id (email), not a name
+      a human would recognize themselves by — never surface it alone as
+      "who the user is". Resolve the display name from the User doctype's
+      full_name, falling back to first_name/last_name, then the email
+      localpart, then the raw email if nothing else is populated (can
+      happen for freshly-created or system accounts). A separate casual
+      first name is resolved too, since "Good morning, Faiz Ahmed" reads
+      stiffer than "Good morning, Faiz" — fall back to the first token of
+      the display name if first_name isn't set.
+    - Time-of-day: compute the greeting period (morning/afternoon/evening/
+      night) server-side from the resolved System Settings time_zone rather
+      than handing the model a bare timestamp and expecting correct
+      chronological reasoning about greeting conventions — that's a job for
+      code, not inference.
+    - Company: frappe.defaults.get_user_default requires the capitalized key
+      "Company" — the lowercase "company" silently returns the site-wide
+      Global Defaults value instead of the user's actual default, which is a
+      long-standing footgun. Even with the right casing, a user restricted
+      via User Permission rather than a plain default can get no value back,
+      so we fall back to Global Defaults, and separately surface the full set
+      of permitted companies so the agent can tell when scope is ambiguous.
+    - Currency: prefer the resolved company's currency over the bare system
+      default, since multi-company Kenyan deployments frequently mix KES and
+      USD entities.
+    - Fiscal year: derived from today's date against the Fiscal Year
+      doctype's date range rather than trusting a stored "default fiscal
+      year" value, since that concept is unreliable/version-dependent
+      (ERPNext v15 removed the UI to set one explicitly).
+    - Installed apps: not every client site runs every module (e.g. Frappe
+      Lending isn't installed everywhere), so the agent should check this
+      before assuming a doctype exists.
+    """
+    user = frappe.session.user
 
-	user_details = (
-		frappe.db.get_value(
-			"User", user, ["full_name", "first_name", "last_name"], as_dict=True
-		)
-		or {}
-	)
-	display_name = (
-		user_details.get("full_name")
-		or " ".join(
-			filter(None, [user_details.get("first_name"), user_details.get("last_name")])
-		)
-		or (user.split("@")[0] if user and "@" in user else user)
-		or user
-	)
-	first_name = (
-		user_details.get("first_name")
-		or display_name.split(" ")[0]
-	)
+    user_details = (
+        frappe.db.get_value(
+            "User", user, ["full_name", "first_name", "last_name"], as_dict=True
+        )
+        or {}
+    )
+    display_name = (
+        user_details.get("full_name")
+        or " ".join(
+            filter(None, [user_details.get("first_name"), user_details.get("last_name")])
+        )
+        or (user.split("@")[0] if user and "@" in user else user)
+        or user
+    )
+    first_name = (
+        user_details.get("first_name")
+        or display_name.split(" ")[0]
+    )
 
-	timezone = frappe.db.get_single_value("System Settings", "time_zone")
-	try:
-		local_now = (
-			frappe.utils.now_datetime().astimezone(frappe.utils.get_timezone(timezone))
-			if timezone
-			else datetime.now()
-		)
-	except Exception as e:
-		frappe.log_error(f"Could not resolve session timezone {timezone}: {e}")
-		local_now = datetime.now()
+    timezone = frappe.db.get_single_value("System Settings", "time_zone")
+    try:
+        # frappe.utils.now_datetime() already returns the datetime
+        # localized to the system's configured timezone natively.
+        local_now = frappe.utils.now_datetime()
+    except Exception as e:
+        frappe.log_error(f"Could not resolve session datetime: {e}")
+        local_now = datetime.now()
 
-	hour = local_now.hour
-	if 5 <= hour < 12:
-		time_of_day = "morning"
-	elif 12 <= hour < 17:
-		time_of_day = "afternoon"
-	elif 17 <= hour < 21:
-		time_of_day = "evening"
-	else:
-		time_of_day = "night"
+    hour = local_now.hour
+    if 5 <= hour < 12:
+        time_of_day = "morning"
+    elif 12 <= hour < 17:
+        time_of_day = "afternoon"
+    elif 17 <= hour < 21:
+        time_of_day = "evening"
+    else:
+        time_of_day = "night"
 
-	company = frappe.defaults.get_user_default("Company")
-	if not company:
-		company = frappe.db.get_single_value("Global Defaults", "default_company")
+    company = frappe.defaults.get_user_default("Company")
+    if not company:
+        company = frappe.db.get_single_value("Global Defaults", "default_company")
 
-	permitted_companies = frappe.db.get_list(
-		"User Permission",
-		filters={"user": user, "allow": "Company"},
-		pluck="for_value",
-	) or ([company] if company else [])
+    permitted_companies = frappe.db.get_list(
+        "User Permission",
+        filters={"user": user, "allow": "Company"},
+        pluck="for_value",
+    ) or ([company] if company else [])
 
-	company_currency = None
-	if company:
-		company_currency = frappe.db.get_value("Company", company, "default_currency")
-	currency = company_currency or frappe.db.get_single_value(
-		"Global Defaults", "default_currency"
-	)
+    company_currency = None
+    if company:
+        company_currency = frappe.db.get_value("Company", company, "default_currency")
+    currency = company_currency or frappe.db.get_single_value(
+        "Global Defaults", "default_currency"
+    )
 
-	today = frappe.utils.today()
-	fiscal_year = frappe.db.get_value(
-		"Fiscal Year",
-		{"year_start_date": ("<=", today), "year_end_date": (">=", today)},
-		["name", "year_start_date", "year_end_date"],
-		as_dict=True,
-	)
+    today = frappe.utils.today()
+    fiscal_year = frappe.db.get_value(
+        "Fiscal Year",
+        {"year_start_date": ("<=", today), "year_end_date": (">=", today)},
+        ["name", "year_start_date", "year_end_date"],
+        as_dict=True,
+    )
 
-	try:
-		installed_apps = frappe.get_installed_apps()
-	except Exception as e:
-		frappe.log_error(f"Could not fetch installed apps: {e}")
-		installed_apps = []
+    try:
+        installed_apps = frappe.get_installed_apps()
+    except Exception as e:
+        frappe.log_error(f"Could not fetch installed apps: {e}")
+        installed_apps = []
 
-	try:
-		roles = frappe.get_roles(user)
-	except Exception as e:
-		frappe.log_error(f"Could not fetch roles for {user}: {e}")
-		roles = []
+    try:
+        roles = frappe.get_roles(user)
+    except Exception as e:
+        frappe.log_error(f"Could not fetch roles for {user}: {e}")
+        roles = []
 
-	return {
-		"user": user,
-		"user_display_name": display_name,
-		"user_first_name": first_name,
-		"time_of_day": time_of_day,
-		"roles": roles,
-		"default_company": company,
-		"permitted_companies": permitted_companies,
-		"currency": currency,
-		"fiscal_year": fiscal_year,
-		"installed_apps": installed_apps,
-		"timezone": timezone,
-		"date_format": frappe.db.get_single_value("System Settings", "date_format"),
-		"number_format": frappe.db.get_single_value("System Settings", "number_format"),
-	}
+    return {
+        "user": user,
+        "user_display_name": display_name,
+        "user_first_name": first_name,
+        "time_of_day": time_of_day,
+        "roles": roles,
+        "default_company": company,
+        "permitted_companies": permitted_companies,
+        "currency": currency,
+        "fiscal_year": fiscal_year,
+        "installed_apps": installed_apps,
+        "timezone": timezone,
+        "date_format": frappe.db.get_single_value("System Settings", "date_format"),
+        "number_format": frappe.db.get_single_value("System Settings", "number_format"),
+    }
 
 
 def format_session_context(ctx: dict) -> str:
