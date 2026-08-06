@@ -8,7 +8,19 @@
  "field_order": [
   "api_key",
   "provider",
-  "model"
+  "column_break_evey",
+  "model",
+  "system_prompt",
+  "section_break_sbzw",
+  "input_price_1m_tokensusd",
+  "output_price_1m_tokensusd",
+  "cached_input_price__1m_tokensusd",
+  "column_break_dxxx",
+  "context_window_tokens",
+  "max_output_tokens",
+  "supports_vision",
+  "supports_tool_calling",
+  "supports_reasoning"
  ],
  "fields": [
   {
@@ -20,24 +32,108 @@
   },
   {
    "fieldname": "provider",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Provider",
+   "options": "openai\nanthropic\ngoogle\nmistral\nxai\ndeepseek\nopenrouter\ngroq\ncerebras\nfireworks\ntogether\ndeepinfra\nnvidia\nhuggingface\ndashscope\nnebius\nvllm\nperplexity",
    "reqd": 1
   },
   {
-   "description": "Optional: Specific model ID to use (e.g. anthropic/claude-sonnet-4 or google/gemini-2.5-pro)",
+   "description": "Model to use, scoped to the selected Provider.",
    "fieldname": "model",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Model"
+   "label": "Model",
+   "options": "Model Pricing",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_evey",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.model",
+   "fieldname": "section_break_sbzw",
+   "fieldtype": "Section Break",
+   "label": "Model Details"
+  },
+  {
+   "fetch_from": "model.input_price_per_million",
+   "fieldname": "input_price_1m_tokensusd",
+   "fieldtype": "Float",
+   "label": "Input Price/ 1M tokens(USD)",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "model.output_price_per_million",
+   "fieldname": "output_price_1m_tokensusd",
+   "fieldtype": "Float",
+   "label": "Output Price/ 1M tokens(USD)",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "model.cached_price_per_million",
+   "fieldname": "cached_input_price__1m_tokensusd",
+   "fieldtype": "Float",
+   "label": "Cached Input Price / 1M tokens(USD)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fetch_from": "model.supports_reasoning",
+   "fieldname": "supports_reasoning",
+   "fieldtype": "Check",
+   "label": "Supports Reasoning",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fetch_from": "model.supports_tools",
+   "fieldname": "supports_tool_calling",
+   "fieldtype": "Check",
+   "label": "Supports Tool Calling",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fetch_from": "model.supports_vision",
+   "fieldname": "supports_vision",
+   "fieldtype": "Check",
+   "label": "Supports Vision",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_dxxx",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fetch_from": "model.context_window",
+   "fieldname": "context_window_tokens",
+   "fieldtype": "Int",
+   "label": "Context Window (Tokens)",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "model.max_output_tokens",
+   "fieldname": "max_output_tokens",
+   "fieldtype": "Int",
+   "label": "Max Output Tokens",
+   "read_only": 1
+  },
+  {
+   "fieldname": "system_prompt",
+   "fieldtype": "Link",
+   "label": "System Prompt",
+   "link_filters": "[[\"Skill\",\"is_agent\",\"=\",1]]",
+   "options": "Skill"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-07-02 12:13:11.760413",
+ "modified": "2026-08-05 09:50:25.039747",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Agent Setup",

@@ -1,12 +1,31 @@
 # omnis_hermes/agent/conversation.py
 import hashlib
 import json
+import logging
 from typing import Any, Dict, List, Optional
 
 import frappe
 from frappe.realtime import get_user_room
 from frappe.utils import now_datetime
 from frappe.utils.background_jobs import get_redis_conn
+
+# `attachments.py` is a NEW module (agent_builder/native_api/agent/attachments.py)
+# added alongside this file to support image/file uploads to vision-capable
+# models. Imported defensively: if it's missing (e.g. not yet deployed
+# alongside this file) or fails for any other reason, plain-text chat —
+# the vast majority of traffic and something that has nothing to do with
+# attachments — must keep working exactly as before. build_content_parts
+# is None in that case and get_messages() below falls back to plain text.
+try:
+	from agent_builder.native_api.agent.attachments import build_content_parts
+except Exception:
+	build_content_parts = None
+	logging.getLogger(__name__).exception(
+		"agent.attachments could not be imported — attachments will be "
+		"sent as plain-text references only until this is fixed. Check "
+		"that attachments.py was deployed to agent_builder/native_api/agent/ "
+		"alongside conversation.py, and that workers were restarted."
+	)
 
 SESSION_DOCTYPE = "Agent session"
 
@@ -155,7 +174,12 @@ class Conversation:
 
 	# ── History reconstruction ───────────────────────────
 
-	def get_messages(self, reasoning_replay=None, max_turns: int | None = None):
+	def get_messages(
+		self,
+		reasoning_replay=None,
+		max_turns: int | None = None,
+		allow_image_attachments: bool = True,
+	):
 		"""Rebuild the OpenAI-style message list from the two normalized tables.
 
 		       reasoning_replay: optional callable(meta, had_tool_calls, msg) — see
@@ -177,6 +201,15 @@ class Conversation:
 		       context-window overflow on very long sessions. The system prompt
 		       and the user message that triggered the first kept assistant turn
 		       are always preserved.
+
+		       allow_image_attachments: whether the resolved model advertises
+		       vision support (Model Pricing.supports_vision) for this run. When
+		       True (default — preserves old callers' behavior), user-turn image
+		       attachments are inlined as base64 image_url content parts. When
+		       False, image attachments are skipped and referenced by filename
+		       in the text instead, so we don't send bytes a text-only model
+		       will 400 on. PDF attachments are unaffected by this flag — see
+		       agent.attachments.build_content_parts.
 		"""
 		messages = []
 		if self.system_prompt:
@@ -290,8 +323,34 @@ class Conversation:
 							"content": result_content,
 						}
 					)
+			elif row.role == "user":
+				# For User messages, clear reasoning buffer if out of order
+				pending_reasoning = []
+				content = row.content or ""
+				row_attachments = getattr(row, "attachments", None)
+				if row_attachments and build_content_parts is not None:
+					try:
+						attachments = frappe.parse_json(row_attachments)
+						content = build_content_parts(
+							row.content or "",
+							attachments,
+							allow_images=allow_image_attachments,
+						)
+					except Exception:
+						# Never let a bad attachment (unreadable file,
+						# malformed stored JSON, etc.) break the whole
+						# turn — fall back to plain text for this message
+						# and log it so it's actually diagnosable.
+						logging.getLogger(__name__).exception(
+							"build_content_parts failed for message %s in session %s — "
+							"sending as plain text instead.",
+							getattr(row, "message_id", "?"),
+							self.session_id,
+						)
+						content = row.content or ""
+				messages.append({"role": "user", "content": content})
 			else:
-				# For User or System messages, clear reasoning buffer if out of order
+				# System messages (or any other role) — unchanged.
 				pending_reasoning = []
 				messages.append({"role": row.role, "content": row.content or ""})
 
@@ -355,7 +414,16 @@ class Conversation:
 				self.doc.skill_invoked = skill_name
 			self.doc.skill_content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
-	def add_user_message(self, text):
+	def add_user_message(self, text, attachments: list[dict[str, Any]] | None = None):
+		"""Append a user turn. `text` is stored as plain text regardless of
+		attachments — the multimodal content-parts array (image_url/file)
+		is built lazily in get_messages(), once we know whether the
+		resolved model for this run supports vision. This keeps the stored
+		row provider-agnostic and avoids re-persisting base64 blobs.
+
+		attachments: [{"file_name": ..., "file_url": ..., "mime_type": ...}, ...]
+		as produced by the chat widget's upload_file step (verify.chat).
+		"""
 		if not self.doc.title:
 			self.doc.title = (text or "")[:72]
 		msg_id = _gen_id()
@@ -365,6 +433,7 @@ class Conversation:
 				"message_id": msg_id,
 				"role": "user",
 				"content": text,
+				"attachments": json.dumps(attachments) if attachments else None,
 				"timestamp": now_datetime(),
 			},
 		)

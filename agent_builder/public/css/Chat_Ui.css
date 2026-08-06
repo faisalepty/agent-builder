@@ -141,6 +141,13 @@
     max-width: 760px;
     width: 100%;
 }
+/* Keep the composer the same width as message bubbles in expanded mode,
+   instead of stretching edge-to-edge across the wider window. */
+#ab-window.ab-expanded #ab-input-box {
+    max-width: 760px;
+    width: 100%;
+    margin: 0 auto;
+}
 #ab-window.ab-fully-closed { visibility: hidden; }
 
 /* ── Header ───────────────────────────────────────────────────── */
@@ -855,36 +862,58 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 
 @keyframes ab-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
-/* ── Input Area (SOTA Unified Box) ────────────────────────────── */
+/* ── Input Area (two-section unified box) ─────────────────────── */
 #ab-input-area { padding: 0 20px 24px; background: var(--bg-color); flex-shrink: 0; }
 #ab-input-box {
     position: relative; background: var(--control-bg);
     border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
     border-radius: 20px; transition: all 0.2s; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
     display: flex; flex-direction: column;
+    /* NOTE: no overflow:hidden here — popovers (#ab-model-menu etc.) are
+       children of this box and open *above* it via bottom: calc(100% + Npx),
+       i.e. outside its bounds. overflow:hidden would clip them invisible.
+       The toolbar rounds its own bottom corners below instead. */
 }
 #ab-input-box:focus-within {
     border-color: var(--text-muted); background: var(--bg-color);
     box-shadow: 0 4px 16px rgba(0,0,0,0.06);
 }
 
-#ab-input-wrap { position: relative; flex: 1; min-height: 0; }
+/* ── Twin-layer input highlight (top section — square bottom edge,
+   the toolbar row directly below it owns the rounding) ──────────── */
+#ab-input-wrap {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+}
+
 #ab-input-highlight {
-    position: absolute; inset: 0;
-    padding: 16px 64px 16px 50px;
-    font-family: var(--font-stack); font-size: 14px; line-height: 1.5;
-    white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word; overflow: hidden;
-    pointer-events: none; color: var(--text-color); z-index: 1;
-    border: 1px solid transparent; box-sizing: border-box;
+    position: absolute;
+    inset: 0;
+    padding: 16px 20px 10px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    overflow: hidden;
+    pointer-events: none;
+    color: var(--text-color);
+    z-index: 1;
+    border: 1px solid transparent;
+    box-sizing: border-box;
 }
 #ab-input {
-    position: relative; z-index: 2;
-    width: 100%; min-height: 50px;
-    background: transparent; border: 1px solid transparent;
-    padding: 16px 64px 16px 50px;
-    font-family: var(--font-stack); font-size: 14px; line-height: 1.5;
-    color: var(--text-color); resize: none; outline: none; max-height: 150px;
-    box-sizing: border-box; text-shadow: 0 0 0 0 transparent; caret-color: var(--text-color);
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    min-height: 44px;
+    background: transparent;
+    border: 1px solid transparent;
+    padding: 16px 20px 10px;
+    resize: none;
+    outline: none;
+    max-height: 150px;
+    box-sizing: border-box;
+    text-shadow: 0 0 0 0 transparent;
+    caret-color: var(--text-color);
 }
 #ab-input.ab-has-highlight { color: transparent; -webkit-text-fill-color: transparent; caret-color: var(--text-color); }
 .ab-skill-token {
@@ -910,25 +939,43 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 .ab-attachment-remove svg { width: 12px; height: 12px; }
 #ab-file-input { display: none; }
 
-#ab-plus-btn { position: absolute; left: 10px; bottom: 10px; z-index: 5; }
+/* ── Bottom toolbar row (second "section" of the box) ─────────────
+   Static flex row, not absolutely positioned — this is what visually
+   completes the box's rounded shape below the square-bottomed textarea
+   above it. Slightly different shade so the two sections read as
+   distinct parts of one unified control, the same way the reference
+   composer does it. */
+#ab-input-toolbar {
+    display: flex; align-items: center; gap: 4px;
+    padding: 6px 8px 8px;
+    background: color-mix(in srgb, var(--control-bg) 60%, var(--bg-color) 40%);
+    border-top: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+    border-radius: 0 0 19px 19px; /* matches #ab-input-box's 20px radius, minus its 1px border inset */
+}
+#ab-input-box:focus-within #ab-input-toolbar {
+    background: color-mix(in srgb, var(--bg-color) 100%, transparent);
+}
+#ab-toolbar-spacer { flex: 1; }
+
 .ab-input-icon-btn {
-    width: 32px; height: 32px; border-radius: 10px; border: none;
+    width: 30px; height: 30px; border-radius: 9px; border: none;
     background: transparent; color: var(--text-muted); display: flex;
     align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s;
+    flex-shrink: 0;
 }
-.ab-input-icon-btn svg { width: 18px; height: 18px; transition: transform 0.2s var(--ab-spring); }
-.ab-input-icon-btn:hover { background: var(--bg-color); color: var(--text-color); }
-.ab-input-icon-btn.is-open { background: var(--bg-color); color: var(--text-color); }
+.ab-input-icon-btn svg { width: 17px; height: 17px; transition: transform 0.2s var(--ab-spring); }
+.ab-input-icon-btn:hover { background: var(--control-bg); color: var(--text-color); }
+.ab-input-icon-btn.is-open { background: var(--control-bg); color: var(--text-color); }
 .ab-input-icon-btn.is-open svg { transform: rotate(45deg); }
 
-#ab-input-actions { position: absolute; right: 10px; bottom: 10px; display: flex; align-items: center; gap: 8px; z-index: 5; }
-#ab-char-count { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); padding-right: 4px; transition: color 0.2s; }
+#ab-char-count { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); padding-right: 2px; transition: color 0.2s; flex-shrink: 0; }
 #ab-char-count.near-limit { color: #f59e0b; }
 #ab-char-count.at-limit { color: #ef4444; }
 
 #ab-send, #ab-stop {
-    width: 36px; height: 36px; border-radius: 12px; border: none;
+    width: 32px; height: 32px; border-radius: 10px; border: none;
     display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s;
+    flex-shrink: 0;
 }
 #ab-send { background: var(--text-color); color: var(--bg-color); }
 #ab-send:hover:not(:disabled) { transform: translateY(-2px); box-shadow: var(--ab-shadow-sm); }
@@ -952,6 +999,22 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 }
 .ab-popover.open { visibility: visible; opacity: 1; pointer-events: all; transform: translateY(0); }
 #ab-slash-menu { left: 10px; right: 10px; width: auto; max-width: 360px; }
+#ab-model-menu { left: auto; right: 8px; bottom: calc(100% + 8px); width: 240px; }
+
+.ab-model-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+    padding: 8px 10px; border-radius: 10px; border: none; background: transparent;
+    color: var(--text-color); font-size: 12.5px; cursor: pointer; text-align: left;
+    transition: background 0.15s;
+}
+.ab-model-item:hover, .ab-model-item:focus-visible { background: var(--control-bg); outline: none; }
+.ab-model-item.active { background: var(--control-bg); }
+.ab-model-item-main { display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
+.ab-model-item-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: capitalize; }
+.ab-model-item-meta { font-size: 10.5px; color: var(--text-muted); }
+.ab-model-item-check { display: flex; color: var(--text-color); flex-shrink: 0; }
+.ab-model-item-check svg { width: 14px; height: 14px; }
+
 
 .ab-plus-menu-item {
     display: flex; align-items: center; gap: 10px; width: 100%;
@@ -1019,9 +1082,45 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
     box-shadow: var(--ab-shadow-md); z-index: 10070; display: none; pointer-events: none;
 }
 
-#ab-input-footer { padding-top: 8px; text-align: center; }
+/* Sub-input hint */
+#ab-input-footer { padding-top: 6px; text-align: center; }
 #ab-input-hint { font-size: 11px; color: color-mix(in srgb, var(--text-muted) 70%, transparent); }
 
+/* Compact model + reasoning picker — single control, single popover.
+   Lives at the start of the toolbar row next to the "+" button. Reads
+   as a subtle pill (light border) so it's distinguishable from the
+   plain icon buttons beside it, but stays understated. */
+.ab-compact-picker {
+    display: flex; align-items: center; gap: 4px; height: 30px;
+    background: transparent; border: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+    border-radius: 9px; padding: 0 8px; font-size: 12px; font-weight: 500;
+    color: var(--text-color); cursor: pointer; white-space: nowrap; max-width: 160px;
+    transition: all 0.15s;
+}
+.ab-compact-picker svg { width: 12px; height: 12px; flex-shrink: 0; color: var(--text-muted); transition: transform 0.15s; }
+.ab-compact-picker:hover { background: var(--control-bg); border-color: var(--border-color); }
+.ab-compact-picker.is-open { background: var(--control-bg); border-color: var(--border-color); }
+.ab-compact-picker.is-open svg { transform: rotate(180deg); }
+#ab-model-chip-label, #ab-effort-chip-label { overflow: hidden; text-overflow: ellipsis; }
+#ab-effort-chip-wrap { display: flex; align-items: center; gap: 4px; color: var(--text-muted); font-weight: 400; text-transform: capitalize; }
+.ab-picker-sep { color: var(--text-muted); }
+
+/* Inline effort row inside the same popover as the model list —
+   appears once a reasoning-capable model is active, right below it,
+   so picking model + effort is one open/close interaction. */
+.ab-effort-section { border-top: 1px solid var(--border-color); margin-top: 6px; padding: 8px 8px 2px; }
+.ab-effort-row-label { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); padding: 0 2px 6px; }
+.ab-effort-row { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 4px; }
+.ab-effort-chip {
+    border: 1px solid var(--border-color); background: transparent; color: var(--text-muted);
+    border-radius: 999px; padding: 4px 10px; font-size: 11px; font-weight: 500;
+    cursor: pointer; text-transform: capitalize; transition: all 0.15s;
+}
+.ab-effort-chip:hover { border-color: var(--text-muted); color: var(--text-color); }
+.ab-effort-chip.active { background: var(--text-color); color: var(--bg-color); border-color: var(--text-color); }
+
+
+/* Scroll-to-bottom */
 #ab-scroll-btn {
     position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%) translateY(10px);
     background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 24px;

@@ -109,7 +109,13 @@ _AGENT_DEF_CACHE: dict[str, dict] = {}
 #   ```chart block is warranted.\
 # """
 
-IDENTITY = frappe.get_doc("Skill", "Identity").content or ""
+system_prompt = frappe.db.get_single_value("Agent Setup", "system_prompt")
+
+IDENTITY = (
+    frappe.db.get_value("Skill", system_prompt, "content")
+    if system_prompt
+    else ""
+)
 
 TOOL_USE_ENFORCEMENT = (
 	"You MUST use your tools to take action — do not describe what you "
@@ -190,7 +196,7 @@ def get_tool_registry() -> ToolRegistry:
 	if _CACHED_REGISTRY is None:
 		_CACHED_REGISTRY = ToolRegistry()
 		load_tools(_CACHED_REGISTRY, str(TOOLS_DIR))
-		logger.info("Setup: Loaded %d tools.", len(_CACHED_REGISTRY.get_tool_schemas()))
+		frappe.log_error(f"Setup: Loaded {len(_CACHED_REGISTRY.get_tool_schemas())} tools.")
 	return _CACHED_REGISTRY
 
 
@@ -268,7 +274,7 @@ def get_session_context() -> dict:
 			else datetime.now()
 		)
 	except Exception as e:
-		logger.warning("Could not resolve session timezone %r: %s", timezone, e)
+		frappe.log_error(f"Could not resolve session timezone {timezone}: {e}")
 		local_now = datetime.now()
 
 	hour = local_now.hour
@@ -309,13 +315,13 @@ def get_session_context() -> dict:
 	try:
 		installed_apps = frappe.get_installed_apps()
 	except Exception as e:
-		logger.warning("Could not fetch installed apps: %s", e)
+		frappe.log_error(f"Could not fetch installed apps: {e}")
 		installed_apps = []
 
 	try:
 		roles = frappe.get_roles(user)
 	except Exception as e:
-		logger.warning("Could not fetch roles for %s: %s", user, e)
+		frappe.log_error(f"Could not fetch roles for {user}: {e}")
 		roles = []
 
 	return {
@@ -394,7 +400,7 @@ def _safe_session_context_block() -> str:
 	try:
 		return format_session_context(get_session_context())
 	except Exception as e:
-		logger.error("Failed to build session context: %s", e)
+		frappe.log_error(f"Failed to build session context: {e}", frappe.get_traceback())
 		return ""
 
 
@@ -403,9 +409,9 @@ def build_system_prompt_parts(
 ) -> dict[str, str]:
 	"""Assemble the system prompt as three tiers."""
 	try:
-		skills_text = list_skills({"limit": 20})
+		skills_text = list_skills({"disable_model_invocation": 0, "is_enabled": 1, "is_agent": 0})
 	except Exception as e:
-		logger.error("Failed to load skills: %s", e)
+		frappe.log_error(f"Failed to load skills: {e}", frappe.get_traceback())
 		skills_text = "No skills loaded."
 
 	stable = "\n\n".join(

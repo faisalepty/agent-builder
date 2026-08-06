@@ -70,6 +70,8 @@ class Agent:
 		max_turns: int | None = None,
 		max_retries: int = 2,
 		max_context_chars: int = 1000000,
+		model_override: str | None = None,
+		reasoning_effort: str | None = None,
 	):
 		"""
 		agent_name: name of an ``Agent Definition`` record (Agent Builder).
@@ -79,6 +81,17 @@ class Agent:
 		    unless explicitly overridden. When omitted, behaves exactly as
 		    before (the hardcoded default Omnis agent) — existing callers
 		    (the chat widget) are unaffected.
+		model_override: explicit model id for this run, taking precedence
+		    over the Agent Definition's own `model` field, which itself
+		    takes precedence over Agent Setup's saved default. Lets a
+		    single call site (e.g. a "thinking mode" toggle in the chat
+		    widget, or a workflow step wanting a specific model) pick a
+		    model without editing the Agent Definition or Agent Setup.
+		reasoning_effort: explicit reasoning effort for this run — same
+		    precedence idea, forwarded to OpenAIProvider as a tri-state
+		    override (None = use Agent Setup default, "none" = explicitly
+		    disable, any other value = use it). This is the "enable
+		    thinking" knob.
 		"""
 		self.agent_name = agent_name
 		agent_def = get_agent_definition(agent_name) if agent_name else None
@@ -88,13 +101,43 @@ class Agent:
 		self.system_prompt = get_agent_system_prompt(agent_name)
 		self.available_tool_schemas = get_tool_schemas_for(agent_name)
 
-		# 2. Initialize provider and executor
-		self.provider = (
-			OpenAIProvider(model_override=agent_def["model"])
-			if (agent_def and agent_def.get("model"))
-			else OpenAIProvider()
+		# 2. Resolve model: explicit override > Agent Definition's model >
+		# OpenAIProvider's own Agent Setup fallback (leave as None to let
+		# OpenAIProvider read Agent Setup directly, same as before).
+		resolved_model = model_override or (agent_def.get("model") if agent_def else None)
+
+		# 3. Initialize provider and executor
+		self.provider = OpenAIProvider(
+			model_override=resolved_model,
+			reasoning_effort_override=reasoning_effort,
 		)
 		self.executor = ToolExecutor(self.registry)
+
+		# Whether this run's resolved model advertises vision support —
+		# looked up post-resolution (self.provider.model, not
+		# resolved_model) so it reflects whatever OpenAIProvider actually
+		# settled on, including its own Agent Setup fallback when neither
+		# model_override nor the Agent Definition supplied one. Passed to
+		# Conversation.get_messages() so image attachments are only
+		# inlined for models that can actually use them — see
+		# agent.attachments.build_content_parts.
+		#
+		# Defensive: this is a plain lookup with no reason to fail under
+		# normal operation, but it must never be able to take an entire
+		# run down (e.g. Model Pricing not yet migrated with this field
+		# on some sites) — fail to "no vision" rather than erroring, same
+		# fail-closed default the frontend uses (see chat_ui.js's
+		# _attachEnabled).
+		try:
+			self.supports_vision = bool(
+				frappe.db.get_value("Model Pricing", self.provider.model, "supports_vision")
+			)
+		except Exception:
+			frappe.log_error(
+				f"supports_vision lookup failed for model {self.provider.model} — defaulting to False",
+				frappe.get_traceback(),
+			)
+			self.supports_vision = False
 
 		# 3. Store config — explicit args win, then Agent Definition, then default
 		self.max_turns = max_turns or (agent_def["max_turns"] if agent_def else 40)
@@ -107,9 +150,10 @@ class Agent:
 		on_token: Callable[[str], None] | None = None,
 		on_reasoning: Callable[[str], None] | None = None,
 	) -> str:
+		
 		available_tools = self.available_tool_schemas
 		conversation.set_system(self.system_prompt)
-
+		
 		# Defensive reset: clear_stop_flag() is only ever called when a stop
 		# is actually consumed below, and the Redis flag carries a 600s TTL.
 		# If a *previous* run on this same session_id was stopped and the
@@ -121,20 +165,23 @@ class Agent:
 		# stop request queued against it yet, so it's always safe to clear
 		# here before the loop starts.
 		conversation.clear_stop_flag(conversation.session_id)
+		
 
 		# Set once per run — copied automatically into any child task this
 		# coroutine spawns (e.g. the tool-call tasks in
 		# _execute_tool_calls_parallel's asyncio.gather), so delegate_task
 		# can read it no matter which parallel branch it's called from.
 		current_session_id.set(conversation.session_id)
-
 		last_fp: tuple[str, str] | None = None
 		loop_strikes = 0
 		turns = 0
 		ended_reason = "Completed"
+		
+		
 
 		try:
 			while turns < self.max_turns:
+				
 				turns += 1
 
 				if conversation.is_stop_requested():
@@ -142,9 +189,11 @@ class Agent:
 					raise StoppedByUser()
 
 				messages = self._trim_context(
-					conversation.get_messages(reasoning_replay=self.provider.replay_reasoning)
+					conversation.get_messages(
+						reasoning_replay=self.provider.replay_reasoning,
+						allow_image_attachments=self.supports_vision,
+					)
 				)
-
 				t0 = time.monotonic()
 				response, tool_calls = await self._retry_llm(
 					messages, available_tools, on_token=on_token, on_reasoning=on_reasoning
@@ -211,7 +260,6 @@ class Agent:
 			conversation.save(ended_reason=ended_reason)
 			# Non-blocking post-run anomaly analysis
 			try:
-				import frappe
 				from frappe.utils.background_jobs import enqueue
 
 				enqueue(
@@ -222,11 +270,9 @@ class Agent:
 				)
 			except Exception:
 				# Never let analysis failure affect the agent response
-				import logging
-
-				logging.getLogger(__name__).exception(
-					"Failed to enqueue post-run anomaly analysis for %s",
-					conversation.session_id,
+				frappe.log_error(
+					f"Failed to enqueue post-run anomaly analysis for {conversation.session_id}",
+					frappe.get_traceback(),
 				)
 
 	async def _execute_tool_calls_parallel(
@@ -288,8 +334,26 @@ class Agent:
 					await asyncio.sleep(min(2**attempt, 8) + random.uniform(0, 1))
 		raise last_err
 
+	@staticmethod
+	def _content_char_len(content) -> int:
+		"""Approximate char length of a message's `content`.
+
+		Usually a plain string, but user turns with attachments carry a
+		content-parts list (see Conversation.get_messages /
+		agent.attachments.build_content_parts). Base64 image/file bytes
+		there don't map to text-context tokens the way string length
+		does for the rest of this heuristic, so they're excluded — only
+		the text part counts. This keeps _trim_context's budget about
+		actual conversation text, not attachment payload size.
+		"""
+		if isinstance(content, str):
+			return len(content)
+		if isinstance(content, list):
+			return sum(len(p.get("text", "")) for p in content if isinstance(p, dict) and p.get("type") == "text")
+		return 0
+
 	def _trim_context(self, messages):
-		total_chars = sum(len(m.get("content", "")) for m in messages)
+		total_chars = sum(self._content_char_len(m.get("content", "")) for m in messages)
 		if total_chars <= self.max_context_chars:
 			return messages
 
@@ -298,7 +362,7 @@ class Agent:
 		limit = self.max_context_chars
 
 		for msg in reversed(messages[1:] if has_system else messages):
-			limit -= len(msg.get("content", ""))
+			limit -= self._content_char_len(msg.get("content", ""))
 			if limit < 0:
 				break
 			kept.insert(1 if has_system else 0, msg)

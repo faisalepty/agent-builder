@@ -9,14 +9,15 @@
  "field_order": [
   "name_",
   "description",
-  "is_enabled",
-  "disable_model_invocation",
-  "argument_hint",
-  "column_break_1",
-  "is_agent",
-  "parent_skill",
-  "reference_slug",
   "domain",
+  "reference_slug",
+  "user",
+  "column_break_1",
+  "is_enabled",
+  "is_agent",
+  "disable_model_invocation",
+  "parent_skill",
+  "argument_hint",
   "section_break_1",
   "content",
   "section_break_2",
@@ -69,10 +70,12 @@
    "description": "Link this skill to a parent skill. Use this for reference materials or sub-skills that belong to a main skill.",
    "fieldname": "parent_skill",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Parent Skill",
    "options": "Skill"
   },
   {
+   "depends_on": "eval:doc.disable_model_invocation",
    "description": "A short identifier used to build a unique name: '{parent-skill}-{this-slug}'. Prevents naming conflicts when multiple skills share the same parent. Required when Parent Skill is set.",
    "fieldname": "reference_slug",
    "fieldtype": "Data",
@@ -132,12 +135,19 @@
    "default": "0",
    "fieldname": "is_agent",
    "fieldtype": "Check",
-   "label": "Agent"
+   "label": "Is Agent"
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "user",
+   "options": "User"
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-07-28 07:34:26.086334",
+ "modified": "2026-08-05 10:11:46.974682",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Skill",

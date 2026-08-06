@@ -10,6 +10,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any, Optional
+import frappe
 
 from agent_builder.native_api.agent.agent import Agent, MaxTurnsError, StoppedByUser
 from agent_builder.native_api.agent.conversation import ChainBrokenError, Conversation
@@ -66,19 +67,21 @@ async def _run_agent_loop(
 			on_reasoning=reasoning_cb,
 		)
 		ended_reason = "Completed"
+		
+	
 
 	except MaxTurnsError as e:
-		logger.warning("Agent max turns exceeded: %s", e)
+		frappe.log_error(f"Agent max turns exceeded: {e}")
 		ended_reason = "MaxTurnsError"
 		response = ""
 
 	except StoppedByUser:
-		logger.info("Agent stopped by user")
+		frappe.log_error("Agent stopped by user")
 		ended_reason = "EndedByUser"
 		response = ""
 
 	except ChainBrokenError as e:
-		logger.warning("Chain broken: %s", e.reason)
+		frappe.log_error(f"Chain broken: {e.reason}")
 		ended_reason = "ChainBroken"
 		chain_break_info = e.partial_message.get("chain_break")
 		# The partial message is already persisted by Conversation.add_assistant_message
@@ -86,12 +89,13 @@ async def _run_agent_loop(
 		response = e.partial_message.get("content", "")
 
 	except Exception:
-		logger.exception("Agent run failed")
+		frappe.log_error("Agent run failed", frappe.get_traceback())
 		ended_reason = "Error"
 		response = ""
 
 	finally:
 		conversation.save(ended_reason=ended_reason)
+	
 
 	return RunResult(
 		session_id=conversation.session_id,
@@ -124,9 +128,15 @@ def run_agent_conversation(
 	stream_callbacks: bool = False,
 	on_token=None,
 	on_reasoning=None,
+	model_override: str | None = None,
+	reasoning_effort: str | None = None,
 ) -> RunResult:
-	"""Run an existing Conversation through the shared agent loop."""
-	agent = Agent(agent_name=agent_name)
+	"""Run an existing Conversation through the shared agent loop.
+
+	model_override / reasoning_effort: per-call overrides forwarded to
+	Agent — see Agent.__init__ for precedence rules.
+	"""
+	agent = Agent(agent_name=agent_name, model_override=model_override, reasoning_effort=reasoning_effort)
 	return asyncio.run(
 		_run_agent_loop(
 			conversation,
@@ -145,6 +155,9 @@ def run_headless_agent(
 	user: str = "Administrator",
 	session_id: str | None = None,
 	skill_injection: str | None = None,
+	model_override: str | None = None,
+	reasoning_effort: str | None = None,
+	attachments: list[dict] | None = None,
 ) -> RunResult:
 	"""Run a single agent headlessly (no streaming callbacks).
 
@@ -167,6 +180,14 @@ def run_headless_agent(
 	    user: Frappe user to run as (for permissions).
 	    session_id: Optional existing session to continue.
 	    skill_injection: Optional skill content to inject as system message.
+	    model_override: explicit model id for this run — see Agent.__init__.
+	    reasoning_effort: explicit reasoning effort for this run ("none" to
+	        disable, or a provider-valid effort string) — see Agent.__init__.
+	    attachments: optional [{"file_name", "file_url", "mime_type"}, ...]
+	        for this user turn — see Conversation.add_user_message. Whether
+	        images in here actually reach the model as vision content
+	        depends on the resolved model's Model Pricing.supports_vision;
+	        PDFs are always sent (OpenRouter parses them server-side).
 
 	Returns:
 	    RunResult with session_id, response, ended_reason.
@@ -179,8 +200,14 @@ def run_headless_agent(
 	)
 	if skill_injection:
 		conversation.add_system_message(skill_injection)
-	conversation.add_user_message(input_message)
-	return run_agent_conversation(conversation, agent_name=agent_name, stream_callbacks=False)
+	conversation.add_user_message(input_message, attachments=attachments)
+	return run_agent_conversation(
+		conversation,
+		agent_name=agent_name,
+		stream_callbacks=False,
+		model_override=model_override,
+		reasoning_effort=reasoning_effort,
+	)
 
 
 async def run_headless_agent_async(
@@ -190,12 +217,19 @@ async def run_headless_agent_async(
 	user: str = "Administrator",
 	session_id: str | None = None,
 	skill_injection: str | None = None,
+	model_override: str | None = None,
+	reasoning_effort: str | None = None,
+	attachments: list[dict] | None = None,
 ) -> RunResult:
 	"""Same as run_headless_agent, but awaited directly instead of wrapping
 	in asyncio.run() — safe to call from code already running inside an
 	event loop, i.e. a tool dispatched mid Agent.run() (delegate_task).
 	This is the version delegate_task must use; the sync version would
 	nest asyncio.run() inside the parent's already-running loop and crash.
+
+	model_override / reasoning_effort: same per-call overrides as
+	run_headless_agent — see Agent.__init__ for precedence rules.
+	attachments: see run_headless_agent.
 	"""
 	conversation = create_conversation(
 		user=user,
@@ -205,8 +239,8 @@ async def run_headless_agent_async(
 	)
 	if skill_injection:
 		conversation.add_system_message(skill_injection)
-	conversation.add_user_message(input_message)
-	agent = Agent(agent_name=agent_name)
+	conversation.add_user_message(input_message, attachments=attachments)
+	agent = Agent(agent_name=agent_name, model_override=model_override, reasoning_effort=reasoning_effort)
 	return await _run_agent_loop(conversation, agent, stream_callbacks=False)
 
 
@@ -219,12 +253,22 @@ def run_headless_agent_streaming(
 	on_token=None,
 	on_reasoning=None,
 	skill_injection: str | None = None,
+	model_override: str | None = None,
+	reasoning_effort: str | None = None,
+	attachments: list[dict] | None = None,
 ) -> RunResult:
 	"""Run a single agent headlessly WITH streaming callbacks.
 
 	Used by the chat widget (verify.py) and any caller that wants
 	real-time token/reasoning events. Core loop is identical; only
 	the streaming callbacks differ.
+
+	model_override / reasoning_effort: per-call overrides — e.g. a
+	"thinking mode" toggle or model picker in the chat widget passes
+	these straight through from the frontend request. See Agent.__init__
+	for precedence against the Agent Definition and Agent Setup defaults.
+	attachments: see run_headless_agent. The chat widget passes through
+	whatever it received from verify.chat()'s own `attachments` param.
 	"""
 	conversation = create_conversation(
 		user=user,
@@ -234,11 +278,14 @@ def run_headless_agent_streaming(
 	)
 	if skill_injection:
 		conversation.add_system_message(skill_injection)
-	conversation.add_user_message(input_message)
+	conversation.add_user_message(input_message, attachments=attachments)
+	
 	return run_agent_conversation(
 		conversation,
 		agent_name=agent_name,
 		stream_callbacks=True,
 		on_token=on_token,
 		on_reasoning=on_reasoning,
+		model_override=model_override,
+		reasoning_effort=reasoning_effort,
 	)
