@@ -53,6 +53,7 @@
         search:       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
         terminal:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="6 9 10 12 6 15"/><line x1="12" y1="15" x2="16" y2="15"/></svg>`,
         launcherChat: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 14.5a2.5 2.5 0 0 1-2.5 2.5H6.5L2 21.5V5a2.5 2.5 0 0 1 2.5-2.5h14A2.5 2.5 0 0 1 21 5z"/><circle cx="8" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="10" r="1" fill="currentColor" stroke="none"/></svg>`,
+        cpu:          `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="10" y="10" width="4" height="4"/><line x1="10" y1="2" x2="10" y2="6"/><line x1="14" y1="2" x2="14" y2="6"/><line x1="10" y1="18" x2="10" y2="22"/><line x1="14" y1="18" x2="14" y2="22"/><line x1="18" y1="10" x2="22" y2="10"/><line x1="18" y1="14" x2="22" y2="14"/><line x1="2" y1="10" x2="6" y2="10"/><line x1="2" y1="14" x2="6" y2="14"/></svg>`,
     };
     ICONS.plus = ICONS.newchat;
 
@@ -132,16 +133,35 @@
                                 <textarea id="ab-input" rows="1" placeholder="Ask APS Copilot anything…"></textarea>
                             </div>
 
-                            <button id="ab-plus-btn" class="ab-input-icon-btn" title="Add files or a skill" type="button">${ICONS.plus}</button>
+                            <div id="ab-input-toolbar">
+                                <button id="ab-plus-btn" class="ab-input-icon-btn" title="Add files or a skill" type="button">${ICONS.plus}</button>
 
-                            <div id="ab-input-actions">
+                                <div id="ab-toolbar-spacer"></div>
+
                                 <span id="ab-char-count"></span>
+
+                                <button id="ab-model-btn" class="ab-compact-picker" type="button" title="Model &amp; reasoning">
+                                    <span id="ab-model-chip-label">Auto</span>
+                                    <span id="ab-effort-chip-wrap" style="display:none;"><span class="ab-picker-sep">·</span><span id="ab-effort-chip-label"></span></span>
+                                    ${ICONS.down}
+                                </button>
+
                                 <button id="ab-stop" title="Stop generation">${ICONS.stop}</button>
                                 <button id="ab-send" title="Send">${ICONS.send}</button>
                             </div>
 
+                            <div id="ab-model-menu" class="ab-popover ab-model-popover">
+                                <div id="ab-model-list" class="ab-flyout-list">
+                                    <div class="ab-skill-empty">Loading models…</div>
+                                </div>
+                                <div id="ab-effort-section" class="ab-effort-section" style="display:none;">
+                                    <div class="ab-effort-row-label">Reasoning</div>
+                                    <div id="ab-effort-row" class="ab-effort-row"></div>
+                                </div>
+                            </div>
+
                             <div id="ab-plus-menu" class="ab-popover">
-                                <button class="ab-plus-menu-item" data-action="upload" type="button">
+                                <button class="ab-plus-menu-item" data-action="upload" type="button" id="ab-attach-upload-item">
                                     <span class="ab-plus-menu-icon">${ICONS.paperclip}</span>
                                     <span>Add photos &amp; files</span>
                                 </button>
@@ -237,6 +257,14 @@
     // Skills cache
     let _skills = [], _skillsLoaded = false, _skillsLoading = false, _skillsWaiters = [];
     let _skillSlugSet = new Set();
+
+    // Model/reasoning picker cache and current selection.
+    // null selection = "Auto": no override sent, backend uses Agent Setup's
+    // saved provider/model/reasoning_effort default, exactly as before this
+    // feature existed — so a user who never opens this menu sees no change.
+    let _modelOptions = [], _modelsLoaded = false, _modelsLoading = false, _modelWaiters = [];
+    let _selectedModel = localStorage.getItem('ab_selected_model') || null;
+    let _selectedEffort = localStorage.getItem('ab_selected_effort') || null;
 
     // Slash-menu state
     let _slashFiltered = [], _slashActiveIndex = -1, _slashStartPos = -1;
@@ -615,6 +643,254 @@
         _updateInputHighlight();
     }
 
+    // ── Model/Reasoning Picker ──────────────────────────────────
+    function loadModelOptions(onReady) {
+        if (_modelsLoaded) { onReady && onReady(); return; }
+        _modelWaiters.push(onReady);
+        if (_modelsLoading) return;
+        _modelsLoading = true;
+        frappe.call({
+            method: 'agent_builder.native_api.verify.get_model_options',
+            callback(r) {
+                const msg = r.message || {};
+                _modelOptions = msg.models || [];
+                _modelDefaults = { model: msg.default_model || '', effort: msg.default_reasoning_effort || '' };
+                _finishModelsLoad();
+            },
+            error() {
+                _modelOptions = [];
+                _modelDefaults = { model: '', effort: '' };
+                _finishModelsLoad();
+            }
+        });
+    }
+    let _modelDefaults = { model: '', effort: '' };
+
+    function _finishModelsLoad() {
+        _modelsLoaded = true;
+        _modelsLoading = false;
+        // A previously-saved selection (localStorage) may point at a model
+        // that's since been deactivated or removed from the catalog — drop
+        // it silently rather than send a stale/invalid override forever.
+        if (_selectedModel && !_modelOptions.some(m => m.model === _selectedModel)) {
+            _selectedModel = null;
+            _selectedEffort = null;
+            localStorage.removeItem('ab_selected_model');
+            localStorage.removeItem('ab_selected_effort');
+        }
+        const waiters = _modelWaiters.slice();
+        _modelWaiters = [];
+        waiters.forEach(cb => cb && cb());
+        renderModelMenu();
+        updateModelChipLabel();
+    }
+
+    function _shortModelName(id) {
+        if (!id) return '';
+        // Trim only the provider prefix up to the last "/" — e.g.
+        // "anthropic/claude-haiku-4.5" -> "claude-haiku-4.5" — then
+        // title-case each hyphen-separated word. No further guessing
+        // about which word is "redundant"; the full model name after
+        // the slash is shown as-is so it stays unambiguous for every
+        // vendor (gpt-5 stays "Gpt 5", not just "5").
+        const last = id.split('/').pop();
+        return last.split('-').filter(Boolean)
+            .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(' ') || last;
+    }
+
+    function _fmtPrice(v) {
+        if (v === null || v === undefined || v === 0) return null;
+        return '$' + (Math.round(v * 100) / 100).toString();
+    }
+
+    function _modelItemHtml(m) {
+        const isSelected = _selectedModel === m.model;
+        const isDefault = !_selectedModel && m.model === _modelDefaults.model;
+        const inPrice = _fmtPrice(m.input_price_per_million);
+        const outPrice = _fmtPrice(m.output_price_per_million);
+        const priceLabel = (inPrice || outPrice)
+            ? `${inPrice || '—'} / ${outPrice || '—'} per 1M`
+            : '';
+        const ctxLabel = m.context_window ? `${Math.round(m.context_window / 1000)}k ctx` : '';
+        const badges = [priceLabel].filter(Boolean).join(' · ');
+
+        return `<button type="button" class="ab-model-item${isSelected || isDefault ? ' active' : ''}" data-model="${escapeHtml(m.model)}">
+            <span class="ab-model-item-main">
+                <span class="ab-model-item-name">${escapeHtml(_shortModelName(m.model))}</span>
+                ${badges ? `<span class="ab-model-item-meta">${escapeHtml(badges)}</span>` : ''}
+            </span>
+            ${isSelected || isDefault ? `<span class="ab-model-item-check">${ICONS.check}</span>` : ''}
+        </button>`;
+    }
+
+    function renderModelMenu() {
+        const $list = $('#ab-model-list');
+        if (!_modelOptions.length) {
+            $list.html(`<div class="ab-skill-empty">${_modelsLoaded ? 'No models configured' : 'Loading models…'}</div>`);
+            $('#ab-effort-section').hide();
+            return;
+        }
+        $list.html(`
+            <button type="button" class="ab-model-item${!_selectedModel ? ' active' : ''}" data-model="">
+                <span class="ab-model-item-main">
+                    <span class="ab-model-item-name">Auto</span>
+                    <span class="ab-model-item-meta">Use the configured default</span>
+                </span>
+                ${!_selectedModel ? `<span class="ab-model-item-check">${ICONS.check}</span>` : ''}
+            </button>
+        ` + _modelOptions.map(_modelItemHtml).join(''));
+        renderEffortRow();
+    }
+
+    function _activeModelRow() {
+        const modelId = _selectedModel || _modelDefaults.model;
+        return _modelOptions.find(m => m.model === modelId) || null;
+    }
+
+    function renderEffortRow() {
+        const row = _activeModelRow();
+        if (!row || !row.supports_reasoning) {
+            $('#ab-effort-section').hide();
+            $('#ab-effort-chip-wrap').hide();
+            return;
+        }
+        const efforts = (row.reasoning_efforts || '').split(',').map(s => s.trim()).filter(Boolean);
+        if (!efforts.length) {
+            $('#ab-effort-section').hide();
+            $('#ab-effort-chip-wrap').hide();
+            return;
+        }
+        // If a specific model (not "Auto") is selected and no effort has
+        // been explicitly chosen yet, the row falls back to displaying
+        // "none" as active whenever there's also no configured Agent Setup
+        // default — but that was only a *display* fallback, not a real
+        // selection, so it was never actually sent (dispatch only sends
+        // _selectedEffort when it's non-null). That meant "none" looked
+        // selected right after switching models but had no effect until
+        // the user clicked a chip. Make the fallback real in that specific
+        // case. (If Agent Setup DOES have a configured default effort,
+        // the existing fallback already matches what the backend would
+        // apply on its own, so there's nothing to fix there.)
+        if (_selectedModel && _selectedEffort === null && !_modelDefaults.effort) {
+            _selectedEffort = 'none';
+            localStorage.setItem('ab_selected_effort', _selectedEffort);
+        }
+        const current = _selectedEffort || _modelDefaults.effort || 'none';
+        const chips = ['none'].concat(efforts).map(e => {
+            const active = current === e;
+            return `<button type="button" class="ab-effort-chip${active ? ' active' : ''}" data-effort="${escapeHtml(e)}">${escapeHtml(e)}</button>`;
+        }).join('');
+        $('#ab-effort-row').html(chips);
+        $('#ab-effort-section').show();
+        $('#ab-effort-chip-label').text(current);
+        $('#ab-effort-chip-wrap').toggle(current !== 'none');
+    }
+
+    function updateModelChipLabel() {
+        const modelId = _selectedModel || _modelDefaults.model;
+        $('#ab-model-chip-label').text(modelId ? _shortModelName(modelId) : 'Auto');
+        renderEffortRow();
+        updateAttachAvailability();
+    }
+
+    // ── Attach availability (vision support) ─────────────────────
+    // The attach control lets you add both images and other files, but
+    // only images actually need the model to support vision — PDFs are
+    // parsed server-side by OpenRouter regardless of the model (see
+    // agent.attachments.build_content_parts). We still gate the whole
+    // control on supports_vision rather than splitting the UI into
+    // "images" vs "files": simpler for the user, and images are the
+    // overwhelmingly common attachment case here.
+    function _attachEnabled() {
+        // Unknown until the model catalog loads — default to enabled so
+        // the button doesn't flicker disabled→enabled on first paint.
+        if (!_modelsLoaded) return true;
+        const row = _activeModelRow();
+        // No matching row — e.g. "Auto" resolving to a default_model that
+        // isn't in the (active) Model Pricing catalog, or a stale
+        // _selectedModel. We have no vision info for this model at all,
+        // so fail CLOSED rather than open: better to block a valid
+        // attachment occasionally than silently send image bytes to a
+        // model that will 400 on them.
+        if (!row) return false;
+        return !!row.supports_vision;
+    }
+
+    function updateAttachAvailability() {
+        const enabled = _attachEnabled();
+        const $item = $('#ab-attach-upload-item');
+        $item.prop('disabled', !enabled);
+        $item.toggleClass('ab-disabled', !enabled);
+        $item.attr(
+            'title',
+            enabled ? '' : "This model doesn't support image or file attachments"
+        );
+        $item.css({
+            opacity: enabled ? '' : 0.45,
+            cursor: enabled ? '' : 'not-allowed',
+            pointerEvents: enabled ? '' : 'none',
+        });
+        // Belt-and-braces: also disable the underlying file input itself,
+        // not just the menu button that triggers it — closes off any
+        // other path to it (keyboard focus, devtools, a future UI
+        // element) rather than relying solely on the button being gated.
+        $('#ab-file-input').prop('disabled', !enabled);
+
+        // Switching to a model that can't take attachments shouldn't
+        // silently keep files staged from before the switch — drop them
+        // and tell the user why, the same way an upload failure does.
+        if (!enabled && _pendingFiles.length) {
+            _pendingFiles = [];
+            renderAttachmentChips();
+            setStatus("Attachments removed — this model can't view files", false, true);
+        }
+    }
+
+    function openModelMenu() {
+        closePlusMenu();
+        closeSlashMenu();
+        $('#ab-model-menu').addClass('open');
+        $('#ab-model-btn').addClass('is-open');
+        loadModelOptions();
+    }
+    function closeModelMenu() {
+        $('#ab-model-menu').removeClass('open');
+        $('#ab-model-btn').removeClass('is-open');
+    }
+
+    $(document).on('click', '#ab-model-btn', function (e) {
+        e.stopPropagation();
+        if ($('#ab-model-menu').hasClass('open')) closeModelMenu();
+        else openModelMenu();
+    });
+
+    $(document).on('click', '#ab-model-list .ab-model-item', function () {
+        const modelId = $(this).data('model') || '';
+        _selectedModel = modelId || null;
+        // Switching models invalidates any effort choice made for the
+        // previous model — different models support different effort
+        // vocabularies (see reasoning_efforts per row).
+        _selectedEffort = null;
+        if (_selectedModel) localStorage.setItem('ab_selected_model', _selectedModel);
+        else localStorage.removeItem('ab_selected_model');
+        localStorage.removeItem('ab_selected_effort');
+        renderModelMenu();
+        updateModelChipLabel();
+        // Deliberately don't close the menu here — picking a model that
+        // supports reasoning immediately reveals the effort row in the
+        // same popover, so the user can set both in one open/close cycle
+        // instead of two separate interactions.
+    });
+
+    $(document).on('click', '#ab-effort-row .ab-effort-chip', function () {
+        const effort = $(this).data('effort') || '';
+        _selectedEffort = effort || null;
+        if (_selectedEffort) localStorage.setItem('ab_selected_effort', _selectedEffort);
+        else localStorage.removeItem('ab_selected_effort');
+        renderEffortRow();
+    });
+
     function _skillItemHtml(skill) {
         const slug = escapeHtml(skill.name || '');
         const label = escapeHtml(skill.label || skill.name || '');
@@ -989,7 +1265,14 @@
                 return res.json();
             }).then(data => {
                 const f = data.message || {};
-                return { file_name: f.file_name || file.name, file_url: f.file_url || '' };
+                // mime_type lets the backend build proper multimodal
+                // content parts (image_url / file) without guessing from
+                // the filename extension alone.
+                return {
+                    file_name: f.file_name || file.name,
+                    file_url: f.file_url || '',
+                    mime_type: file.type || '',
+                };
             });
         }));
     }
@@ -1003,9 +1286,12 @@
         if (!$t.closest('#ab-slash-menu, #ab-slash-list, #ab-input').length) {
             closeSlashMenu();
         }
+        if (!$t.closest('#ab-model-menu, #ab-model-btn').length) {
+            closeModelMenu();
+        }
     });
     $(document).on('keydown', function (e) {
-        if (e.key === 'Escape') { closePlusMenu(); closeSlashMenu(); }
+        if (e.key === 'Escape') { closePlusMenu(); closeSlashMenu(); closeModelMenu(); }
     });
 
     // ── Dispatch Controls ──────────────────────────────────────
@@ -1023,7 +1309,13 @@
 
         frappe.call({
             method: 'agent_builder.native_api.verify.chat',
-            args: { message: msg, chat_id: currentChatId, attachments: JSON.stringify(attachments || []) },
+            args: {
+                message: msg,
+                chat_id: currentChatId,
+                attachments: JSON.stringify(attachments || []),
+                model: _selectedModel || undefined,
+                reasoning_effort: _selectedEffort || undefined,
+            },
             callback(r) {
                 if (r.message && r.message.chat_id) {
                     currentChatId = r.message.chat_id;
@@ -1049,11 +1341,30 @@
                     }
                 }
             },
-            error() {
+            error(xhr) {
                 _currentJobId = null;
                 setInputState(false);
                 setStatus('Error', false, true);
-                try { ChatMessages.onDone("Sorry, I couldn't send that. Please try again.", true); } catch (err) { console.error(err); }
+                // Try to extract a short, user-friendly message from the server response.
+                let short = '';
+                try {
+                    if (xhr && xhr.responseJSON && xhr.responseJSON.message) {
+                        short = xhr.responseJSON.message;
+                    } else if (xhr && xhr.responseText) {
+                        short = JSON.parse(xhr.responseText).message || xhr.responseText;
+                    }
+                } catch (e) {
+                    short = '';
+                }
+
+                let userMsg = '';
+                if (short) {
+                    userMsg = `Could not send message: ${escapeHtml(String(short))}. Please try again.`;
+                } else {
+                    userMsg = "Could not send message. Please try again or check the Error Log.";
+                }
+
+                try { ChatMessages.onDone(userMsg, true); } catch (err) { console.error(err); }
             }
         });
     }
@@ -1061,6 +1372,17 @@
     function sendMessage() {
         const msg = $('#ab-input').val().trim();
         if ((!msg && !_pendingFiles.length) || isThinking) return;
+
+        // Defensive re-check at the actual send point, not just where
+        // files get staged: covers retryLastMessage() reusing
+        // _lastSentAttachments, and any staging path that doesn't
+        // already run through updateAttachAvailability()'s cleanup.
+        if (_pendingFiles.length && !_attachEnabled()) {
+            _pendingFiles = [];
+            renderAttachmentChips();
+            setStatus("Attachments removed — this model can't view files", false, true);
+            if (!msg) return;
+        }
 
         const isFirstMessage = (currentChatId === null);
 
@@ -1094,6 +1416,13 @@
 
     function retryLastMessage() {
         if (isThinking || (!_lastSentMessage && !_lastSentAttachments.length)) return;
+        // Same guard as sendMessage() — the model may have been switched
+        // since this attachment was originally sent.
+        if (_lastSentAttachments.length && !_attachEnabled()) {
+            _lastSentAttachments = [];
+            setStatus("Attachments removed — this model can't view files", false, true);
+            if (!_lastSentMessage) return;
+        }
         setInputState(true);
         setStatus('Thinking…', true);
         dispatchChatRequest(_lastSentMessage, _lastSentAttachments, currentChatId === null);
@@ -1154,4 +1483,5 @@
     });
 
     $('#ab-back').hide();
+    loadModelOptions();
 });
