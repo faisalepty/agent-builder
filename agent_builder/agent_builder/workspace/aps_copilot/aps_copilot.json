@@ -1,7 +1,7 @@
 {
  "app": "agent_builder",
  "charts": [],
- "content": "[{\"id\":\"NSxbQxgC4k\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">APS Copilot</span>\",\"col\":12}},{\"id\":\"6Fk5O5Jv09\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Copilot Setup\",\"col\":3}},{\"id\":\"QMRSDmctOw\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"New skill\",\"col\":3}},{\"id\":\"pBnvcKOeln\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Co-pilot Manager\",\"col\":3}},{\"id\":\"GmigbosIDs\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Workflow Builder\",\"col\":3}}]",
+ "content": "[{\"id\":\"NSxbQxgC4k\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">APS Copilot</span>\",\"col\":12}},{\"id\":\"6Fk5O5Jv09\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Copilot Setup\",\"col\":3}},{\"id\":\"QMRSDmctOw\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"New skill\",\"col\":3}},{\"id\":\"pBnvcKOeln\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Control Center\",\"col\":3}},{\"id\":\"GmigbosIDs\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Workflow Builder\",\"col\":3}}]",
  "creation": "2026-07-22 14:12:13.595659",
  "custom_blocks": [],
  "docstatus": 0,
@@ -14,7 +14,7 @@
  "label": "APS Copilot",
  "link_type": "DocType",
  "links": [],
- "modified": "2026-08-06 09:31:01.781694",
+ "modified": "2026-08-06 10:47:02.454273",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "APS Copilot",
@@ -34,18 +34,18 @@
   },
   {
    "color": "Grey",
-   "doc_view": "List",
-   "label": "Co-pilot Manager",
-   "link_to": "agent-builder",
-   "type": "Page"
-  },
-  {
-   "color": "Grey",
    "doc_view": "New",
    "label": "New skill",
    "link_to": "Skill",
    "stats_filter": "[[\"Skill\",\"is_agent\",\"=\",0]]",
    "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Control Center",
+   "link_to": "agent-builder",
+   "type": "Page"
   },
   {
    "color": "Grey",
