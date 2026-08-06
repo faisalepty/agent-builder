@@ -17,7 +17,8 @@ class AgentManagement {
             tab: 'workflows', 
             workflows: [], 
             agents: [], 
-            triggers: [] 
+            triggers: [],
+            skills: []
         };
 
         this.$root = $('<div class="am-root"></div>').appendTo(page.main);
@@ -27,17 +28,29 @@ class AgentManagement {
     }
 
     async load() {
-        this.$body.html('<div class="am-empty text-muted">Loading automation hub...</div>');
+        this.$body.html(`
+            <div class="am-loading">
+                <i class="fa fa-circle-o-notch fa-spin fa-2x"></i>
+                <p>Loading automation hub…</p>
+            </div>
+        `);
 
-        const [workflowsRes, agentsRes, triggersRes] = await Promise.all([
+        // Using frappe.db.get_list for skills so no Python backend changes are required
+        const [workflowsRes, agentsRes, triggersRes, skillsRes] = await Promise.all([
             frappe.call(`${MODULE_PATH}.get_workflows`),
             frappe.call(`${MODULE_PATH}.get_agent_skills`),
-            frappe.call(`${MODULE_PATH}.get_triggers`)
+            frappe.call(`${MODULE_PATH}.get_triggers`),
+            frappe.db.get_list('Skill', {
+                filters: { is_agent: 0 },
+                fields: ['name', 'description', 'is_enabled', 'modified'],
+                limit: 100
+            })
         ]);
 
         this.state.workflows = workflowsRes.message || [];
         this.state.agents = agentsRes.message || [];
         this.state.triggers = triggersRes.message || [];
+        this.state.skills = skillsRes || [];
         
         this.renderBody();
     }
@@ -46,20 +59,20 @@ class AgentManagement {
         const $tabs = $(`
             <div class="am-header">
                 <div class="am-tab-group">
-                    <button class="am-tab active" data-tab="workflows">
+                    <button class="am-tab am-tab-active" data-tab="workflows">
                         <i class="fa fa-sitemap"></i> Workflows
                     </button>
                     <button class="am-tab" data-tab="agents">
                         <i class="fa fa-user-secret"></i> Agents
+                    </button>
+                    <button class="am-tab" data-tab="skills">
+                        <i class="fa fa-puzzle-piece"></i> Skills
                     </button>
                     <button class="am-tab" data-tab="triggers">
                         <i class="fa fa-bolt"></i> Triggers
                     </button>
                 </div>
                 <div class="am-header-actions">
-                    <button class="btn btn-sm btn-default am-new-btn" style="display:none;">
-                        <i class="fa fa-plus"></i> New Agent
-                    </button>
                     <button class="btn btn-sm btn-primary am-new-btn" data-type="workflow">
                         <i class="fa fa-plus"></i> New Workflow
                     </button>
@@ -70,14 +83,16 @@ class AgentManagement {
         $tabs.on('click', '.am-tab', (e) => {
             const tab = $(e.currentTarget).data('tab');
             this.state.tab = tab;
-            $tabs.find('.am-tab').removeClass('active');
-            $(e.currentTarget).addClass('active');
+            $tabs.find('.am-tab').removeClass('am-tab-active');
+            $(e.currentTarget).addClass('am-tab-active');
             
-            const $btn = $tabs.find('.am-new-btn[data-type="workflow"]');
+            const $btn = $tabs.find('.am-new-btn');
             if (tab === 'agents') {
                 $btn.html('<i class="fa fa-plus"></i> New Agent').data('type', 'agent');
             } else if (tab === 'workflows') {
                 $btn.html('<i class="fa fa-plus"></i> New Workflow').data('type', 'workflow');
+            } else if (tab === 'skills') {
+                $btn.html('<i class="fa fa-plus"></i> New Skill').data('type', 'skill');
             } else {
                 $btn.html('<i class="fa fa-plus"></i> New Trigger').data('type', 'trigger');
             }
@@ -89,6 +104,7 @@ class AgentManagement {
             const type = $(e.currentTarget).data('type');
             if (type === 'workflow') this.createWorkflow();
             else if (type === 'agent') this.createAgent();
+            else if (type === 'skill') this.createSkill();
             else if (type === 'trigger') this.createTrigger();
         });
 
@@ -100,6 +116,7 @@ class AgentManagement {
         this.$body.empty();
         if (this.state.tab === 'workflows') this.renderWorkflows();
         else if (this.state.tab === 'agents') this.renderAgents();
+        else if (this.state.tab === 'skills') this.renderSkills();
         else if (this.state.tab === 'triggers') this.renderTriggers();
     }
 
@@ -205,6 +222,58 @@ class AgentManagement {
         });
     }
 
+    // --- SKILLS ---
+    renderSkills() {
+        const { skills } = this.state;
+        if (!skills.length) {
+            this.$body.html(this.getEmptyState('skill', 'Create reusable skills and tools that your agents can utilize.'));
+            return;
+        }
+
+        const $grid = $('<div class="am-card-grid"></div>').appendTo(this.$body);
+
+        skills.forEach((s) => {
+            const statusColor = s.is_enabled ? 'green' : 'gray';
+            const statusText = s.is_enabled ? 'Active' : 'Disabled';
+
+            const $card = $(`
+                <div class="am-card" data-id="${s.name}">
+                    <div class="am-card-head">
+                        <div class="am-card-icon am-icon-skill"><i class="fa fa-puzzle-piece"></i></div>
+                        <div class="am-card-info">
+                            <div class="am-card-title">${frappe.utils.escape_html(s.name)}</div>
+                            <span class="indicator-pill ${statusColor} am-card-status">${statusText}</span>
+                        </div>
+                        <div class="am-card-menu">
+                            <button class="btn btn-xs btn-default" data-action="toggle_skill" title="${s.is_enabled ? 'Disable' : 'Enable'}">
+                                <i class="fa fa-${s.is_enabled ? 'pause' : 'play'}"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="am-card-body">
+                        ${frappe.utils.escape_html(s.description || 'No description provided')}
+                    </div>
+                    <div class="am-card-foot">
+                        <span class="am-stat"><i class="fa fa-cube"></i> Tool</span>
+                        <span class="am-stat"><i class="fa fa-clock-o"></i> ${frappe.datetime.comment_when(s.modified)}</span>
+                    </div>
+                    <div class="am-card-actions">
+                        <button class="btn btn-sm btn-default btn-block" data-action="edit_skill">
+                            <i class="fa fa-pencil"></i> Edit Skill
+                        </button>
+                    </div>
+                </div>
+            `).appendTo($grid);
+
+            $card.on('click', '[data-action]', (e) => {
+                e.stopPropagation();
+                const action = $(e.currentTarget).data('action');
+                if (action === 'edit_skill') frappe.set_route('Form', 'Skill', s.name);
+                else if (action === 'toggle_skill') this.toggleSkill(s);
+            });
+        });
+    }
+
     // --- TRIGGERS ---
     renderTriggers() {
         const { triggers } = this.state;
@@ -280,6 +349,21 @@ class AgentManagement {
         });
     }
 
+    createSkill() {
+        frappe.new_doc("Skill", {
+            is_agent: 0,
+            is_enabled: 1
+        });
+    }
+
+    async toggleSkill(s) {
+        const enabled = s.is_enabled ? 0 : 1;
+        await frappe.db.set_value('Skill', s.name, 'is_enabled', enabled);
+        s.is_enabled = enabled;
+        this.renderBody();
+        frappe.show_alert(`Skill ${enabled ? 'enabled' : 'disabled'}`);
+    }
+
     createTrigger(prefilledWorkflow = null) {
         let fields = [
             { fieldname: 'workflow_name', label: 'Workflow', fieldtype: 'Link', options: 'Agent Workflow', reqd: 1, default: prefilledWorkflow },
@@ -330,7 +414,7 @@ class AgentManagement {
                     if (res.message && res.message.success) {
                         frappe.msgprint({
                             title: `Workflow Result: ${w.workflow_name}`,
-                            message: `<pre style="max-height: 400px; overflow-y: auto; background: #f8f8f8; padding: 10px; border-radius: 4px; font-size: 12px;">${frappe.utils.escape_html(JSON.stringify(res.message.result, null, 2))}</pre>`,
+                            message: `<pre style="max-height:400px;overflow-y:auto;background:var(--control-bg,#f8f8f8);color:var(--text-color,#333);border:1px solid var(--border-color,#ddd);padding:12px;border-radius:6px;font-size:12px;line-height:1.5;">${frappe.utils.escape_html(JSON.stringify(res.message.result, null, 2))}</pre>`,
                             indicator: 'green'
                         });
                     }
@@ -372,7 +456,7 @@ class AgentManagement {
     }
 
     getEmptyState(type, message) {
-        const icon = type === 'workflow' ? 'fa-sitemap' : (type === 'agent' ? 'fa-user-secret' : 'fa-bolt');
+        const icon = type === 'workflow' ? 'fa-sitemap' : (type === 'agent' ? 'fa-user-secret' : (type === 'skill' ? 'fa-puzzle-piece' : 'fa-bolt'));
         return `
             <div class="am-empty-state">
                 <div class="am-empty-icon"><i class="fa ${icon}"></i></div>
@@ -387,59 +471,213 @@ class AgentManagement {
         const style = document.createElement('style');
         style.id = 'am-styles';
         style.textContent = `
-            .am-root { padding: 0 0 40px; }
+            /* ── Root container ── */
+            .am-root { 
+                padding-bottom: 48px; 
+            }
 
-            .am-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; }
-            .am-tab-group { display: flex; gap: 8px; }
-            .am-tab { background: none; border: none; color: var(--text-muted); font-size: 14px; font-weight: 500; padding: 8px 16px; cursor: pointer; border-radius: 6px; transition: all 150ms; display: flex; align-items: center; gap: 8px; }
-            .am-tab:hover { background: var(--control-bg); color: var(--text-color); }
-            .am-tab.active { color: var(--primary); background: var(--primary-light, rgba(36, 144, 239, 0.1)); font-weight: 600; }
-            .am-tab i { font-size: 13px; }
+            /* ── Header ── */
+            .am-header { 
+                display: flex; 
+                align-items: center; 
+                justify-content: space-between; 
+                padding: 20px 24px 12px; /* Added top padding, horizontal padding for content */
+                border-bottom: 1px solid var(--border-color); /* Edge-to-edge border */
+            }
+            .am-tab-group { 
+                display: flex; 
+                gap: 4px; 
+            }
+            .am-tab { 
+                background: transparent; 
+                border: none; 
+                color: var(--text-muted); 
+                font-size: 13px; 
+                font-weight: 500; 
+                padding: 8px 14px; 
+                cursor: pointer; 
+                border-radius: 6px; 
+                transition: all 150ms ease; 
+                display: inline-flex; 
+                align-items: center; 
+                gap: 8px; 
+            }
+            .am-tab:hover { 
+                background: var(--control-bg); 
+                color: var(--text-color); 
+            }
+            /* Custom active class to prevent Frappe's default black-on-black button issue */
+            .am-tab.am-tab-active { 
+                color: var(--primary); 
+                font-weight: 600; 
+                background: #6f6f6f; 
+            }
+            .am-tab i { 
+                font-size: 13px; 
+            }
 
-            .am-body { min-height: 400px; }
+            /* ── Body ── */
+            .am-body { 
+                padding: 24px 24px 0; /* Horizontal padding moved here so it doesn't break header border */
+                min-height: 400px; 
+            }
 
-            /* Grid Layout */
+            /* ── Loading ── */
+            .am-loading { 
+                text-align: center; 
+                padding: 80px 20px; 
+                color: var(--text-muted); 
+            }
+            .am-loading i { 
+                display: block; 
+                margin-bottom: 16px; 
+                color: var(--primary); 
+            }
+            .am-loading p { 
+                font-size: 13px; 
+            }
+
+            /* ── Card grid ── */
             .am-card-grid { 
                 display: grid; 
                 grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); 
                 gap: 16px; 
             }
 
-            /* Cards */
+            /* ── Cards ── */
             .am-card { 
                 background: var(--fg-color); 
                 border: 1px solid var(--border-color); 
-                border-radius: 8px; 
-                transition: box-shadow 150ms, border-color 150ms;
+                border-radius: 10px; 
+                transition: box-shadow 150ms ease, border-color 150ms ease;
                 display: flex; 
                 flex-direction: column; 
                 overflow: hidden;
             }
-            .am-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-color: var(--gray-300, #d1d8dd); }
+            .am-card:hover { 
+                box-shadow: 0 4px 16px rgba(0,0,0,0.1); 
+                border-color: var(--primary);
+            }
             
-            .am-card-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 16px 0; }
-            .am-card-icon { width: 36px; height: 36px; border-radius: 8px; background: var(--control-bg); display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 16px; flex-shrink: 0; }
-            .am-icon-agent { background: var(--blue-100, #e8f5ff); color: var(--blue-500, #2490ef); }
-            .am-icon-trigger { background: var(--orange-100, #fff4e6); color: var(--orange-500, #ff8a3b); }
+            /* ── Card head ── */
+            .am-card-head { 
+                display: flex; 
+                align-items: flex-start; 
+                gap: 12px; 
+                padding: 16px 16px 0; 
+            }
+            .am-card-icon { 
+                width: 40px; 
+                height: 40px; 
+                border-radius: 10px; 
+                background: var(--control-bg); 
+                display: flex; 
+                align-items: center; 
+                justify-content: center; 
+                color: var(--text-muted); 
+                font-size: 16px; 
+                flex-shrink: 0; 
+            }
+            .am-icon-agent { 
+                color: var(--blue-500, #2490ef); 
+                background: var(--control-bg); 
+            }
+            .am-icon-skill { 
+                color: var(--purple-500, #a837d8); 
+                background: var(--control-bg); 
+            }
+            .am-icon-trigger { 
+                color: var(--orange-500, #ff8b3b); 
+                background: var(--control-bg); 
+            }
             
-            .am-card-info { flex: 1; min-width: 0; }
-            .am-card-title { font-size: 14px; font-weight: 600; color: var(--text-color); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-            .am-card-status { font-size: 10px; padding: 3px 8px; }
-            
-            .am-card-body { padding: 12px 16px; font-size: 12px; color: var(--text-muted); line-height: 1.5; flex: 1; min-height: 45px; }
-            .am-trigger-detail code { background: var(--control-bg); padding: 4px 8px; border-radius: 4px; font-size: 11px; }
-            
-            .am-card-foot { padding: 0 16px 12px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; }
-            .am-stat { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; }
+            .am-card-info { 
+                flex: 1; 
+                min-width: 0; 
+            }
+            .am-card-title { 
+                font-size: 14px; 
+                font-weight: 600; 
+                color: var(--text-color); 
+                margin-bottom: 4px; 
+                white-space: nowrap; 
+                overflow: hidden; 
+                text-overflow: ellipsis; 
+            }
+            .am-card-status { 
+                font-size: 10px; 
+                padding: 3px 8px; 
+            }
 
-            .am-card-actions { display: flex; gap: 8px; padding: 12px 16px; }
-            .am-card-actions .btn-block { flex: 1; }
+            /* ── Card body ── */
+            .am-card-body { 
+                padding: 12px 16px; 
+                font-size: 12px; 
+                color: var(--text-muted); 
+                line-height: 1.5; 
+                flex: 1; 
+                min-height: 45px; 
+            }
+            .am-trigger-detail code { 
+                background: var(--control-bg); 
+                color: var(--text-color); 
+                padding: 4px 8px; 
+                border-radius: 4px; 
+                font-size: 11px; 
+            }
 
-            /* Empty State */
-            .am-empty-state { text-align: center; padding: 80px 20px; color: var(--text-muted); }
-            .am-empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.3; }
-            .am-empty-state h4 { font-size: 16px; color: var(--text-color); margin-bottom: 8px; }
-            .am-empty-state p { font-size: 13px; }
+            /* ── Card foot ── */
+            .am-card-foot { 
+                padding: 8px 16px 12px; 
+                display: flex; 
+                justify-content: space-between; 
+            }
+            .am-stat { 
+                font-size: 11px; 
+                color: var(--text-muted); 
+                display: flex; 
+                align-items: center; 
+                gap: 4px; 
+            }
+
+            /* ── Card actions ── */
+            .am-card-actions { 
+                display: flex; 
+                gap: 8px; 
+                padding: 12px 16px; 
+                border-top: 1px solid var(--border-color); 
+            }
+            .am-card-actions .btn-block { 
+                flex: 1; 
+            }
+
+            /* ── Empty state ── */
+            .am-empty-state { 
+                text-align: center; 
+                padding: 80px 20px; 
+                color: var(--text-muted); 
+            }
+            .am-empty-icon { 
+                font-size: 48px; 
+                margin-bottom: 16px; 
+                opacity: 0.3; 
+            }
+            .am-empty-state h4 { 
+                font-size: 16px; 
+                color: var(--text-color); 
+                margin-bottom: 8px; 
+            }
+            .am-empty-state p { 
+                font-size: 13px; 
+            }
+
+            /* ── Responsive ── */
+            @media (max-width: 768px) {
+                .am-header, .am-body {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                }
+            }
         `;
         document.head.appendChild(style);
     }
