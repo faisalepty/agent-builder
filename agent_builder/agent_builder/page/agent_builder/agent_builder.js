@@ -283,8 +283,8 @@ class AgentManagement {
         const $grid = $('<div class="am-card-grid"></div>').appendTo(this.$body);
 
         triggers.forEach((t) => {
-            const icon = t.trigger_type === 'Document Event' ? 'fa-file-text-o' : (t.trigger_type === 'Cron' ? 'fa-clock-o' : 'fa-webhook');
-            const detail = t.trigger_type === 'Document Event' ? `${t.doctype} (${t.event})` : (t.trigger_type === 'Cron' ? t.cron_format : 'Webhook');
+            const icon = t.trigger_type === 'DocType Event' ? 'fa-file-text-o' : (t.trigger_type === 'Cron' ? 'fa-clock-o' : 'fa-webhook');
+            const detail = t.trigger_type === 'DocType Event' ? `${t.doctype_name} (${t.doctype_event})` : (t.trigger_type === 'Cron' ? t.cron_format : 'Webhook');
             
             const $card = $(`
                 <div class="am-card" data-id="${t.workflow_name}">
