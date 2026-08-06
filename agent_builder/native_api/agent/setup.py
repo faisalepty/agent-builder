@@ -16,6 +16,7 @@ TOOLS_DIR = Path(__file__).resolve().parent.parent / "tools"
 _CACHED_REGISTRY: ToolRegistry | None = None
 _CACHED_SYSTEM_PROMPT: str | None = None
 _AGENT_DEF_CACHE: dict[str, dict] = {}
+_CACHED_IDENTITY: str | None = None
 
 # =========================================================================
 # Prompt piece constants
@@ -109,14 +110,6 @@ _AGENT_DEF_CACHE: dict[str, dict] = {}
 #   ```chart block is warranted.\
 # """
 
-system_prompt = frappe.db.get_single_value("Agent Setup", "system_prompt")
-
-IDENTITY = (
-    frappe.db.get_value("Skill", system_prompt, "content")
-    if system_prompt
-    else ""
-)
-
 TOOL_USE_ENFORCEMENT = (
 	"You MUST use your tools to take action — do not describe what you "
 	"would do without doing it. When you say you will perform an action, "
@@ -188,6 +181,30 @@ SKILLS_INDEX_INTRO = (
 	"Below is an index of available skills. Use `view_skill` to read a "
 	"skill's full specification before acting on it."
 )
+
+
+def get_identity() -> str:
+	"""Resolve the Identity skill content, cached per process.
+
+	This MUST stay lazy rather than module-level. Evaluating
+	`frappe.db.get_single_value("Agent Setup", "system_prompt")` /
+	`frappe.db.get_value("Skill", ...)` at import time means this module
+	blows up the moment anything imports it before the "Agent Setup"
+	singleton or the referenced Skill record exists — which is exactly
+	what happens during `bench migrate` on a fresh or resyncing site
+	(DoesNotExistError: Skill Identity not found). Deferring the lookup
+	into a cached function means import always succeeds, and the DB is
+	only hit once real prompt assembly happens.
+	"""
+	global _CACHED_IDENTITY
+	if _CACHED_IDENTITY is None:
+		system_prompt = frappe.db.get_single_value("Agent Setup", "system_prompt")
+		_CACHED_IDENTITY = (
+			frappe.db.get_value("Skill", system_prompt, "content")
+			if system_prompt
+			else ""
+		) or ""
+	return _CACHED_IDENTITY
 
 
 def get_tool_registry() -> ToolRegistry:
@@ -412,7 +429,7 @@ def build_system_prompt_parts(
 
 	stable = "\n\n".join(
 		[
-			IDENTITY,
+			get_identity(),
 			TOOL_USE_ENFORCEMENT,
 			QUERY_TOOL_GUIDANCE,
 			CHART_INSTRUCTIONS,
@@ -456,8 +473,9 @@ def get_system_prompt(system_message: str | None = None) -> str:
 
 def invalidate_prompt_cache() -> None:
 	"""Force a full rebuild on the next call to ``get_system_prompt``."""
-	global _CACHED_SYSTEM_PROMPT
+	global _CACHED_SYSTEM_PROMPT, _CACHED_IDENTITY
 	_CACHED_SYSTEM_PROMPT = None
+	_CACHED_IDENTITY = None
 	_AGENT_DEF_CACHE.clear()
 
 
