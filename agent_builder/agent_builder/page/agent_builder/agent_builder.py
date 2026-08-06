@@ -501,7 +501,11 @@ def create_trigger(trigger_data):
 
 @frappe.whitelist()
 def toggle_trigger(trigger_name, enabled):
-    frappe.db.set_value("Agent Trigger", trigger_name, "is_enabled", enabled)
+    if enabled:
+        is_enabled = 1
+    else:
+        is_enabled = 0
+    frappe.db.set_value("Agent Trigger", trigger_name, "is_enabled", is_enabled)
     frappe.db.commit()
 
 
