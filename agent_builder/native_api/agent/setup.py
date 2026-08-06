@@ -196,7 +196,6 @@ def get_tool_registry() -> ToolRegistry:
 	if _CACHED_REGISTRY is None:
 		_CACHED_REGISTRY = ToolRegistry()
 		load_tools(_CACHED_REGISTRY, str(TOOLS_DIR))
-		frappe.log_error(f"Setup: Loaded {len(_CACHED_REGISTRY.get_tool_schemas())} tools.")
 	return _CACHED_REGISTRY
 
 
