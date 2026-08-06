@@ -475,7 +475,7 @@ def get_triggers():
     return frappe.get_list(
         "Agent Trigger",
         fields=[
-            "name",
+            "trigger_name",
             "workflow_name",
             "trigger_type",
             "doctype_name",
@@ -490,9 +490,17 @@ def get_triggers():
 @frappe.whitelist()
 def create_trigger(trigger_data):
     data = json.loads(trigger_data) if isinstance(trigger_data, str) else trigger_data
+
+    # "doctype" in the payload means the *target* doctype for a Document
+    # Event trigger — it must not overwrite the reserved Document.doctype
+    # key (which has to remain "Agent Trigger"), or frappe will try to
+    # insert/autoname an Account/whatever instead of an Agent Trigger.
+    target_doctype = data.pop("doctype", None)
+
     doc = frappe.get_doc({
         "doctype": "Agent Trigger",
         **data,
+        "doctype_name": target_doctype,  # rename to your actual fieldname on Agent Trigger
     })
     doc.insert()
     frappe.db.commit()
@@ -501,10 +509,7 @@ def create_trigger(trigger_data):
 
 @frappe.whitelist()
 def toggle_trigger(trigger_name, enabled):
-    if enabled:
-        is_enabled = 1
-    else:
-        is_enabled = 0
+    is_enabled = 1 if str(enabled).lower() in ("1", "true") else 0
     frappe.db.set_value("Agent Trigger", trigger_name, "is_enabled", is_enabled)
     frappe.db.commit()
 

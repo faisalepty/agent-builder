@@ -285,16 +285,16 @@ class AgentManagement {
         const $grid = $('<div class="am-card-grid"></div>').appendTo(this.$body);
 
         triggers.forEach((t) => {
-            const icon = t.type === 'Document Event' ? 'fa-file-text-o' : (t.type === 'Cron' ? 'fa-clock-o' : 'fa-webhook');
-            const detail = t.type === 'Document Event' ? `${t.doctype} (${t.event})` : (t.type === 'Cron' ? t.cron_format : 'Webhook');
+            const icon = t.trigger_type === 'Document Event' ? 'fa-file-text-o' : (t.trigger_type === 'Cron' ? 'fa-clock-o' : 'fa-webhook');
+            const detail = t.trigger_type === 'Document Event' ? `${t.doctype} (${t.event})` : (t.trigger_type === 'Cron' ? t.cron_format : 'Webhook');
             
             const $card = $(`
-                <div class="am-card" data-id="${t.name}">
+                <div class="am-card" data-id="${t.workflow_name}">
                     <div class="am-card-head">
                         <div class="am-card-icon am-icon-trigger"><i class="fa ${icon}"></i></div>
                         <div class="am-card-info">
-                            <div class="am-card-title">${frappe.utils.escape_html(t.workflow_name)}</div>
-                            <span class="indicator-pill ${t.enabled ? 'green' : 'gray'} am-card-status">${t.type}</span>
+                            <div class="am-card-title">${frappe.utils.escape_html(t.trigger_name)}</div>
+                            <span class="indicator-pill ${t.is_enabled ? 'green' : 'gray'} am-card-status">${t.trigger_type}</span>
                         </div>
                     </div>
                     <div class="am-card-body am-trigger-detail">
@@ -302,7 +302,7 @@ class AgentManagement {
                     </div>
                     <div class="am-card-actions">
                         <button class="btn btn-sm btn-default btn-block" data-action="toggle_trigger">
-                            ${t.enabled ? 'Disable' : 'Enable'}
+                            ${t.is_enabled ? 'Disable' : 'Enable'}
                         </button>
                         <button class="btn btn-sm btn-default" data-action="delete_trigger" title="Delete">
                             <i class="fa fa-trash"></i>
@@ -366,6 +366,7 @@ class AgentManagement {
 
     createTrigger(prefilledWorkflow = null) {
         let fields = [
+            { fieldname: 'trigger_name', label: 'Trigger Name', fieldtype: 'Data', reqd: 1 },
             { fieldname: 'workflow_name', label: 'Workflow', fieldtype: 'Link', options: 'Agent Workflow', reqd: 1, default: prefilledWorkflow },
             { fieldname: 'type', label: 'Trigger Type', fieldtype: 'Select', options: '\nDocument Event\nCron\nWebhook', reqd: 1 },
             { fieldname: 'doctype', label: 'Target Doctype', fieldtype: 'Link', options: 'DocType', depends_on: "eval:doc.type=='Document Event'" },
@@ -441,10 +442,10 @@ class AgentManagement {
 
     async toggleTrigger(t) {
         await frappe.call(`${MODULE_PATH}.toggle_trigger`, {
-            trigger_name: t.name,
-            enabled: !t.enabled
+            trigger_name: t.trigger_name,
+            enabled: !t.is_enabled
         });
-        t.enabled = !t.enabled;
+        t.is_enabled = !t.is_enabled;
         this.renderBody();
     }
 
