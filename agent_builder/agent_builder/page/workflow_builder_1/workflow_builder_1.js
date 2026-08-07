@@ -10,8 +10,15 @@ frappe.pages['workflow-builder-1'].on_page_load = function (wrapper) {
 };
 
 frappe.pages['workflow-builder-1'].on_page_show = function (wrapper) {
-    const workflowName = frappe.get_route()[1];
-    if (frappe.workflow_builder) frappe.workflow_builder.load(workflowName);
+    if (frappe.workflow_builder) {
+        if (!frappe.workflow_builder.isDomAttached()) {
+            // Frappe v15 cleared the DOM to save memory. Rebuild it.
+            frappe.workflow_builder.setupDom();
+        } else {
+            const workflowName = frappe.get_route()[1];
+            frappe.workflow_builder.load(workflowName);
+        }
+    }
 };
 
 const DRAWFLOW_JS = 'https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.js';
@@ -77,6 +84,10 @@ const CHAINABLE_TYPES = ['tool', 'workflow', 'trigger'];
 class WorkflowBuilder {
     constructor(page) {
         this.page = page;
+        this.setupDom();
+    }
+
+    setupDom() {
         this.tools = [];
         this.agentSkills = [];
         this.workflowNames = [];
@@ -84,19 +95,22 @@ class WorkflowBuilder {
         this.workflowName = null;
         this.dirty = false;
         this._loadId = 0; // Guard against stale loads
-
-        this.$root = $('<div class="wb-root"></div>').appendTo(page.main);
+        
+        this.$root = $('<div class="wb-root"></div>').appendTo(this.page.main);
         this.injectStyles();
         this.renderShell();
 
         this.loadDrawflowLib().then(() => {
             this.initEditor();
             this.setToolbarEnabled(true);
-            const workflowName = frappe.get_route()[1];
-            this.load(workflowName);
+            this.load(frappe.get_route()[1]);
         }).catch(() => {
             frappe.msgprint('Could not load the workflow canvas library.');
         });
+    }
+
+    isDomAttached() {
+        return this.$root && $.contains(document, this.$root[0]);
     }
 
     loadDrawflowLib() {
@@ -235,7 +249,7 @@ class WorkflowBuilder {
         const namesCall = frappe.call(`${MODULE_PATH}.get_workflow_names`).catch(() => ({ message: [] }));
 
         const results = await Promise.all(calls);
-        if (loadId !== this._loadId) return;
+        if (loadId !== this._loadId) return; // Stale load
 
         const offset = this.workflowName ? 1 : 0;
         const wfRes = this.workflowName ? results[0] : null;
@@ -244,7 +258,7 @@ class WorkflowBuilder {
         const schemasRes = await schemasCall;
         const namesRes = await namesCall;
 
-        if (loadId !== this._loadId) return;
+        if (loadId !== this._loadId) return; // Stale load
 
         this.tools = (toolsRes.message || []).filter((t) => t !== 'trigger');
         this.toolSchemas = {};
