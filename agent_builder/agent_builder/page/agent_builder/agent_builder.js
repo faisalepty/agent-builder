@@ -35,7 +35,6 @@ class AgentManagement {
             </div>
         `);
 
-        // Using frappe.db.get_list for skills so no Python backend changes are required
         const [workflowsRes, agentsRes, triggersRes, skillsRes] = await Promise.all([
             frappe.call(`${MODULE_PATH}.get_workflows`),
             frappe.call(`${MODULE_PATH}.get_agent_skills`),
@@ -283,11 +282,13 @@ class AgentManagement {
         const $grid = $('<div class="am-card-grid"></div>').appendTo(this.$body);
 
         triggers.forEach((t) => {
-            const icon = t.trigger_type === 'DocType Event' ? 'fa-file-text-o' : (t.trigger_type === 'Cron' ? 'fa-clock-o' : 'fa-webhook');
-            const detail = t.trigger_type === 'DocType Event' ? `${t.doctype_name} (${t.doctype_event})` : (t.trigger_type === 'Cron' ? t.cron_format : 'Webhook');
-            
+            const icon = t.trigger_type === 'DocType Event' ? 'fa-file-text-o' : (t.trigger_type === 'Scheduled' ? 'fa-clock-o' : 'fa-webhook');
+            const scheduleDetail = t.event_frequency === 'Cron' ? t.cron_expression : t.event_frequency;
+            const detail = t.trigger_type === 'DocType Event' ? `${t.doctype_name} (${t.doctype_event})` : (t.trigger_type === 'Scheduled' ? scheduleDetail : 'Webhook');
+            const target = t.workflow_name || t.agent_name || '';
+
             const $card = $(`
-                <div class="am-card" data-id="${t.workflow_name}">
+                <div class="am-card" data-id="${target}">
                     <div class="am-card-head">
                         <div class="am-card-icon am-icon-trigger"><i class="fa ${icon}"></i></div>
                         <div class="am-card-info">
@@ -296,9 +297,12 @@ class AgentManagement {
                         </div>
                     </div>
                     <div class="am-card-body am-trigger-detail">
-                        <code>${frappe.utils.escape_html(detail)}</code>
+                        <code>${frappe.utils.escape_html(detail || '')}</code>
                     </div>
                     <div class="am-card-actions">
+                        <button class="btn btn-sm btn-default" data-action="edit_trigger" title="Edit">
+                            <i class="fa fa-pencil"></i>
+                        </button>
                         <button class="btn btn-sm btn-default btn-block" data-action="toggle_trigger">
                             ${t.is_enabled ? 'Disable' : 'Enable'}
                         </button>
@@ -312,7 +316,8 @@ class AgentManagement {
             $card.on('click', '[data-action]', (e) => {
                 e.stopPropagation();
                 const action = $(e.currentTarget).data('action');
-                if (action === 'toggle_trigger') this.toggleTrigger(t);
+                if (action === 'edit_trigger') this.createTrigger(null, t);
+                else if (action === 'toggle_trigger') this.toggleTrigger(t);
                 else if (action === 'delete_trigger') this.deleteTrigger(t);
             });
         });
@@ -362,24 +367,37 @@ class AgentManagement {
         frappe.show_alert(`Skill ${enabled ? 'enabled' : 'disabled'}`);
     }
 
-    createTrigger(prefilledWorkflow = null) {
+    createTrigger(prefilledWorkflow = null, existingTrigger = null) {
+        const isEdit = !!existingTrigger;
+        const t = existingTrigger || {};
+        const targetType = t.agent_name ? 'Agent' : 'Workflow';
+
         let fields = [
-            { fieldname: 'trigger_name', label: 'Trigger Name', fieldtype: 'Data', reqd: 1 },
-            { fieldname: 'workflow_name', label: 'Workflow', fieldtype: 'Link', options: 'Agent Workflow', reqd: 1, default: prefilledWorkflow },
-            { fieldname: 'type', label: 'Trigger Type', fieldtype: 'Select', options: '\nDocument Event\nCron\nWebhook', reqd: 1 },
-            { fieldname: 'doctype', label: 'Target Doctype', fieldtype: 'Link', options: 'DocType', depends_on: "eval:doc.type=='Document Event'" },
-            { fieldname: 'event', label: 'Doc Event', fieldtype: 'Select', options: 'on_create\non_update\non_submit\non_cancel', depends_on: "eval:doc.type=='Document Event'" },
-            { fieldname: 'cron_format', label: 'Cron Schedule', fieldtype: 'Data', description: 'e.g., 0 * * * * (Every hour)', depends_on: "eval:doc.type=='Cron'" }
+            { fieldname: 'trigger_name', label: 'Trigger Name', fieldtype: 'Data', reqd: 1, default: t.trigger_name, read_only: isEdit ? 1 : 0 },
+            { fieldname: 'target_type', label: 'Runs', fieldtype: 'Select', options: 'Workflow\nAgent', reqd: 1, default: targetType },
+            { fieldname: 'workflow_name', label: 'Workflow', fieldtype: 'Link', options: 'Agent Workflow', default: t.workflow_name || prefilledWorkflow, depends_on: "eval:doc.target_type=='Workflow'", mandatory_depends_on: "eval:doc.target_type=='Workflow'" },
+            { fieldname: 'agent_name', label: 'Agent', fieldtype: 'Link', options: 'Skill', default: t.agent_name, depends_on: "eval:doc.target_type=='Agent'", mandatory_depends_on: "eval:doc.target_type=='Agent'" },
+            { fieldname: 'trigger_type', label: 'Trigger Type', fieldtype: 'Select', options: '\nDocType Event\nScheduled\nWebhook', reqd: 1, default: t.trigger_type },
+            { fieldname: 'doctype_name', label: 'Target Doctype', fieldtype: 'Link', options: 'DocType', default: t.doctype_name, depends_on: "eval:doc.trigger_type=='DocType Event'" },
+            { fieldname: 'doctype_event', label: 'Doc Event', fieldtype: 'Select', options: 'after_insert\non_update\non_submit\non_cancel\non_trash', default: t.doctype_event, depends_on: "eval:doc.trigger_type=='DocType Event'" },
+            { fieldname: 'event_frequency', label: 'Event Frequency', fieldtype: 'Select', options: 'Hourly\nDaily\nWeekly\nMonthly\nYearly\nHourly Long\nDaily Long\nWeekly Long\nMonthly Long\nCron', default: t.event_frequency || 'Daily', depends_on: "eval:doc.trigger_type=='Scheduled'", mandatory_depends_on: "eval:doc.trigger_type=='Scheduled'" },
+            { fieldname: 'cron_expression', label: 'Cron Expression', fieldtype: 'Data', description: 'e.g., 0 * * * * (Every hour)', default: t.cron_expression, depends_on: "eval:doc.trigger_type=='Scheduled' && doc.event_frequency=='Cron'" },
+            { fieldname: 'input_template', label: 'Input Template', fieldtype: 'Code', options: 'Jinja', default: t.input_template, description: "Becomes the agent's first message. Use {{ doc.field }} or {{ doc }} to reference the trigger context.", depends_on: "eval:doc.target_type=='Agent'", mandatory_depends_on: "eval:doc.target_type=='Agent'" }
         ];
 
         frappe.prompt(
             fields,
             async (values) => {
-                await frappe.call(`${MODULE_PATH}.create_trigger`, { trigger_data: values });
-                frappe.show_alert('Trigger created');
+                const endpoint = isEdit ? 'update_trigger' : 'create_trigger';
+                const args = isEdit ? { trigger_name: t.trigger_name, trigger_data: values } : { trigger_data: values };
+                const res = await frappe.call(`${MODULE_PATH}.${endpoint}`, args);
+                if (res.message && res.message.webhook_token) {
+                    frappe.msgprint(`Webhook token: <code>${res.message.webhook_token}</code>`);
+                }
+                frappe.show_alert(isEdit ? 'Trigger updated' : 'Trigger created');
                 this.load();
             },
-            'Configure Trigger',
+            isEdit ? 'Edit Trigger' : 'Configure Trigger',
             'Save'
         );
     }
@@ -480,8 +498,8 @@ class AgentManagement {
                 display: flex; 
                 align-items: center; 
                 justify-content: space-between; 
-                padding: 20px 24px 12px; /* Added top padding, horizontal padding for content */
-                border-bottom: 1px solid var(--border-color); /* Edge-to-edge border */
+                padding: 20px 24px 12px; 
+                border-bottom: 1px solid var(--border-color); 
             }
             .am-tab-group { 
                 display: flex; 
@@ -505,7 +523,6 @@ class AgentManagement {
                 background: var(--control-bg); 
                 color: var(--text-color); 
             }
-            /* Custom active class to prevent Frappe's default black-on-black button issue */
             .am-tab.am-tab-active { 
                 color: var(--primary); 
                 font-weight: 600; 
@@ -517,7 +534,7 @@ class AgentManagement {
 
             /* ── Body ── */
             .am-body { 
-                padding: 24px 24px 0; /* Horizontal padding moved here so it doesn't break header border */
+                padding: 24px 24px 0; 
                 min-height: 400px; 
             }
 

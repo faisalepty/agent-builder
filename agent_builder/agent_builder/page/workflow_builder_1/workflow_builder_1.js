@@ -83,6 +83,7 @@ class WorkflowBuilder {
         this.errorWorkflow = null;
         this.workflowName = null;
         this.dirty = false;
+        this._loadId = 0; // Guard against stale loads
 
         this.$root = $('<div class="wb-root"></div>').appendTo(page.main);
         this.injectStyles();
@@ -214,6 +215,7 @@ class WorkflowBuilder {
 
     async load(workflowName) {
         if (!this.editor) return;
+        const loadId = ++this._loadId;
         this.workflowName = workflowName || null;
         this.dirty = false;
         this.page.set_title(this.workflowName ? `Workflow: ${this.workflowName}` : 'Workflow Builder');
@@ -233,12 +235,16 @@ class WorkflowBuilder {
         const namesCall = frappe.call(`${MODULE_PATH}.get_workflow_names`).catch(() => ({ message: [] }));
 
         const results = await Promise.all(calls);
+        if (loadId !== this._loadId) return;
+
         const offset = this.workflowName ? 1 : 0;
         const wfRes = this.workflowName ? results[0] : null;
         const toolsRes = results[offset];
         const skillsRes = results[offset + 1];
         const schemasRes = await schemasCall;
         const namesRes = await namesCall;
+
+        if (loadId !== this._loadId) return;
 
         this.tools = (toolsRes.message || []).filter((t) => t !== 'trigger');
         this.toolSchemas = {};
@@ -267,6 +273,8 @@ class WorkflowBuilder {
 
     stepsIn(steps) {
         const idMap = {};
+        
+        // Phase 1: Add all nodes synchronously
         steps.forEach((s, i) => {
             const pos = s.position || { x: 80 + (i % 4) * 260, y: 80 + Math.floor(i / 4) * 160 };
             const inputs = (s.type === 'note' || s.type === 'trigger') ? 0 : 1;
@@ -277,24 +285,33 @@ class WorkflowBuilder {
             idMap[s.id] = nodeId;
         });
 
-        steps.forEach((s) => {
-            if (s.type === 'branch') {
-                if (s.if_true && idMap[s.if_true]) this.editor.addConnection(idMap[s.id], idMap[s.if_true], 'output_1', 'input_1');
-                if (s.if_false && idMap[s.if_false]) this.editor.addConnection(idMap[s.id], idMap[s.if_false], 'output_2', 'input_1');
-            }
-            if (s.type === 'loop') {
-                (s.body || []).forEach((bodyId) => {
-                    if (idMap[bodyId]) this.editor.addConnection(idMap[s.id], idMap[bodyId], 'output_1', 'input_1');
+        // Phase 2: Defer connection creation to the next frame.
+        // In Frappe v15 the node DOM elements are not fully laid out immediately
+        // after addNode(), so Drawflow calculates connection paths with wrong
+        // coordinates (especially with reroute=true). Waiting one animation frame
+        // ensures the browser has completed layout before we draw connections.
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                steps.forEach((s) => {
+                    if (s.type === 'branch') {
+                        if (s.if_true && idMap[s.if_true]) this.editor.addConnection(idMap[s.id], idMap[s.if_true], 'output_1', 'input_1');
+                        if (s.if_false && idMap[s.if_false]) this.editor.addConnection(idMap[s.id], idMap[s.if_false], 'output_2', 'input_1');
+                    }
+                    if (s.type === 'loop') {
+                        (s.body || []).forEach((bodyId) => {
+                            if (idMap[bodyId]) this.editor.addConnection(idMap[s.id], idMap[bodyId], 'output_1', 'input_1');
+                        });
+                    }
                 });
-            }
-        });
 
-        for (let i = 0; i < steps.length - 1; i++) {
-            const cur = steps[i], next = steps[i + 1];
-            if (CHAINABLE_TYPES.includes(cur.type) && !this.hasOutgoing(cur.id, steps)) {
-                this.editor.addConnection(idMap[cur.id], idMap[next.id], 'output_1', 'input_1');
-            }
-        }
+                for (let i = 0; i < steps.length - 1; i++) {
+                    const cur = steps[i], next = steps[i + 1];
+                    if (CHAINABLE_TYPES.includes(cur.type) && !this.hasOutgoing(cur.id, steps)) {
+                        this.editor.addConnection(idMap[cur.id], idMap[next.id], 'output_1', 'input_1');
+                    }
+                }
+            });
+        });
     }
 
     hasOutgoing(stepId, steps) {
@@ -770,6 +787,7 @@ class WorkflowBuilder {
     renderTriggerEditor($panel, step, node) {
         step.trigger_type = step.trigger_type || 'DocType Event';
         step.run_as_user = step.run_as_user || 'Administrator';
+        step.event_frequency = step.event_frequency || 'Daily';
         if (step.is_enabled === undefined) step.is_enabled = true;
 
         const typeOptions = ['DocType Event', 'Scheduled', 'Webhook', 'MCP']
@@ -777,6 +795,9 @@ class WorkflowBuilder {
             .join('');
         const eventOptions = ['after_insert', 'on_update', 'on_submit', 'on_cancel', 'on_trash']
             .map((v) => `<option value="${v}" ${v === step.doctype_event ? 'selected' : ''}>${v}</option>`)
+            .join('');
+        const frequencyOptions = ['Hourly', 'Daily', 'Weekly', 'Monthly', 'Yearly', 'Hourly Long', 'Daily Long', 'Weekly Long', 'Monthly Long', 'Cron']
+            .map((v) => `<option value="${v}" ${v === step.event_frequency ? 'selected' : ''}>${v}</option>`)
             .join('');
         const doctypeListId = `wb-doctype-list-${step.id}`;
 
@@ -801,6 +822,10 @@ class WorkflowBuilder {
             </div>
             <div class="wb-t-cron-fields" style="${step.trigger_type === 'Scheduled' ? '' : 'display:none;'}">
                 <div class="wb-field">
+                    <label>Event Frequency</label>
+                    <select class="form-control wb-t-frequency">${frequencyOptions}</select>
+                </div>
+                <div class="wb-field wb-t-cron-input" style="${step.event_frequency === 'Cron' ? '' : 'display:none;'}">
                     <label>Cron Expression</label>
                     <input class="form-control wb-t-cron wb-code" value="${esc(step.cron_expression || '')}" placeholder="0 * * * *" />
                 </div>
@@ -863,6 +888,12 @@ class WorkflowBuilder {
         });
         $panel.find('.wb-t-cron').on('input', (e) => {
             step.cron_expression = e.target.value;
+            this.editor.updateNodeDataFromId(node.id, { step });
+            this.markDirty();
+        });
+        $panel.find('.wb-t-frequency').on('change', (e) => {
+            step.event_frequency = e.target.value;
+            $panel.find('.wb-t-cron-input').toggle(step.event_frequency === 'Cron');
             this.editor.updateNodeDataFromId(node.id, { step });
             this.markDirty();
         });
