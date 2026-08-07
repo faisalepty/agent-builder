@@ -195,62 +195,80 @@ def handle_doctype_event(doc, event):
 
 
 # =========================================================================
-# Scheduled hook entrypoint
+# Scheduled Job Type sync
 # =========================================================================
-# Also REQUIRES a one-time hooks.py edit, but only ONE — unlike a naive
-# per-trigger cron entry, run_due_scheduled_triggers below checks every
-# enabled Scheduled-type Agent Trigger's own cron_expression itself, so
-# creating a new Scheduled trigger never needs another hooks.py edit.
-# Wire once, at Frappe's own per-minute cadence:
+# No hooks.py wiring needed at all — this is the same mechanism Server
+# Script uses for its "Scheduler Event" script_type: each Scheduled Agent
+# Trigger owns a real `Scheduled Job Type` record, and Frappe's own
+# scheduler daemon (frappe/utils/scheduler.py: enqueue_events(), on its
+# normal tick — default every 4 min, configurable via
+# scheduler_tick_interval) picks it up, checks it against croniter and
+# last_execution itself, and enqueues it when due.
 #
-#   scheduler_events = {
-#       "cron": {
-#           "* * * * *": ["agent_builder.native_api.trigger.run_due_scheduled_triggers"]
-#       }
-#   }
-#
-# Requires the 'croniter' package (already a transitive Frappe dependency
-# — it's what Frappe's own scheduler uses internally).
+# Called from BOTH places an Agent Trigger gets written from:
+#   - agent_builder.py: _sync_trigger_steps  (canvas trigger node)
+#   - agent_builder.py: create_trigger / toggle_trigger  (standalone tab)
+# so a Scheduled trigger behaves identically no matter which UI made it.
+# Agent Trigger has no custom controller, so this isn't a doctype hook —
+# it's just called explicitly at every one of those write sites.
 
 
-def run_due_scheduled_triggers():
-    try:
-        import croniter
-    except ImportError:
-        frappe.log_error("croniter is not installed — Scheduled Agent Triggers cannot fire.")
+def sync_scheduled_job_type(trigger_doc):
+    job_name = f"agent_trigger::{trigger_doc.name}"
+    exists = frappe.db.exists("Scheduled Job Type", job_name)
+
+    if trigger_doc.trigger_type != "Scheduled" or not trigger_doc.is_enabled:
+        if exists:
+            frappe.db.delete("Scheduled Job Type", job_name)
         return
 
-    triggers = frappe.get_all(
-        "Agent Trigger",
-        filters={"trigger_type": "Scheduled", "is_enabled": 1},
-        fields=["name", "cron_expression", "last_triggered_at"],
-    )
-    now = now_datetime()
+    event_frequency = trigger_doc.get("event_frequency") or "Daily"
+    is_cron = event_frequency == "Cron"
+    # "X Long" just routes to the long-running worker queue in Server
+    # Script — the underlying Scheduled Job Type frequency is still the
+    # base value ("Daily", "Weekly", etc). NOTE: verify the actual field
+    # Scheduled Job Type uses for queue selection on your Frappe version
+    # (bench console: frappe.get_meta("Scheduled Job Type").fields) before
+    # relying on the `job.queue = "long"` line below — I'm not fully
+    # certain that's the right field name/API for your version.
+    is_long = event_frequency.endswith(" Long")
+    base_frequency = event_frequency.replace(" Long", "") if is_long else event_frequency
 
-    for t in triggers:
-        if not t.cron_expression:
-            continue
+    if is_cron and not trigger_doc.cron_expression:
+        if exists:
+            frappe.db.delete("Scheduled Job Type", job_name)
+        return
 
-        # First-ever check has no last_triggered_at to anchor from — use
-        # "1 minute ago" so a cron due right now fires immediately instead
-        # of waiting a full cycle.
-        base = get_datetime(t.last_triggered_at) if t.last_triggered_at else now - timedelta(minutes=1)
+    if exists:
+        job = frappe.get_doc("Scheduled Job Type", job_name)
+    else:
+        job = frappe.new_doc("Scheduled Job Type")
+        job.set("__newname", job_name)  # key the job by our own name, not autoname
 
-        try:
-            # FIX: get_next() expects a type (defaults to datetime.datetime). 
-            # Passing get_datetime throws a TypeError which gets silently caught.
-            next_due = croniter.croniter(t.cron_expression, base).get_next()
-        except Exception:
-            frappe.log_error(f"Agent Trigger {t.name} has an invalid cron_expression: {t.cron_expression}")
-            continue
+    job.method = "agent_builder.native_api.trigger.run_scheduled_trigger_job"
+    job.arguments = frappe.as_json({"trigger_name": trigger_doc.name})
+    job.stopped = 0
 
-        if next_due <= now:
-            # Stamped before firing, not after — a slow/stuck run
-            # shouldn't cause this same minute to double-fire on the next
-            # scheduler tick.
-            frappe.db.set_value("Agent Trigger", t.name, "last_triggered_at", now, update_modified=False)
-            frappe.db.commit()
-            fire_trigger(t.name, {})
+    if is_cron:
+        job.frequency = "Cron"
+        job.cron_format = trigger_doc.cron_expression
+    else:
+        job.frequency = base_frequency
+        job.cron_format = None
+        if is_long and hasattr(job, "queue"):
+            job.queue = "long"
+
+    job.save(ignore_permissions=True)
+
+
+def run_scheduled_trigger_job(trigger_name: str, **kwargs):
+    """The `method` every synced Scheduled Job Type points to. Frappe
+    passes the job's `arguments` JSON through as kwargs."""
+    if not frappe.db.get_value("Agent Trigger", trigger_name, "is_enabled"):
+        return
+    frappe.db.set_value("Agent Trigger", trigger_name, "last_triggered_at", now_datetime(), update_modified=False)
+    frappe.db.commit()
+    fire_trigger(trigger_name, {})
 
 
 # =========================================================================
@@ -410,5 +428,3 @@ def _evaluate_condition(condition: str, context: dict) -> bool:
     except Exception:
         frappe.log_error(f"Agent Trigger condition failed to evaluate: {condition}")
         return False
-
-

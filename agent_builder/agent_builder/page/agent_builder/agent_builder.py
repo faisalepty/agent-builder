@@ -320,10 +320,26 @@ def _sync_trigger_steps(workflow_name, steps):
     implicit, no separate 'agent_trigger' reference field needed, and
     no separate picker/save UI on the node).
 
+    Also syncs a real `Scheduled Job Type` record for any Scheduled-type
+    trigger (see sync_scheduled_job_type in trigger.py — the same helper
+    used by the standalone Trigger tab's create_trigger above), and
+    cleans up Agent Trigger + Scheduled Job Type records for trigger
+    steps removed from the canvas since the last save.
+
     Returns {step_id: webhook_token} for any Webhook-type triggers,
     so the frontend can display the server-generated token without a
     second round trip.
     """
+    from agent_builder.native_api.trigger import sync_scheduled_job_type
+
+    current_trigger_ids = {step["id"] for step in steps if step.get("type") == "trigger"}
+    existing_trigger_ids = frappe.get_all(
+        "Agent Trigger", filters={"workflow_name": workflow_name}, pluck="name"
+    )
+    for stale_name in set(existing_trigger_ids) - current_trigger_ids:
+        frappe.db.delete("Scheduled Job Type", {"name": f"agent_trigger::{stale_name}"})
+        frappe.delete_doc("Agent Trigger", stale_name, ignore_permissions=True)
+
     webhook_tokens = {}
     for step in steps:
         if step.get("type") != "trigger":
@@ -337,6 +353,7 @@ def _sync_trigger_steps(workflow_name, steps):
             "trigger_type": step.get("trigger_type") or "DocType Event",
             "doctype_name": step.get("doctype_name") or None,
             "doctype_event": step.get("doctype_event") or None,
+            "event_frequency": step.get("event_frequency") or "Daily",
             "cron_expression": step.get("cron_expression") or None,
             "run_as_user": step.get("run_as_user") or "Administrator",
             "input_template": step.get("input_template") or "",
@@ -350,6 +367,7 @@ def _sync_trigger_steps(workflow_name, steps):
             doc = frappe.get_doc({"doctype": "Agent Trigger", **fields})
 
         doc.save(ignore_permissions=True)
+        sync_scheduled_job_type(doc)
 
         if doc.trigger_type == "Webhook":
             webhook_tokens[trigger_docname] = doc.webhook_token
@@ -477,45 +495,160 @@ def get_triggers():
         fields=[
             "trigger_name",
             "workflow_name",
+            "agent_name",
             "trigger_type",
             "doctype_name",
             "doctype_event",
+            "event_frequency",
             "cron_expression",
+            "input_template",
             "is_enabled",
         ],
         order_by="modified desc",
     )
 
 
+def _build_trigger_fields(data):
+    """Shared validation for create_trigger and update_trigger, so both
+    paths produce identical, correctly-validated Agent Trigger field
+    sets."""
+    target_type = data.get("target_type") or "Workflow"
+    trigger_type = data.get("trigger_type")
+    if trigger_type not in ("DocType Event", "Scheduled", "Webhook"):
+        frappe.throw(f"Invalid trigger_type: {trigger_type}")
+
+    fields = {
+        "trigger_type": trigger_type,
+        "run_as_user": data.get("run_as_user") or "Administrator",
+        # Clear fields not relevant to the new type/target on every save,
+        # so switching e.g. Scheduled -> Webhook doesn't leave a stale
+        # cron_expression lying around that sync_scheduled_job_type or a
+        # future edit could accidentally pick back up.
+        "agent_name": None,
+        "workflow_name": None,
+        "doctype_name": None,
+        "doctype_event": None,
+        "event_frequency": None,
+        "cron_expression": None,
+    }
+
+    if target_type == "Agent":
+        if not data.get("agent_name"):
+            frappe.throw("agent_name is required when target_type is 'Agent'")
+        if not data.get("input_template"):
+            frappe.throw("input_template is required when target_type is 'Agent' — it becomes the agent's first message.")
+        fields["agent_name"] = data["agent_name"]
+        fields["input_template"] = data["input_template"]
+    else:
+        if not data.get("workflow_name"):
+            frappe.throw("workflow_name is required when target_type is 'Workflow'")
+        fields["workflow_name"] = data["workflow_name"]
+        fields["input_template"] = data.get("input_template") or ""
+
+    if trigger_type == "DocType Event":
+        if not data.get("doctype_name") or not data.get("doctype_event"):
+            frappe.throw("doctype_name and doctype_event are required for a DocType Event trigger")
+        fields["doctype_name"] = data["doctype_name"]
+        fields["doctype_event"] = data["doctype_event"]
+
+    elif trigger_type == "Scheduled":
+        event_frequency = data.get("event_frequency") or "Daily"
+        valid_frequencies = ("Hourly", "Daily", "Weekly", "Monthly", "Yearly",
+                              "Hourly Long", "Daily Long", "Weekly Long", "Monthly Long", "Cron")
+        if event_frequency not in valid_frequencies:
+            frappe.throw(f"Invalid event_frequency: {event_frequency}")
+        fields["event_frequency"] = event_frequency
+
+        if event_frequency == "Cron":
+            cron_expression = data.get("cron_expression")
+            if not cron_expression:
+                frappe.throw("cron_expression is required when event_frequency is 'Cron'")
+            try:
+                import croniter
+                croniter.croniter(cron_expression)
+            except Exception:
+                frappe.throw(f"Invalid cron expression: {cron_expression}")
+            fields["cron_expression"] = cron_expression
+
+    return fields
+
+
 @frappe.whitelist()
 def create_trigger(trigger_data):
+    """Create a standalone Agent Trigger — this is the Trigger tab's entry
+    point (agent_builder.js: createTrigger), separate from the canvas's
+    1:1 trigger-step sync (_sync_trigger_steps above). Both write the same
+    Agent Trigger schema and both go through sync_scheduled_job_type, so
+    a Scheduled trigger fires the same way regardless of which UI made it.
+
+    trigger_data (from the frontend dialog):
+      {
+        trigger_name: str,
+        target_type: "Workflow" | "Agent",
+        workflow_name: str,   # if target_type == "Workflow"
+        agent_name: str,      # if target_type == "Agent"
+        trigger_type: "DocType Event" | "Scheduled" | "Webhook",
+        doctype_name: str,    # if trigger_type == "DocType Event"
+        doctype_event: str,   # if trigger_type == "DocType Event"
+        event_frequency: str, # if trigger_type == "Scheduled"
+        cron_expression: str, # if trigger_type == "Scheduled" and event_frequency == "Cron"
+      }
+    """
     data = json.loads(trigger_data) if isinstance(trigger_data, str) else trigger_data
 
-    # "doctype" in the payload means the *target* doctype for a Document
-    # Event trigger — it must not overwrite the reserved Document.doctype
-    # key (which has to remain "Agent Trigger"), or frappe will try to
-    # insert/autoname an Account/whatever instead of an Agent Trigger.
-    target_doctype = data.pop("doctype", None)
+    fields = _build_trigger_fields(data)
+    fields["trigger_name"] = data.get("trigger_name")
+    fields["is_enabled"] = 1
 
-    doc = frappe.get_doc({
-        "doctype": "Agent Trigger",
-        **data,
-        "doctype_name": target_doctype,  # rename to your actual fieldname on Agent Trigger
-    })
+    doc = frappe.get_doc({"doctype": "Agent Trigger", **fields})
     doc.insert()
+
+    from agent_builder.native_api.trigger import sync_scheduled_job_type
+    sync_scheduled_job_type(doc)
+
     frappe.db.commit()
-    return doc.name
+    return {"name": doc.name, "webhook_token": doc.get("webhook_token")}
+
+
+@frappe.whitelist()
+def update_trigger(trigger_name, trigger_data):
+    """Edit an existing standalone Agent Trigger — same field set/
+    validation as create_trigger, but updates in place and re-syncs the
+    Scheduled Job Type so a changed cron/frequency actually takes effect.
+    trigger_name itself isn't editable here (it's the doc's autoname key).
+    """
+    data = json.loads(trigger_data) if isinstance(trigger_data, str) else trigger_data
+
+    doc = frappe.get_doc("Agent Trigger", trigger_name)
+    fields = _build_trigger_fields(data)
+    doc.update(fields)
+    doc.save(ignore_permissions=True)
+
+    from agent_builder.native_api.trigger import sync_scheduled_job_type
+    sync_scheduled_job_type(doc)
+
+    frappe.db.commit()
+    return {"name": doc.name, "webhook_token": doc.get("webhook_token")}
 
 
 @frappe.whitelist()
 def toggle_trigger(trigger_name, enabled):
     is_enabled = 1 if str(enabled).lower() in ("1", "true") else 0
-    frappe.db.set_value("Agent Trigger", trigger_name, "is_enabled", is_enabled)
+    doc = frappe.get_doc("Agent Trigger", trigger_name)
+    doc.is_enabled = is_enabled
+    doc.save(ignore_permissions=True)
+
+    # Disabling must stop the Scheduled Job Type too, or Frappe's
+    # scheduler keeps firing it regardless of is_enabled.
+    from agent_builder.native_api.trigger import sync_scheduled_job_type
+    sync_scheduled_job_type(doc)
+
     frappe.db.commit()
 
 
 @frappe.whitelist()
 def delete_trigger(trigger_name):
+    frappe.db.delete("Scheduled Job Type", {"name": f"agent_trigger::{trigger_name}"})
     frappe.delete_doc("Agent Trigger", trigger_name)
     frappe.db.commit()
 
