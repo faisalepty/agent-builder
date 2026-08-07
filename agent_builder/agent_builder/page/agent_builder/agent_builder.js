@@ -1,11 +1,24 @@
 // agent_builder/agent_builder/page/agent_builder/agent_builder.js
+
 frappe.pages['agent-builder'].on_page_load = function (wrapper) {
     const page = frappe.ui.make_app_page({
         parent: wrapper,
         title: 'Agent Control Center',
         single_column: true,
     });
-    new AgentManagement(page);
+    frappe.agent_management = new AgentManagement(page);
+};
+
+frappe.pages['agent-builder'].on_page_show = function (wrapper) {
+    if (frappe.agent_management) {
+        if (!frappe.agent_management.isDomAttached()) {
+            // Frappe v15 cleared the DOM to save memory. Rebuild it.
+            frappe.agent_management.setupDom();
+        } else {
+            // The DOM is intact, just refresh the data to keep it up to date
+            frappe.agent_management.load();
+        }
+    }
 };
 
 const MODULE_PATH = 'agent_builder.agent_builder.page.agent_builder.agent_builder';
@@ -13,6 +26,13 @@ const MODULE_PATH = 'agent_builder.agent_builder.page.agent_builder.agent_builde
 class AgentManagement {
     constructor(page) {
         this.page = page;
+        this.setupDom();
+    }
+
+    setupDom() {
+        // Clear out any existing root to prevent duplicates if called twice
+        if (this.$root) this.$root.remove();
+
         this.state = { 
             tab: 'workflows', 
             workflows: [], 
@@ -21,13 +41,19 @@ class AgentManagement {
             skills: []
         };
 
-        this.$root = $('<div class="am-root"></div>').appendTo(page.main);
+        this.$root = $('<div class="am-root"></div>').appendTo(this.page.main);
         this.injectStyles();
         this.renderShell();
         this.load();
     }
 
+    isDomAttached() {
+        return this.$root && $.contains(document, this.$root[0]);
+    }
+
     async load() {
+        if (!this.$body || !this.isDomAttached()) return;
+
         this.$body.html(`
             <div class="am-loading">
                 <i class="fa fa-circle-o-notch fa-spin fa-2x"></i>
