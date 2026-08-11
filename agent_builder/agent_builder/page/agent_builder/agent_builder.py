@@ -9,6 +9,7 @@ workflow runs, resume paused runs).
 import json
 
 import frappe
+from frappe.utils import cint
 
 
 @frappe.whitelist()
@@ -231,6 +232,74 @@ def test_step(tool, args):
         return {"output": frappe.parse_json(raw)}
     except Exception:
         return {"output": raw}
+
+
+# =========================================================================
+# Tools section — global enable/disable, grouped by Tool Group.
+#
+# This controls what's *offered* to every agent's model (see
+# setup.py::get_tool_schemas_for's global filter layer), independent of
+# any single Agent Definition's own tool_mode/allowed_tools. It does not
+# affect what ToolExecutor can dispatch — see tool_sync.py's module
+# docstring for why that's an intentional v1 scope, not an oversight.
+# =========================================================================
+
+
+@frappe.whitelist()
+def get_tool_groups():
+    """Grouped view for the Tools section: every Tool Group with its
+    child Agent Tool rows nested inline, so the frontend can render the
+    collapsible list in one call."""
+    groups = frappe.get_all(
+        "Tool Group",
+        fields=["name", "group_name", "is_enabled", "is_orphaned", "description"],
+        order_by="group_name asc",
+    )
+    tools = frappe.get_all(
+        "Agent Tool",
+        fields=["name", "tool_name", "tool_group", "is_enabled", "is_orphaned", "description"],
+        order_by="tool_name asc",
+    )
+    tools_by_group: dict[str, list] = {}
+    for t in tools:
+        tools_by_group.setdefault(t["tool_group"], []).append(t)
+
+    for g in groups:
+        g["tools"] = tools_by_group.get(g["group_name"], [])
+    return groups
+
+
+@frappe.whitelist()
+def set_tool_group_enabled(group_name: str, is_enabled):
+    """Toggle a whole group. Does not touch the individual is_enabled
+    value stored on the tools inside it — see tool_sync.py docstring."""
+    frappe.only_for("System Manager")
+    frappe.db.set_value("Tool Group", group_name, "is_enabled", cint(is_enabled))
+    frappe.db.commit()
+
+
+@frappe.whitelist()
+def set_tool_enabled(tool_name: str, is_enabled):
+    frappe.only_for("System Manager")
+    frappe.db.set_value("Agent Tool", tool_name, "is_enabled", cint(is_enabled))
+    frappe.db.commit()
+
+
+@frappe.whitelist()
+def resync_tools():
+    """'Sync Tools' button — pick up new/removed tool files without a
+    worker restart."""
+    from agent_builder.native_api.tools.tool_sync import resync_tools as _resync
+
+    return _resync()
+
+
+@frappe.whitelist()
+def delete_orphaned_tools(doctype: str):
+    """Deliberate cleanup of rows flagged orphaned by the last sync."""
+    from agent_builder.native_api.tools.tool_sync import delete_orphaned
+
+    return delete_orphaned(doctype)
 
 
 @frappe.whitelist()
