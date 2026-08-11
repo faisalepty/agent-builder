@@ -3,6 +3,11 @@
 frappe.ui.form.on("Agent Setup", {
 	onload(frm) {
 		set_model_query(frm);
+		add_sync_models_button(frm);
+	},
+
+	refresh(frm) {
+		add_sync_models_button(frm);
 	},
 
 	provider(frm) {
@@ -17,6 +22,49 @@ frappe.ui.form.on("Agent Setup", {
 		show_model_capabilities(frm);
 	},
 });
+
+function add_sync_models_button(frm) {
+	frm.add_custom_button(__("Sync model pricing"), () => {
+		if (!frm.doc.provider) {
+			frappe.msgprint(__("Select a provider before syncing model pricing."));
+			return;
+		}
+
+		frappe.call({
+			method: "agent_builder.native_api.providers.model_sync.sync_models",
+			args: { dry_run: 0 },
+			freeze: true,
+			freeze_message: __("Syncing model pricing for {0}...", [frm.doc.provider]),
+			callback(r) {
+				if (r.exc) {
+					frappe.msgprint({
+						title: __("Sync failed"),
+						message: __("Model pricing sync failed. Check the server logs."),
+						indicator: "red",
+					});
+					return;
+				}
+
+				const summary = r.message || {};
+				const created = (summary.created || []).length;
+				const updated = (summary.updated || []).length;
+				const skipped = (summary.skipped || []).length;
+				const errors = (summary.errors || []).length;
+				const parts = [];
+				if (created) parts.push(__("created: {0}", [created]));
+				if (updated) parts.push(__("updated: {0}", [updated]));
+				if (skipped) parts.push(__("skipped: {0}", [skipped]));
+				if (errors) parts.push(__("errors: {0}", [errors]));
+
+				frappe.msgprint({
+					title: __("Sync complete"),
+					message: parts.length ? parts.join(" · ") : __("No model records were changed."),
+					indicator: errors ? "orange" : "green",
+				});
+			},
+		});
+	}, __("Actions"));
+}
 
 function set_model_query(frm) {
 	frm.set_query("model", () => ({
