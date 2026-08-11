@@ -17,7 +17,7 @@ from frappe.utils.background_jobs import get_redis_conn
 # attachments — must keep working exactly as before. build_content_parts
 # is None in that case and get_messages() below falls back to plain text.
 try:
-	from agent_builder.native_api.agent.attachments import build_content_parts
+	from agent_builder.native_api.providers.attachments import build_content_parts
 except Exception:
 	build_content_parts = None
 	logging.getLogger(__name__).exception(
