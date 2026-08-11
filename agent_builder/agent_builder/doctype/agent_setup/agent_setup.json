@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_bulk_edit": 1,
  "allow_rename": 1,
  "creation": "2026-06-16 15:22:36.042083",
  "doctype": "DocType",
@@ -8,9 +7,19 @@
  "field_order": [
   "api_key",
   "provider",
+  "free_models_only",
   "model",
+  "column_break_dfuz",
   "allowed_role",
-  "agent_name"
+  "agent_name",
+  "model_details_section",
+  "input_price",
+  "output_price",
+  "context_window",
+  "model_details_col_break",
+  "max_output_tokens",
+  "supports_vision",
+  "supports_tool_calling"
  ],
  "fields": [
   {
@@ -22,38 +31,99 @@
   },
   {
    "fieldname": "provider",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Provider",
+   "options": "AI Provider",
    "reqd": 1
   },
   {
+   "description": "Optional: Specific model ID to use (e.g. anthropic/claude-sonnet-4 or google/gemini-2.5-pro)",
    "fieldname": "model",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Model",
-   "description": "Optional: Specific model ID to use (e.g. anthropic/claude-sonnet-4 or google/gemini-2.5-pro)"
+   "options": "AI Model"
   },
   {
+   "description": "If set, only users with this role will see the chat widget. Leave blank to allow all users.",
    "fieldname": "allowed_role",
    "fieldtype": "Link",
    "label": "Allowed Role",
-   "options": "Role",
-   "description": "If set, only users with this role will see the chat widget. Leave blank to allow all users."
+   "options": "Role"
   },
   {
+   "default": "Omnis",
+   "description": "The name of the AI agent displayed in the chat interface.",
    "fieldname": "agent_name",
    "fieldtype": "Data",
-   "label": "Agent Name",
-   "default": "Omnis",
-   "description": "The name of the AI agent displayed in the chat interface."
+   "label": "Agent Name"
+  },
+  {
+   "default": "0",
+   "fieldname": "free_models_only",
+   "fieldtype": "Check",
+   "label": "Free Models Only"
+  },
+  {
+   "fieldname": "model_details_section",
+   "fieldtype": "Section Break",
+   "label": "Model Details"
+  },
+  {
+   "fieldname": "input_price",
+   "fieldtype": "Float",
+   "label": "Input Price / 1M tokens (USD)",
+   "precision": "5",
+   "read_only": 1
+  },
+  {
+   "fieldname": "output_price",
+   "fieldtype": "Float",
+   "label": "Output Price / 1M tokens (USD)",
+   "precision": "5",
+   "read_only": 1
+  },
+  {
+   "fieldname": "context_window",
+   "fieldtype": "Int",
+   "label": "Context Window (Tokens)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "model_details_col_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "max_output_tokens",
+   "fieldtype": "Int",
+   "label": "Max Output Tokens",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "supports_vision",
+   "fieldtype": "Check",
+   "label": "Supports Vision",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "supports_tool_calling",
+   "fieldtype": "Check",
+   "label": "Supports Tool Calling",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_dfuz",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-19 08:02:08.220070",
+ "modified": "2026-08-11 11:24:10.105138",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Agent Setup",

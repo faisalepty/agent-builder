@@ -1,4 +1,5 @@
 import json
+import requests
 import re
 import os
 import time
@@ -487,3 +488,105 @@ def process_agent_chat(message, chat_id, attachments, user):
             publish("agent_error", {"response": error_text, "chat_id": chat_id})
         except Exception:
             pass
+
+@frappe.whitelist()
+def sync_models():
+    if not frappe.has_permission("Agent Setup", "write"):
+        frappe.throw("Not permitted", frappe.PermissionError)
+
+    synced_count = 0
+
+    # 1. OpenRouter Models -> all assigned to 'openrouter' provider
+    try:
+        response = requests.get("https://openrouter.ai/api/v1/models", timeout=15)
+        response.raise_for_status()
+        data = response.json().get("data", [])
+        
+        if frappe.db.exists("AI Provider", "openrouter"):
+            for model in data:
+                model_id = model.get("id")
+                if not model_id: continue
+                
+                arch = model.get("architecture", {})
+                pricing = model.get("pricing", {})
+                
+                model_data = {
+                    "doctype": "AI Model",
+                    "model": model_id,
+                    "model_name": model.get("name"),
+                    "provider": "openrouter",
+                    "context_window": model.get("context_length"),
+                    "max_output_tokens": model.get("top_provider", {}).get("max_completion_tokens") or 0,
+                    "input_price": float(pricing.get("prompt", 0) or 0) * 1000000,
+                    "output_price": float(pricing.get("completion", 0) or 0) * 1000000,
+                    "supports_vision": 1 if "image" in arch.get("input_modalities", []) else 0,
+                    "supports_tool_calling": 1 if "tools" in model.get("supported_parameters", []) else 0
+                }
+                
+                if not frappe.db.exists("AI Model", model_id):
+                    frappe.get_doc(model_data).insert(ignore_permissions=True)
+                else:
+                    existing_doc = frappe.get_doc("AI Model", model_id)
+                    existing_doc.update(model_data)
+                    existing_doc.save(ignore_permissions=True)
+                synced_count += 1
+    except Exception as e:
+        frappe.log_error(title="Sync OpenRouter Models Failed", message=str(e))
+
+    # 2. LiteLLM Models -> for other providers
+    try:
+        litellm_url = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
+        response = requests.get(litellm_url, timeout=15)
+        response.raise_for_status()
+        litellm_data = response.json()
+        
+        # Get all manually created providers
+        valid_providers = set(frappe.get_all("AI Provider", pluck="name"))
+        
+        for model_id, details in litellm_data.items():
+            if not isinstance(details, dict):
+                continue
+            
+            raw_provider = details.get("litellm_provider", "").lower()
+            if not raw_provider and "/" in model_id:
+                raw_provider = model_id.split("/")[0].lower()
+                
+            provider_name = raw_provider
+            if raw_provider in ["bedrock", "anthropic"]:
+                provider_name = "anthropic"
+            elif raw_provider in ["openai", "azure"]:
+                provider_name = "openai"
+            elif raw_provider in ["vertex_ai", "vertex_ai-language-models", "gemini"]:
+                provider_name = "google"
+            elif raw_provider == "nvidia" or "nvidia" in model_id.lower():
+                provider_name = "nvidia"
+                
+            if provider_name == "openrouter":
+                continue # Already handled
+                
+            if provider_name in valid_providers:
+                model_data = {
+                    "doctype": "AI Model",
+                    "model": model_id,
+                    "model_name": model_id,
+                    "provider": provider_name,
+                    "context_window": details.get("max_tokens") or details.get("max_input_tokens") or 0,
+                    "max_output_tokens": details.get("max_output_tokens") or 0,
+                    "input_price": float(details.get("input_cost_per_token", 0) or 0) * 1000000,
+                    "output_price": float(details.get("output_cost_per_token", 0) or 0) * 1000000,
+                    "supports_vision": 1 if details.get("supports_vision") else 0,
+                    "supports_tool_calling": 1 if details.get("supports_function_calling") else 0
+                }
+                
+                if not frappe.db.exists("AI Model", model_id):
+                    frappe.get_doc(model_data).insert(ignore_permissions=True)
+                else:
+                    existing_doc = frappe.get_doc("AI Model", model_id)
+                    existing_doc.update(model_data)
+                    existing_doc.save(ignore_permissions=True)
+                synced_count += 1
+    except Exception as e:
+        frappe.log_error(title="Sync LiteLLM Models Failed", message=str(e))
+
+    frappe.db.commit()
+    return {"status": "success", "message": f"Successfully synced {synced_count} models."}

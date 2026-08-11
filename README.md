@@ -19,14 +19,23 @@ You can install this app using the [bench](https://github.com/frappe/bench) CLI:
 cd $PATH_TO_YOUR_BENCH
 bench get-app https://github.com/unofaisal/agent-builder.git --branch develop
 bench install-app agent_builder
+
+# Install hermes-agent python package in your bench environment
+./env/bin/pip3 install hermes-agent
 ```
 
-## Configuration
+## Configuration & Setup
 
-Add credential in the "Agent Setup" doctype
+Once installed, you need to configure the AI agent before the chat widget becomes active:
 
-ie provider [OPENROUTER, GEMINI, ANTHROPIC, GLM]
-and the API_KEY provided by your vendor
+1. **Role Access**: Create a specific role (or use an existing one) for users who need access to the AI Chat. Assign this role to the desired users.
+2. **Agent Setup**: In your ERPNext/Frappe workspace, search for the **Agent Setup** doctype and configure it:
+   - **Allowed Role**: Select the role you created in step 1.
+   - **Agent Name**: Give your AI a name (e.g., "ERPNext Copilot").
+   - **API Key & Provider**: Create an `AI Provider` (e.g., openrouter, openai, anthropic) and paste your API key from the provider.
+   - **Sync & Select Models**: Click the **Sync Models** button at the top to fetch all available models. You can then select a model from the dropdown. 
+     *Tip: Check **Free Models Only** to easily find and select free models to use!*
+3. **Hard Refresh**: Once saved, perform a hard refresh (`Ctrl + Shift + R` or `Cmd + Shift + R`) in your browser. The Chat icon will now appear in the bottom right corner of your screen!
 
 ## API Usage
 

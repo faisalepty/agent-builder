@@ -1,6 +1,6 @@
 model:
-  default: nvidia/nemotron-3-ultra-550b-a55b
-  provider: nvidia
+  default: inclusionai/ling-3.0-tiny:free
+  provider: openrouter
 plugins:
   disabled: []
   enabled:
