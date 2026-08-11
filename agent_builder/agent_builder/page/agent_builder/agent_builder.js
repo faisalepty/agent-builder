@@ -61,7 +61,7 @@ class AgentManagement {
             </div>
         `);
 
-        const [workflowsRes, agentsRes, triggersRes, skillsRes] = await Promise.all([
+        const [workflowsRes, agentsRes, triggersRes, skillsRes, toolGroupsRes] = await Promise.all([
             frappe.call(`${MODULE_PATH}.get_workflows`),
             frappe.call(`${MODULE_PATH}.get_agent_skills`),
             frappe.call(`${MODULE_PATH}.get_triggers`),
@@ -69,13 +69,15 @@ class AgentManagement {
                 filters: { is_agent: 0 },
                 fields: ['name', 'description', 'is_enabled', 'modified'],
                 limit: 100
-            })
+            }),
+            frappe.call(`${MODULE_PATH}.get_tool_groups`)
         ]);
 
         this.state.workflows = workflowsRes.message || [];
         this.state.agents = agentsRes.message || [];
         this.state.triggers = triggersRes.message || [];
         this.state.skills = skillsRes || [];
+        this.state.toolGroups = toolGroupsRes.message || [];
         
         this.renderBody();
     }
@@ -96,6 +98,9 @@ class AgentManagement {
                     <button class="am-tab" data-tab="triggers">
                         <i class="fa fa-bolt"></i> Triggers
                     </button>
+                    <button class="am-tab" data-tab="tools">
+                        <i class="fa fa-wrench"></i> Tools
+                    </button>
                 </div>
                 <div class="am-header-actions">
                     <button class="btn btn-sm btn-primary am-new-btn" data-type="workflow">
@@ -114,12 +119,19 @@ class AgentManagement {
             const $btn = $tabs.find('.am-new-btn');
             if (tab === 'agents') {
                 $btn.html('<i class="fa fa-plus"></i> New Agent').data('type', 'agent');
+                $btn.show();
             } else if (tab === 'workflows') {
                 $btn.html('<i class="fa fa-plus"></i> New Workflow').data('type', 'workflow');
+                $btn.show();
             } else if (tab === 'skills') {
                 $btn.html('<i class="fa fa-plus"></i> New Skill').data('type', 'skill');
+                $btn.show();
+            } else if (tab === 'tools') {
+                // Tools are synced from disk, not hand-created — no "New" action.
+                $btn.hide();
             } else {
                 $btn.html('<i class="fa fa-plus"></i> New Trigger').data('type', 'trigger');
+                $btn.show();
             }
 
             this.renderBody();
@@ -143,6 +155,7 @@ class AgentManagement {
         else if (this.state.tab === 'agents') this.renderAgents();
         else if (this.state.tab === 'skills') this.renderSkills();
         else if (this.state.tab === 'triggers') this.renderTriggers();
+        else if (this.state.tab === 'tools') this.renderTools();
     }
 
     // --- WORKFLOWS ---
@@ -293,6 +306,139 @@ class AgentManagement {
                 const action = $(e.currentTarget).data('action');
                 if (action === 'edit_skill') frappe.set_route('Form', 'Skill', s.name);
                 else if (action === 'toggle_skill') this.toggleSkill(s);
+            });
+        });
+    }
+
+    // --- TOOLS ---
+    // Global on/off switches, grouped the same way tools/ is grouped on
+    // disk. This is separate from an individual Agent Definition's own
+    // allow/block list — a tool disabled here is hidden from every agent.
+    renderTools() {
+        const { toolGroups } = this.state;
+
+        const $wrap = $('<div class="am-tools-wrap"></div>').appendTo(this.$body);
+
+        const $toolbar = $(`
+            <div class="am-tools-toolbar">
+                <div class="am-tools-search">
+                    <i class="fa fa-search"></i>
+                    <input type="text" class="form-control input-sm am-tools-filter" placeholder="Filter tools…">
+                </div>
+                <button class="btn btn-xs btn-default am-tools-sync">
+                    <i class="fa fa-refresh"></i> Sync Tools
+                </button>
+            </div>
+        `).appendTo($wrap);
+
+        $wrap.find('.am-tools-sync').on('click', async (e) => {
+            const $btn = $(e.currentTarget);
+            $btn.prop('disabled', true).html('<i class="fa fa-circle-o-notch fa-spin"></i> Syncing…');
+            try {
+                await frappe.call(`${MODULE_PATH}.resync_tools`);
+                await this.load();
+                frappe.show_alert({ message: 'Tools synced', indicator: 'green' });
+            } finally {
+                $btn.prop('disabled', false).html('<i class="fa fa-refresh"></i> Sync Tools');
+            }
+        });
+
+        if (!toolGroups || !toolGroups.length) {
+            $('<div></div>').appendTo($wrap).html(
+                this.getEmptyState('tool', 'No tools have been synced yet. Click "Sync Tools" above.')
+            );
+            return;
+        }
+
+        const $list = $('<div class="am-tools-list"></div>').appendTo($wrap);
+
+        const orphanedGroups = toolGroups.filter(g => g.is_orphaned);
+        const orphanedTools = toolGroups.flatMap(g => (g.tools || []).filter(t => t.is_orphaned));
+        if (orphanedGroups.length || orphanedTools.length) {
+            $(`
+                <div class="am-tools-orphan-banner">
+                    <i class="fa fa-exclamation-triangle"></i>
+                    ${orphanedGroups.length} group(s) and ${orphanedTools.length} tool(s) no longer found on disk.
+                    <a href="#" class="am-clean-orphans">Clean up</a>
+                </div>
+            `).appendTo($wrap).on('click', '.am-clean-orphans', async (e) => {
+                e.preventDefault();
+                await frappe.call(`${MODULE_PATH}.delete_orphaned_tools`, { doctype: 'Agent Tool' });
+                await frappe.call(`${MODULE_PATH}.delete_orphaned_tools`, { doctype: 'Tool Group' });
+                this.load();
+            });
+        }
+
+        toolGroups.forEach((g) => {
+            const tools = g.tools || [];
+            const enabledCount = tools.filter(t => t.is_enabled).length;
+            const $group = $(`
+                <div class="am-tool-group ${g.is_orphaned ? 'am-orphaned' : ''}" data-group="${frappe.utils.escape_html(g.group_name)}">
+                    <div class="am-tool-group-head">
+                        <i class="fa fa-chevron-down am-tool-collapse"></i>
+                        <span class="am-tool-group-name">${frappe.utils.escape_html(g.group_name)}</span>
+                        ${g.is_orphaned ? '<span class="indicator-pill gray">not on disk</span>' : ''}
+                        <span class="am-tool-group-count">${enabledCount}/${tools.length} enabled</span>
+                        <label class="am-toggle am-tool-group-toggle" title="${g.is_enabled ? 'Disable whole group' : 'Enable whole group'}">
+                            <input type="checkbox" ${g.is_enabled ? 'checked' : ''}>
+                            <span class="am-toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="am-tool-group-body"></div>
+                </div>
+            `).appendTo($list);
+
+            const $body = $group.find('.am-tool-group-body');
+            tools.forEach((t) => {
+                $(`
+                    <div class="am-tool-row ${t.is_orphaned ? 'am-orphaned' : ''}" data-tool="${frappe.utils.escape_html(t.tool_name)}">
+                        <div class="am-tool-row-info">
+                            <span class="am-tool-name">${frappe.utils.escape_html(t.tool_name)}</span>
+                            ${t.is_orphaned ? '<span class="indicator-pill gray">not loaded</span>' : ''}
+                            <span class="am-tool-desc">${frappe.utils.escape_html(t.description || 'No description')}</span>
+                        </div>
+                        <label class="am-toggle am-tool-toggle">
+                            <input type="checkbox" ${t.is_enabled ? 'checked' : ''} ${!g.is_enabled ? 'disabled' : ''}>
+                            <span class="am-toggle-slider"></span>
+                        </label>
+                    </div>
+                `).appendTo($body);
+            });
+
+            $group.on('click', '.am-tool-group-head', (e) => {
+                if ($(e.target).closest('.am-tool-group-toggle').length) return;
+                $group.toggleClass('am-tool-group-collapsed');
+            });
+
+            $group.on('change', '.am-tool-group-toggle input', async (e) => {
+                const checked = e.target.checked;
+                await frappe.call(`${MODULE_PATH}.set_tool_group_enabled`, {
+                    group_name: g.group_name, is_enabled: checked ? 1 : 0
+                });
+                this.load();
+            });
+
+            $group.on('change', '.am-tool-toggle input', async (e) => {
+                const $row = $(e.target).closest('.am-tool-row');
+                const toolName = $row.data('tool');
+                const checked = e.target.checked;
+                await frappe.call(`${MODULE_PATH}.set_tool_enabled`, {
+                    tool_name: toolName, is_enabled: checked ? 1 : 0
+                });
+                this.load();
+            });
+        });
+
+        $wrap.find('.am-tools-filter').on('input', (e) => {
+            const q = e.target.value.trim().toLowerCase();
+            $list.find('.am-tool-row').each(function () {
+                const name = $(this).data('tool').toLowerCase();
+                $(this).toggle(!q || name.includes(q));
+            });
+            $list.find('.am-tool-group').each(function () {
+                const anyVisible = $(this).find('.am-tool-row:visible').length > 0;
+                $(this).toggle(!q || anyVisible);
+                if (q && anyVisible) $(this).removeClass('am-tool-group-collapsed');
             });
         });
     }
@@ -720,6 +866,67 @@ class AgentManagement {
                     padding-right: 16px;
                 }
             }
+
+            /* ── Tools tab ── */
+            .am-tools-wrap { max-width: 900px; }
+            .am-tools-toolbar {
+                display: flex; align-items: center; justify-content: space-between;
+                gap: 12px; margin-bottom: 14px;
+            }
+            .am-tools-search { position: relative; flex: 1; max-width: 320px; }
+            .am-tools-search i {
+                position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+                color: var(--text-muted); font-size: 12px;
+            }
+            .am-tools-filter { padding-left: 28px; }
+            .am-tools-orphan-banner {
+                background: rgba(255, 176, 32, 0.12); border: 1px solid rgba(255, 176, 32, 0.35);
+                border-radius: 6px; padding: 8px 12px; font-size: 12px; margin-bottom: 14px;
+                color: var(--text-color);
+            }
+            .am-tools-orphan-banner i { color: #e0a800; margin-right: 6px; }
+            .am-clean-orphans { margin-left: 6px; font-weight: 600; }
+            .am-tool-group {
+                border: 1px solid var(--border-color); border-radius: 8px;
+                margin-bottom: 10px; overflow: hidden; background: var(--card-bg, transparent);
+            }
+            .am-tool-group.am-orphaned { opacity: 0.55; }
+            .am-tool-group-head {
+                display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+                cursor: pointer; user-select: none;
+            }
+            .am-tool-collapse { transition: transform 150ms ease; color: var(--text-muted); font-size: 12px; }
+            .am-tool-group-collapsed .am-tool-collapse { transform: rotate(-90deg); }
+            .am-tool-group-collapsed .am-tool-group-body { display: none; }
+            .am-tool-group-name { font-weight: 600; font-size: 13px; }
+            .am-tool-group-count { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+            .am-tool-group-body { border-top: 1px solid var(--border-color); }
+            .am-tool-row {
+                display: flex; align-items: center; justify-content: space-between;
+                gap: 10px; padding: 8px 14px 8px 32px;
+                border-top: 1px solid var(--border-color);
+            }
+            .am-tool-row:first-child { border-top: none; }
+            .am-tool-row.am-orphaned { opacity: 0.55; }
+            .am-tool-row-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
+            .am-tool-name { font-size: 12px; font-weight: 500; font-family: var(--font-mono, monospace); flex-shrink: 0; }
+            .am-tool-desc {
+                font-size: 12px; color: var(--text-muted); overflow: hidden;
+                text-overflow: ellipsis; white-space: nowrap;
+            }
+            .am-toggle { position: relative; display: inline-block; width: 34px; height: 18px; flex-shrink: 0; }
+            .am-toggle input { opacity: 0; width: 0; height: 0; }
+            .am-toggle-slider {
+                position: absolute; cursor: pointer; inset: 0; background: #ccc;
+                border-radius: 18px; transition: 150ms ease;
+            }
+            .am-toggle-slider::before {
+                content: ""; position: absolute; height: 14px; width: 14px; left: 2px; top: 2px;
+                background: white; border-radius: 50%; transition: 150ms ease;
+            }
+            .am-toggle input:checked + .am-toggle-slider { background: var(--primary); }
+            .am-toggle input:checked + .am-toggle-slider::before { transform: translateX(16px); }
+            .am-toggle input:disabled + .am-toggle-slider { opacity: 0.4; cursor: not-allowed; }
         `;
         document.head.appendChild(style);
     }

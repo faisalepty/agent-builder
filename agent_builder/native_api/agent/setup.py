@@ -207,10 +207,17 @@ def get_identity() -> str:
 	return _CACHED_IDENTITY
 
 
-def get_tool_registry() -> ToolRegistry:
-	"""Load and cache the tool registry."""
+def get_tool_registry(force_reload: bool = False) -> ToolRegistry:
+	"""Load and cache the tool registry.
+
+	force_reload: rebuilds from disk even if already cached — used by the
+	"Sync Tools" button (tool_sync.resync_tools) so a newly added tool
+	file can be picked up without restarting the worker. load_tools()
+	itself runs sync_tool_registry() as a side effect of the rebuild, so
+	this is also how a manual sync actually happens.
+	"""
 	global _CACHED_REGISTRY
-	if _CACHED_REGISTRY is None:
+	if _CACHED_REGISTRY is None or force_reload:
 		_CACHED_REGISTRY = ToolRegistry()
 		load_tools(_CACHED_REGISTRY, str(TOOLS_DIR))
 	return _CACHED_REGISTRY
@@ -526,6 +533,33 @@ def get_agent_system_prompt(agent_name: str | None) -> str:
 	return "\n\n".join(p for p in parts.values() if p)
 
 
+def _name(schema):
+	return schema.get("function", {}).get("name") or schema.get("name")
+
+
+def _globally_enabled_schemas(all_schemas: list) -> list:
+	"""Drop tools disabled via the Tool Group / Agent Tool doctypes
+	(agent_builder's "Tools" section). This applies unconditionally,
+	before any per-agent allow/block list — a tool disabled here is
+	invisible to every agent, no matter its own tool_mode.
+
+	Best-effort: if the sync doctypes aren't reachable for any reason
+	(e.g. not migrated yet on a fresh site), fail open to "no global
+	restriction" rather than breaking every agent's tool access.
+	"""
+	try:
+		from agent_builder.native_api.tools.tool_sync import get_globally_disabled_tool_names
+
+		disabled = get_globally_disabled_tool_names()
+	except Exception as exc:
+		logger.error(f"Global tool filter unavailable, skipping: {exc}")
+		return all_schemas
+
+	if not disabled:
+		return all_schemas
+	return [s for s in all_schemas if _name(s) not in disabled]
+
+
 def get_tool_schemas_for(agent_name: str | None) -> list:
 	"""Return the tool schema list a given agent is allowed to see.
 
@@ -533,8 +567,15 @@ def get_tool_schemas_for(agent_name: str | None) -> list:
 	what ToolRegistry can execute. Good enough to scope an agent's
 	behavior; it is not a hard permission boundary (Frappe's own doc
 	permissions still apply underneath every tool call).
+
+	Two layers, applied in order:
+	  1. Global: tools/groups disabled via the Tool Group / Agent Tool
+	     doctypes (Agent Builder's "Tools" section) — applies to every
+	     agent unconditionally.
+	  2. Per-agent: the Agent Definition's own tool_mode/allowed_tools,
+	     narrowing further within whatever layer 1 already allowed.
 	"""
-	all_schemas = get_tool_registry().get_tool_schemas()
+	all_schemas = _globally_enabled_schemas(get_tool_registry().get_tool_schemas())
 	if not agent_name:
 		return all_schemas
 
@@ -543,9 +584,6 @@ def get_tool_schemas_for(agent_name: str | None) -> list:
 	allowed = set(agent_def["allowed_tools"])
 	if mode == "All" or not allowed:
 		return all_schemas
-
-	def _name(schema):
-		return schema.get("function", {}).get("name") or schema.get("name")
 
 	if mode == "Allow List":
 		return [s for s in all_schemas if _name(s) in allowed]

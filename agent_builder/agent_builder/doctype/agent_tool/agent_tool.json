@@ -1,0 +1,98 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "autoname": "field:tool_name",
+ "creation": "2026-08-07 12:50:11.885387",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "tool_name",
+  "tool_group",
+  "is_enabled",
+  "description",
+  "is_orphaned",
+  "last_synced"
+ ],
+ "fields": [
+  {
+   "description": "Matches the schema's function.name \u2014 the same string the model calls and that shows up in Agent Definition's allowed_tools.",
+   "fieldname": "tool_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Tool Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "tool_group",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Tool Group",
+   "options": "Tool Group",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "description": "Disabled tools are dropped from every agent's tool schema regardless of that agent's own allow/block list. This only hides the tool from the model \u2014 it is not an execution-time permission boundary (see ToolExecutor).",
+   "fieldname": "is_enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Enabled"
+  },
+  {
+   "description": "Synced from the tool's schema.py description. Edit schema.py to change this, not this field directly \u2014 it will be overwritten on the next sync.",
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "True if this tool is no longer registered as of the last sync (its py/schema file was removed or renamed). Kept, not deleted, so you can decide whether to clean it up.",
+   "fieldname": "is_orphaned",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Orphaned",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_synced",
+   "fieldtype": "Datetime",
+   "label": "Last Synced",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-08-07 12:50:11.885387",
+ "modified_by": "Administrator",
+ "module": "Agent Builder",
+ "name": "Agent Tool",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "tool_group",
+ "sort_order": "ASC",
+ "states": [],
+ "track_changes": 1
+}

@@ -1,0 +1,86 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "autoname": "field:group_name",
+ "creation": "2026-08-07 12:49:11.798346",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "group_name",
+  "is_enabled",
+  "description",
+  "is_orphaned",
+  "last_synced"
+ ],
+ "fields": [
+  {
+   "description": "Matches the tool_group_dir folder name under agent_builder/native_api/tools/ (e.g. 'frappe', 'skill_tools').",
+   "fieldname": "group_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Group Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "1",
+   "description": "Disabling a group hides every tool in it from every agent's tool schema. It does not overwrite the individual enabled/disabled state of the tools inside it \u2014 re-enabling the group restores their prior state.",
+   "fieldname": "is_enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "default": "0",
+   "description": "True if this group no longer exists on disk (e.g. its folder was removed) as of the last sync. Not shown to agents either way, but flagged here so it can be cleaned up deliberately.",
+   "fieldname": "is_orphaned",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Orphaned",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_synced",
+   "fieldtype": "Datetime",
+   "label": "Last Synced",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-08-07 12:49:33.655366",
+ "modified_by": "Administrator",
+ "module": "Agent Builder",
+ "name": "Tool Group",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "ASC",
+ "states": [],
+ "track_changes": 1
+}
