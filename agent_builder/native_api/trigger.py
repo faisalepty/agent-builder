@@ -23,6 +23,8 @@ import frappe
 from frappe.utils import get_datetime, now_datetime
 from frappe.utils.safe_exec import get_safe_globals
 
+
+from agent_builder.native_api.tools.clarify_approval_tools.notify import notify_run_complete
 from agent_builder.native_api.agent.runner import SessionProvenance, run_headless_agent
 
 logger = logging.getLogger(__name__)
@@ -79,17 +81,11 @@ def fire_trigger(trigger_name: str, context: dict):
 
 
 def run_triggered_agent(trigger_name: str, context: dict):
-    """Background job body: build a stamped session and run the agent loop."""
     trigger = frappe.get_doc("Agent Trigger", trigger_name)
 
     if trigger.input_template:
         rendered_message = _render_template_to_string(trigger.input_template, context)
     else:
-        # Same "blank = pass the whole context through" convention as
-        # workflow-targeted triggers (see fire_trigger) — an agent's
-        # first turn has to be a text message rather than a raw dict, so
-        # this serializes the context (including the full 'doc') as
-        # readable JSON instead of leaving the agent with an empty message.
         rendered_message = frappe.as_json(context, indent=2)
 
     provenance = SessionProvenance(
@@ -98,20 +94,40 @@ def run_triggered_agent(trigger_name: str, context: dict):
         trigger_ref=_extract_ref(context),
     )
 
+    skill_injection = None
+    if trigger.agent_name:
+        skill = frappe.get_doc("Skill", trigger.agent_name)
+        if not skill.is_agent:
+            frappe.log_error(f"Agent Trigger '{trigger_name}' -> Skill '{skill.name}' is not marked is_agent")
+            return
+        if not skill.is_enabled:
+            frappe.log_error(f"Agent Trigger '{trigger_name}' -> Skill '{skill.name}' is disabled")
+            return
+        skill_injection = skill.content
+
     result = run_headless_agent(
-        agent_name=trigger.agent_name,
+        agent_name=None,
         input_message=rendered_message,
         provenance=provenance,
         user=trigger.run_as_user or "Administrator",
+        skill_injection=skill_injection,
     )
 
-    # run_headless_agent already commits and saves the session
-    # Emit done event for any listeners
-    conversation = frappe.get_doc("Agent session", result.session_id)
     if result.ended_reason == "Completed":
-        conversation.emit_done(result.response)
+        notify_run_complete(
+            user=trigger.run_as_user or "Administrator",
+            subject=f"Agent Trigger '{trigger.trigger_name}' completed",
+            message=result.response,
+            success=True,
+        )
     else:
-        conversation.emit_error(f"Agent ended with: {result.ended_reason}")
+        frappe.log_error(f"Triggered agent '{trigger_name}' ended with: {result.ended_reason}")
+        notify_run_complete(
+            user=trigger.run_as_user or "Administrator",
+            subject=f"Agent Trigger '{trigger.trigger_name}' failed",
+            message=f"Run ended with: {result.ended_reason}",
+            success=False,
+        )
 
 
 # =========================================================================
@@ -154,18 +170,91 @@ def receive_webhook(trigger_name: str, token: str, **payload):
 #
 #   doc_events = {
 #       "*": {
+#           "before_insert": "agent_builder.native_api.trigger.handle_doctype_event",
 #           "after_insert": "agent_builder.native_api.trigger.handle_doctype_event",
+#           "before_save": "agent_builder.native_api.trigger.handle_doctype_event",
 #           "on_update": "agent_builder.native_api.trigger.handle_doctype_event",
+#           "before_submit": "agent_builder.native_api.trigger.handle_doctype_event",
 #           "on_submit": "agent_builder.native_api.trigger.handle_doctype_event",
+#           "before_cancel": "agent_builder.native_api.trigger.handle_doctype_event",
 #           "on_cancel": "agent_builder.native_api.trigger.handle_doctype_event",
+#           "on_update_after_submit": "agent_builder.native_api.trigger.handle_doctype_event",
 #           "on_trash": "agent_builder.native_api.trigger.handle_doctype_event",
+#           "after_delete": "agent_builder.native_api.trigger.handle_doctype_event",
+#           "on_change": "agent_builder.native_api.trigger.handle_doctype_event",
 #       }
 #   }
+#
+# This list must stay in sync with the Agent Trigger doctype's
+# doctype_event Select options (agent_trigger.json) — an event picked in
+# the UI that isn't also a key here will save fine and just never fire,
+# with no error anywhere. Deliberately NOT wired: "validate" (fires
+# pre-commit inside the save transaction — enqueuing an agent there can
+# fire even if the save later rolls back) and "before_naming"/"autoname"
+# (doc.name doesn't exist yet).
 #
 # Using "*" plus the doctype_name/doctype_event filter on Agent Trigger
 # means you never have to touch hooks.py again to add a new triggered
 # workflow/agent — just create a new Agent Trigger record. After editing
 # hooks.py, run `bench build` / restart bench for it to take effect.
+
+
+# Frappe's own noisy internal doctypes fire constantly and will never
+# have a matching Agent Trigger — bail before even touching the cache.
+_DOCTYPE_EVENT_DENYLIST = {
+    "Version",
+    "Activity Log",
+    "Error Log",
+    "RQ Job",
+    "RQ Job Update",
+    "Route History",
+    "Access Log",
+    "View Log",
+    "Notification Log",
+    "Email Queue",
+    "Comment",
+}
+
+_TRIGGER_MAP_CACHE_KEY = "agent_builder:doctype_event_trigger_map"
+
+
+def _get_doctype_event_trigger_map() -> dict:
+    """Redis-cached {(doctype, event): [trigger_name, ...]} for every
+    enabled DocType Event trigger. Rebuilt from a single DB query when the
+    cache is cold or was invalidated; a plain redis GET the rest of the
+    time — no DB round trip on the hot path (every doc write in the
+    system runs through handle_doctype_event below).
+    """
+    cache = frappe.cache()
+    cached = cache.get_value(_TRIGGER_MAP_CACHE_KEY)
+    if cached is not None:
+        return cached
+
+    rows = frappe.get_all(
+        "Agent Trigger",
+        filters={"trigger_type": "DocType Event", "is_enabled": 1},
+        fields=["name", "doctype_name", "doctype_event"],
+    )
+    mapping: dict = {}
+    for r in rows:
+        mapping.setdefault((r.doctype_name, r.doctype_event), []).append(r.name)
+
+    # No expiry — invalidated explicitly by invalidate_trigger_cache()
+    # below whenever an Agent Trigger is written. Worst case on a missed
+    # invalidation path is a stale map until the next explicit clear or
+    # process restart, not a crash.
+    cache.set_value(_TRIGGER_MAP_CACHE_KEY, mapping)
+    return mapping
+
+
+def invalidate_trigger_cache():
+    """Call this from every write path that creates/edits/deletes/toggles
+    an Agent Trigger (agent_builder.py: create_trigger, toggle_trigger,
+    _sync_trigger_steps — the same call sites that already call
+    sync_scheduled_job_type — plus an Agent Trigger doctype hook if it can
+    also be edited straight from Desk). Cheap: just drops the cache key,
+    next handle_doctype_event call rebuilds it from one query."""
+    frappe.cache().delete_value(_TRIGGER_MAP_CACHE_KEY)
 
 
 def handle_doctype_event(doc, event):
@@ -177,19 +266,16 @@ def handle_doctype_event(doc, event):
     # querying a table that might not be there.
     if frappe.flags.in_migrate or frappe.flags.in_install:
         return
+    if doc.doctype in _DOCTYPE_EVENT_DENYLIST:
+        return
     if not frappe.db.table_exists("Agent Trigger"):
         return
 
-    matches = frappe.get_all(
-        "Agent Trigger",
-        filters={
-            "trigger_type": "DocType Event",
-            "doctype_name": doc.doctype,
-            "doctype_event": event,
-            "is_enabled": 1,
-        },
-        pluck="name",
-    )
+    # Cheap in-memory dict lookup, not a query, on the hot path.
+    matches = _get_doctype_event_trigger_map().get((doc.doctype, event))
+    if not matches:
+        return
+
     for trigger_name in matches:
         fire_trigger(trigger_name, {"doc": doc.as_dict()})
 

@@ -17,6 +17,14 @@ etc.) rather than being a workflow-only special case.
 Every run is persisted as an "Agent Workflow Run" document from the
 moment it starts, enabling execution history, resume-after-pause, and an
 error_workflow payload on failure.
+
+Notifications: on terminal Success/Failed, a msgprint realtime event is
+pushed to the workflow's run_as_user via notify_run_complete — see
+agent_builder.native_api.notify. Workflow output can be arbitrary (tool
+JSON, doc creation result, etc.), not necessarily human language like a
+trigger's LLM response, so _summarize_output renders whatever the final
+step produced into a short, readable string rather than assuming it's
+already text.
 """
 
 import asyncio
@@ -27,6 +35,7 @@ import frappe
 from simpleeval import EvalWithCompoundTypes
 
 from agent_builder.native_api.agent.setup import get_tool_registry
+from agent_builder.native_api.tools.clarify_approval_tools.notify import notify_run_complete
 from agent_builder.native_api.tools.executor import ToolExecutor
 
 REF = re.compile(r"\{\{output(\.([\w.]+))?\}\}")
@@ -79,7 +88,7 @@ def resolve_refs(value, output):
     """
     if isinstance(value, str):
         val_strip = value.strip()
-        
+
         # 1. Standalone {{ output }} or {{ output.path }}
         m = REF.fullmatch(val_strip)
         if m:
@@ -93,7 +102,7 @@ def resolve_refs(value, output):
             path = m.group(2)
             if not path:
                 return json.dumps(output, default=str)
-            
+
             val = _dig(output, path)
             if isinstance(val, str):
                 return val  # Let surrounding template quotes handle stringification
@@ -113,7 +122,7 @@ def resolve_refs(value, output):
 
 def _dig(obj, path: str):
     """Traverse a dotted path against a dictionary/list. If an intermediate
-    value is a JSON string, parse it automatically so paths like 
+    value is a JSON string, parse it automatically so paths like
     `output.response.doc` work when `response` returns a JSON string.
     """
     for part in path.split("."):
@@ -138,6 +147,53 @@ def _dig(obj, path: str):
 def _eval(expr: str, output) -> bool:
     evaluator = EvalWithCompoundTypes(names={"output": output})
     return bool(evaluator.eval(expr))
+
+
+def _summarize_output(output, max_len: int = 1000) -> str:
+    if isinstance(output, dict):
+        if isinstance(output.get("error"), str):
+            return f"⚠️ Error: {output['error']}"
+
+        if isinstance(output.get("response"), str):
+            # Agent-style tool output (delegate_task, etc.) — pass through
+            # whole, same as the Agent Trigger path does with result.response.
+            # This can be markup (table/divs); never slice it with [:max_len],
+            # since a raw character cut mid-tag corrupts everything after it
+            # (dropped rows, unclosed elements, broken layout) — exactly what
+            # was happening before.
+            return output["response"]
+
+        if "name" in output and "doctype" in output:
+            return f"{output['doctype']} **{output['name']}** saved."
+
+        return _truncate(frappe.as_json(output, indent=2), max_len)
+
+    if isinstance(output, list):
+        if not output:
+            return "(no results)"
+        if all(isinstance(r, dict) for r in output):
+            return _summarize_records(output, max_len)
+        return _truncate(frappe.as_json(output, indent=2), max_len)
+
+    return _truncate(str(output) if output is not None else "(no output)", max_len)
+
+
+def _truncate(text: str, max_len: int) -> str:
+    return text if len(text) <= max_len else text[:max_len] + "…"
+
+
+def _summarize_records(records: list, max_len: int, max_rows: int = 10) -> str:
+    keys = list(records[0].keys())[:5]  # cap columns for readability
+    header = "| " + " | ".join(keys) + " |"
+    sep = "| " + " | ".join("---" for _ in keys) + " |"
+    rows = [
+        "| " + " | ".join(str(r.get(k, "")) for k in keys) + " |"
+        for r in records[:max_rows]
+    ]
+    table = "\n".join([header, sep] + rows)
+    if len(records) > max_rows:
+        table += f"\n\n…and {len(records) - max_rows} more."
+    return _truncate(table, max_len)
 
 
 async def _execute_tool_step(step: dict, output, executor: ToolExecutor):
@@ -231,6 +287,7 @@ async def _run_workflow_async(
     order = [s["id"] for s in steps_list]
 
     executor = ToolExecutor(get_tool_registry())
+    run_as_user = wf.get("run_as_user") or "Administrator"
 
     if resume_run:
         run_doc = frappe.get_doc("Agent Workflow Run", resume_run)
@@ -318,6 +375,13 @@ async def _run_workflow_async(
         run_doc.save(ignore_permissions=True)
         frappe.db.commit()
 
+        notify_run_complete(
+            user=run_as_user,
+            subject=f"Workflow '{workflow_name}' completed",
+            message=_summarize_output(output),
+            success=True,
+        )
+
         return {"final_output": output, "log": log, "status": "Success", "run_name": run_doc.name}
 
     except Exception as e:
@@ -327,6 +391,13 @@ async def _run_workflow_async(
         run_doc.error = str(e)
         run_doc.save(ignore_permissions=True)
         frappe.db.commit()
+
+        notify_run_complete(
+            user=run_as_user,
+            subject=f"Workflow '{workflow_name}' failed",
+            message=str(e),
+            success=False,
+        )
 
         error_workflow = wf.get("error_workflow")
         if error_workflow and error_workflow != workflow_name:
@@ -365,6 +436,14 @@ def resume_workflow(run_name: str, decision: str, edited_output: dict | None = N
         run_doc.error = "Rejected at human approval step"
         run_doc.save(ignore_permissions=True)
         frappe.db.commit()
+
+        notify_run_complete(
+            user=frappe.get_doc("Agent Workflow", run_doc.workflow).get("run_as_user") or "Administrator",
+            subject=f"Workflow '{run_doc.workflow}' failed",
+            message="Rejected at human approval step",
+            success=False,
+        )
+
         return {"status": "Failed", "run_name": run_name}
 
     if edited_output is not None:

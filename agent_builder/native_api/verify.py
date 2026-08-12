@@ -378,7 +378,7 @@ def get_chats():
 	"""Return the current user's chat list."""
 	chats = frappe.get_list(
 		"Agent session",
-		filters={"user": frappe.session.user, "status": "Active"},
+		filters={"user": frappe.session.user, "status": "Active", "trigger_type": "Chat"},
 		fields=["name", "title", "last_active", "message_count"],
 		order_by="last_active desc",
 		limit_page_length=50,

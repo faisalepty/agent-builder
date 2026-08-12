@@ -11,6 +11,8 @@ import logging
 import random
 from typing import Any, List
 
+import frappe
+
 from agent_builder.native_api.agent.conversation import Conversation
 from agent_builder.native_api.tools.decorator import ToolRegistry
 
