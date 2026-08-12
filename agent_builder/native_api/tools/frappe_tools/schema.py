@@ -117,7 +117,7 @@ FRAPPE_GET_LIST = {
 				"type": "object",
 				"default": {},
 				"description": (
-					'Search filters as key-value pairs. Examples: {"status": "Active"}, '
+					'Search filters as key-value pairs DONT USE THE \ ESCAPE CHAR. Examples: {"status": "Active"}, '
 					'{"creation": [">", "2024-01-01"]}. Use {} to get all records.'
 				),
 			},

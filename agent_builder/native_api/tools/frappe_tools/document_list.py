@@ -13,7 +13,12 @@ def frappe_get_list(args: dict, **kwargs) -> str:
 	doctype = args.get("doctype")
 	filters = args.get("filters", {})
 	fields = args.get("fields") or ["name", "creation", "modified"]
-	limit = min(args.get("limit", 20), 1000)
+	limit = args.get("limit", 20)
+	try:
+		limit = int(limit)
+	except (TypeError, ValueError):
+		limit = 20
+	limit = min(limit, 1000)
 	order_by = args.get("order_by", "creation desc")
 	parent_doctype = args.get("parent_doctype")
 
