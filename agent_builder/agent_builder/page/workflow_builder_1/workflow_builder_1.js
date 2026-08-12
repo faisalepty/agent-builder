@@ -807,7 +807,7 @@ class WorkflowBuilder {
         const typeOptions = ['DocType Event', 'Scheduled', 'Webhook', 'MCP']
             .map((v) => `<option value="${v}" ${v === step.trigger_type ? 'selected' : ''}>${v}</option>`)
             .join('');
-        const eventOptions = ['after_insert', 'on_update', 'on_submit', 'on_cancel', 'on_trash']
+        const eventOptions = ["before_insert", "after_insert", "before_save", "on_update", "before_submit", "on_submit", "before_cancel", "on_cancel", "on_update_after_submit", "on_trash", "after_delete", "on_change"]
             .map((v) => `<option value="${v}" ${v === step.doctype_event ? 'selected' : ''}>${v}</option>`)
             .join('');
         const frequencyOptions = ['Hourly', 'Daily', 'Weekly', 'Monthly', 'Yearly', 'Hourly Long', 'Daily Long', 'Weekly Long', 'Monthly Long', 'Cron']
@@ -1142,7 +1142,7 @@ class WorkflowBuilder {
                 fieldname: 'error_workflow',
                 label: 'Error Workflow',
                 fieldtype: 'Select',
-                options: options.join('\n'),
+                options: options.join('", "'),
                 default: this.errorWorkflow || '',
                 description: 'If this workflow fails, the selected workflow is enqueued with {failed_workflow, failed_run, error, log} as input.',
             }],

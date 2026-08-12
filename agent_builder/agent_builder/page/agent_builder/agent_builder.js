@@ -253,7 +253,7 @@ class AgentManagement {
                 e.stopPropagation();
                 const action = $(e.currentTarget).data('action');
                 if (action === 'chat') frappe.set_route('agent-chat', a.name); 
-                else if (action === 'edit_agent') frappe.set_route('Form', 'Skill', a.name);
+                else if (action === 'edit_agent') this.openSkillDialog(true, a);
             });
         });
     }
@@ -304,7 +304,7 @@ class AgentManagement {
             $card.on('click', '[data-action]', (e) => {
                 e.stopPropagation();
                 const action = $(e.currentTarget).data('action');
-                if (action === 'edit_skill') frappe.set_route('Form', 'Skill', s.name);
+                if (action === 'edit_skill') this.openSkillDialog(false, s);
                 else if (action === 'toggle_skill') this.toggleSkill(s);
             });
         });
@@ -517,18 +517,66 @@ class AgentManagement {
     }
 
     createAgent() {
-        frappe.new_doc("Skill", {
-            is_agent: 1,
-            is_enabled: 1,
-            disable_model_invocation: 1
-        });
+        this.openSkillDialog(true);
     }
 
     createSkill() {
-        frappe.new_doc("Skill", {
-            is_agent: 0,
-            is_enabled: 1
-        });
+        this.openSkillDialog(false);
+    }
+
+    // Shared create/edit dialog for both Agents and Skills — an Agent is just
+    // a Skill with is_agent=1 and disable_model_invocation=1. Only exposes
+    // Name, Description, and Content; every other field is filled in via the
+    // payload defaults below.
+    async openSkillDialog(isAgent, existing = null) {
+        const isEdit = !!existing;
+        let doc = {};
+        if (isEdit) {
+            doc = await frappe.db.get_doc('Skill', existing.name);
+        }
+
+        const fields = [
+            { fieldname: 'name_', label: 'Name', fieldtype: 'Data', reqd: 1, default: doc.name_ || doc.name, read_only: isEdit ? 1 : 0 },
+            { fieldname: 'description', label: 'Description', fieldtype: 'Data', reqd: 1, default: doc.description },
+            { fieldname: 'content', label: 'Content', fieldtype: 'Markdown Editor', default: doc.content },
+        ];
+
+        const typeLabel = isAgent ? 'Agent' : 'Skill';
+
+        frappe.prompt(
+            fields,
+            async (values) => {
+                try {
+                    if (isEdit) {
+                        await frappe.db.set_value('Skill', existing.name, {
+                            description: values.description,
+                            content: values.content
+                        });
+                        frappe.show_alert({ message: `${typeLabel} updated`, indicator: 'green' });
+                    } else {
+                        const payload = {
+                            doctype: 'Skill',
+                            name_: values.name_,
+                            description: values.description,
+                            content: values.content,
+                            is_enabled: 1,
+                            is_agent: isAgent ? 1 : 0
+                        };
+                        if (isAgent) {
+                            payload.disable_model_invocation = 1;
+                            payload.domain = 'Other';
+                        }
+                        await frappe.db.insert(payload);
+                        frappe.show_alert({ message: `${typeLabel} created`, indicator: 'green' });
+                    }
+                    this.load();
+                } catch (err) {
+                    // Error is already shown via frappe.throw
+                }
+            },
+            isEdit ? `Edit ${typeLabel}` : `New ${typeLabel}`,
+            isEdit ? 'Save' : 'Create'
+        );
     }
 
     async toggleSkill(s) {
@@ -548,10 +596,14 @@ class AgentManagement {
             { fieldname: 'trigger_name', label: 'Trigger Name', fieldtype: 'Data', reqd: 1, default: t.trigger_name, read_only: isEdit ? 1 : 0 },
             { fieldname: 'target_type', label: 'Runs', fieldtype: 'Select', options: 'Workflow\nAgent', reqd: 1, default: targetType },
             { fieldname: 'workflow_name', label: 'Workflow', fieldtype: 'Link', options: 'Agent Workflow', default: t.workflow_name || prefilledWorkflow, depends_on: "eval:doc.target_type=='Workflow'", mandatory_depends_on: "eval:doc.target_type=='Workflow'" },
-            { fieldname: 'agent_name', label: 'Agent', fieldtype: 'Link', options: 'Skill', default: t.agent_name, depends_on: "eval:doc.target_type=='Agent'", mandatory_depends_on: "eval:doc.target_type=='Agent'" },
+            { fieldname: 'agent_name', label: 'Agent', fieldtype: 'Link', options: 'Skill', default: t.agent_name, depends_on: "eval:doc.target_type=='Agent'", mandatory_depends_on: "eval:doc.target_type=='Agent'",
+            get_query: () => ({
+                filters: { is_agent: 1, is_enabled: 1 }
+            })
+            },
             { fieldname: 'trigger_type', label: 'Trigger Type', fieldtype: 'Select', options: '\nDocType Event\nScheduled\nWebhook', reqd: 1, default: t.trigger_type },
             { fieldname: 'doctype_name', label: 'Target Doctype', fieldtype: 'Link', options: 'DocType', default: t.doctype_name, depends_on: "eval:doc.trigger_type=='DocType Event'" },
-            { fieldname: 'doctype_event', label: 'Doc Event', fieldtype: 'Select', options: 'after_insert\non_update\non_submit\non_cancel\non_trash', default: t.doctype_event, depends_on: "eval:doc.trigger_type=='DocType Event'" },
+            { fieldname: 'doctype_event', label: 'Doc Event', fieldtype: 'Select', options: 'before_insert\nafter_insert\nbefore_save\non_update\nbefore_submit\non_submit\nbefore_cancel\non_cancel\non_update_after_submit\non_trash\nafter_delete\non_change', default: t.doctype_event, depends_on: "eval:doc.trigger_type=='DocType Event'" },
             { fieldname: 'event_frequency', label: 'Event Frequency', fieldtype: 'Select', options: 'Hourly\nDaily\nWeekly\nMonthly\nYearly\nHourly Long\nDaily Long\nWeekly Long\nMonthly Long\nCron', default: t.event_frequency || 'Daily', depends_on: "eval:doc.trigger_type=='Scheduled'", mandatory_depends_on: "eval:doc.trigger_type=='Scheduled'" },
             { fieldname: 'cron_expression', label: 'Cron Expression', fieldtype: 'Data', description: 'e.g., 0 * * * * (Every hour)', default: t.cron_expression, depends_on: "eval:doc.trigger_type=='Scheduled' && doc.event_frequency=='Cron'" },
             { fieldname: 'input_template', label: 'Input Template', fieldtype: 'Code', options: 'Jinja', default: t.input_template, description: "Becomes the agent's first message. Use {{ doc.field }} or {{ doc }} to reference the trigger context.", depends_on: "eval:doc.target_type=='Agent'", mandatory_depends_on: "eval:doc.target_type=='Agent'" }
@@ -639,7 +691,7 @@ class AgentManagement {
 
     async deleteTrigger(t) {
         frappe.confirm(`Are you sure you want to delete this trigger?`, async () => {
-            await frappe.call(`${MODULE_PATH}.delete_trigger`, { trigger_name: t.name });
+            await frappe.call(`${MODULE_PATH}.delete_trigger`, { trigger_name: t.trigger_name });
             this.load();
         });
     }

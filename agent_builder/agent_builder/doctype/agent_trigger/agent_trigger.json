@@ -84,7 +84,7 @@
    "fieldname": "doctype_event",
    "fieldtype": "Select",
    "label": "Event",
-   "options": "after_insert\non_update\non_submit\non_cancel\non_trash"
+   "options": "\nbefore_insert\nafter_insert\nbefore_save\non_update\nbefore_submit\non_submit\nbefore_cancel\non_cancel\non_update_after_submit\non_trash\nafter_delete\non_change"
   },
   {
    "depends_on": "eval:doc.trigger_type=='Scheduled' && doc.event_frequency=='Cron'",
@@ -143,14 +143,13 @@
    "fieldname": "event_frequency",
    "fieldtype": "Select",
    "label": "Event Frequency",
-   "options": "Hourly\nDaily\nWeekly\nMonthly\nYearly\nHourly Long\nDaily Long\nWeekly Long\nMonthly Long\nCron",
-   "reqd": 1
+   "options": "Hourly\nDaily\nWeekly\nMonthly\nYearly\nHourly Long\nDaily Long\nWeekly Long\nMonthly Long\nCron"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-07 09:08:58.121717",
+ "modified": "2026-08-12 10:52:40.295649",
  "modified_by": "Administrator",
  "module": "Agent Builder",
  "name": "Agent Trigger",
