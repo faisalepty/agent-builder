@@ -492,32 +492,40 @@ def invalidate_prompt_cache() -> None:
 
 
 def get_agent_definition(agent_name: str) -> dict:
-	"""Load an ``Agent Definition`` record, cached per process.
+	"""Load an agent's config from a ``Skill`` record flagged is_agent=1,
+	cached per process. (Formerly backed by the now-deleted "Agent
+	Definition" doctype — Skill with is_agent=1 replaces it.)
 
 	Raises frappe.DoesNotExistError if the name isn't found; throws if
-	disabled.
+	not marked as an agent, or disabled.
 	"""
 	if agent_name not in _AGENT_DEF_CACHE:
-		doc = frappe.get_doc("Agent Definition", agent_name)
+		doc = frappe.get_doc("Skill", agent_name)
+		if not doc.is_agent:
+			frappe.throw(f"Skill '{agent_name}' is not marked is_agent — it can't be run as an agent.")
 		if not doc.is_enabled:
 			frappe.throw(f"Agent '{agent_name}' is disabled.")
 		_AGENT_DEF_CACHE[agent_name] = {
-			"agent_name": doc.agent_name,
-			"instructions": doc.instructions or "",
-			"model": doc.model or None,
-			"temperature": doc.temperature,
-			"max_turns": doc.max_turns or 40,
-			"tool_mode": doc.tool_mode or "All",
-			"allowed_tools": [t.strip() for t in (doc.allowed_tools or "").split(",") if t.strip()],
+			"agent_name": doc.name,
+			"instructions": doc.content or "",
+			"model": getattr(doc, "model", None) or None,
+			"temperature": getattr(doc, "temperature", None),
+			"max_turns": getattr(doc, "max_turns", None) or 40,
+			"tool_mode": getattr(doc, "tool_mode", None) or "All",
+			"allowed_tools": [
+				t.strip() for t in (getattr(doc, "allowed_tools", "") or "").split(",") if t.strip()
+			],
 		}
 	return _AGENT_DEF_CACHE[agent_name]
 
 
 def get_default_agent_name() -> str | None:
-	"""Return the Agent Definition flagged is_default, if any (used by the
+	"""Return the Skill flagged is_default + is_agent, if any (used by the
 	chat widget when no explicit agent is requested). None -> fall back to
 	the hardcoded Omnis identity, for backward compatibility."""
-	return frappe.db.get_value("Agent Definition", {"is_default": 1, "is_enabled": 1}, "agent_name")
+	return frappe.db.get_value(
+		"Skill", {"is_agent": 1, "is_default": 1, "is_enabled": 1}, "name"
+	)
 
 
 def get_agent_system_prompt(agent_name: str | None) -> str:

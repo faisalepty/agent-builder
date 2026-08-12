@@ -237,6 +237,23 @@ app_license = "mit"
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
+doc_events = {
+    "*": {
+        "before_insert": "agent_builder.native_api.trigger.handle_doctype_event",
+        "after_insert": "agent_builder.native_api.trigger.handle_doctype_event",
+        "before_save": "agent_builder.native_api.trigger.handle_doctype_event",
+        "on_update": "agent_builder.native_api.trigger.handle_doctype_event",
+        "before_submit": "agent_builder.native_api.trigger.handle_doctype_event",
+        "on_submit": "agent_builder.native_api.trigger.handle_doctype_event",
+        "before_cancel": "agent_builder.native_api.trigger.handle_doctype_event",
+        "on_cancel": "agent_builder.native_api.trigger.handle_doctype_event",
+        "on_update_after_submit": "agent_builder.native_api.trigger.handle_doctype_event",
+        "on_trash": "agent_builder.native_api.trigger.handle_doctype_event",
+        "after_delete": "agent_builder.native_api.trigger.handle_doctype_event",
+        "on_change": "agent_builder.native_api.trigger.handle_doctype_event",
+    }
+}
+
 fixtures = [
      {"dt": "Role", "filters": [["name", "=", "Omnis User"]]}
 ]
