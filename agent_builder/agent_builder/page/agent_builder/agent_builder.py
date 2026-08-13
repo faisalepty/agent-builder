@@ -399,13 +399,14 @@ def _sync_trigger_steps(workflow_name, steps):
     so the frontend can display the server-generated token without a
     second round trip.
     """
-    from agent_builder.native_api.trigger import sync_scheduled_job_type
+    from agent_builder.native_api.trigger import invalidate_trigger_cache, sync_scheduled_job_type
 
     current_trigger_ids = {step["id"] for step in steps if step.get("type") == "trigger"}
     existing_trigger_ids = frappe.get_all(
         "Agent Trigger", filters={"workflow_name": workflow_name}, pluck="name"
     )
-    for stale_name in set(existing_trigger_ids) - current_trigger_ids:
+    stale_ids = set(existing_trigger_ids) - current_trigger_ids
+    for stale_name in stale_ids:
         frappe.db.delete("Scheduled Job Type", {"name": f"agent_trigger::{stale_name}"})
         frappe.delete_doc("Agent Trigger", stale_name, ignore_permissions=True)
 
@@ -440,6 +441,11 @@ def _sync_trigger_steps(workflow_name, steps):
 
         if doc.trigger_type == "Webhook":
             webhook_tokens[trigger_docname] = doc.webhook_token
+
+    # One invalidation covering both the stale deletions above and every
+    # create/update in the loop, rather than one call per trigger step.
+    if stale_ids or current_trigger_ids:
+        invalidate_trigger_cache()
 
     return webhook_tokens
 
@@ -672,8 +678,9 @@ def create_trigger(trigger_data):
     doc = frappe.get_doc({"doctype": "Agent Trigger", **fields})
     doc.insert()
 
-    from agent_builder.native_api.trigger import sync_scheduled_job_type
+    from agent_builder.native_api.trigger import invalidate_trigger_cache, sync_scheduled_job_type
     sync_scheduled_job_type(doc)
+    invalidate_trigger_cache()
 
     frappe.db.commit()
     return {"name": doc.name, "webhook_token": doc.get("webhook_token")}
@@ -693,8 +700,9 @@ def update_trigger(trigger_name, trigger_data):
     doc.update(fields)
     doc.save(ignore_permissions=True)
 
-    from agent_builder.native_api.trigger import sync_scheduled_job_type
+    from agent_builder.native_api.trigger import invalidate_trigger_cache, sync_scheduled_job_type
     sync_scheduled_job_type(doc)
+    invalidate_trigger_cache()
 
     frappe.db.commit()
     return {"name": doc.name, "webhook_token": doc.get("webhook_token")}
@@ -709,8 +717,9 @@ def toggle_trigger(trigger_name, enabled):
 
     # Disabling must stop the Scheduled Job Type too, or Frappe's
     # scheduler keeps firing it regardless of is_enabled.
-    from agent_builder.native_api.trigger import sync_scheduled_job_type
+    from agent_builder.native_api.trigger import invalidate_trigger_cache, sync_scheduled_job_type
     sync_scheduled_job_type(doc)
+    invalidate_trigger_cache()
 
     frappe.db.commit()
 
@@ -719,6 +728,10 @@ def toggle_trigger(trigger_name, enabled):
 def delete_trigger(trigger_name):
     frappe.db.delete("Scheduled Job Type", {"name": f"agent_trigger::{trigger_name}"})
     frappe.delete_doc("Agent Trigger", trigger_name)
+
+    from agent_builder.native_api.trigger import invalidate_trigger_cache
+    invalidate_trigger_cache()
+
     frappe.db.commit()
 
 

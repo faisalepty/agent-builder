@@ -11,3 +11,16 @@ def notify_run_complete(user: str, subject: str, message: str, success: bool = T
         },
         user=user,
     )
+
+def notify_progress(user: str, message: str, run_id: str = None):
+    """Lightweight, ephemeral progress ping — fire-and-forget, never lets
+    a notification failure interrupt the actual run."""
+    try:
+        frappe.publish_realtime(
+            "agent_builder_progress",
+            {"message": message, "run_id": run_id},
+            user=user,
+        )
+    except Exception:
+        # Progress is best-effort; never let this take down a step or run.
+        frappe.log_error("agent_builder progress emit failed", frappe.get_traceback())

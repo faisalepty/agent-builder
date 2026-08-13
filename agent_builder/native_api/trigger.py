@@ -24,8 +24,9 @@ from frappe.utils import get_datetime, now_datetime
 from frappe.utils.safe_exec import get_safe_globals
 
 
-from agent_builder.native_api.tools.clarify_approval_tools.notify import notify_run_complete
+from agent_builder.native_api.tools.clarify_approval_tools.notify import notify_run_complete, notify_progress
 from agent_builder.native_api.agent.runner import SessionProvenance, run_headless_agent
+from agent_builder.native_api.providers.attachments import _resolve_attachments
 
 logger = logging.getLogger(__name__)
 
@@ -37,99 +38,111 @@ logger = logging.getLogger(__name__)
 
 @frappe.whitelist()
 def fire_trigger(trigger_name: str, context: dict):
-    """Enqueue a headless agent (or workflow) run for the given Agent Trigger.
+	"""Enqueue a headless agent (or workflow) run for the given Agent Trigger.
 
-    context: whatever data the trigger needs to render input_template /
-    evaluate condition — e.g. {"doc": doc.as_dict()} for a DocType Event.
+	context: whatever data the trigger needs to render input_template /
+	evaluate condition — e.g. {"doc": doc.as_dict()} for a DocType Event.
 
-    If workflow_name is set, this fires the workflow directly with
-    `context` as its initial_input — no agent involved, no input_template
-    rendering (a workflow's Trigger step is declarative-only and doesn't
-    consume input_template the way an agent's first user turn does).
-    agent_name is unused in that case even if also set; a trigger with
-    both fields set fires the workflow, not the agent.
-    """
-    trigger = frappe.get_cached_doc("Agent Trigger", trigger_name)
-    if not trigger.is_enabled:
-        return
+	If workflow_name is set, this fires the workflow directly with
+	`context` (plus any resolved attachments merged in) as its
+	initial_input — no agent involved, no input_template rendering (a
+	workflow's Trigger step is declarative-only and doesn't consume
+	input_template the way an agent's first user turn does).
+	agent_name is unused in that case even if also set; a trigger with
+	both fields set fires the workflow, not the agent.
+	"""
+	trigger = frappe.get_cached_doc("Agent Trigger", trigger_name)
+	if not trigger.is_enabled:
+		return
 
-    if trigger.condition and not _evaluate_condition(trigger.condition, context):
-        return
+	if trigger.condition and not _evaluate_condition(trigger.condition, context):
+		return
 
-    if trigger.get("workflow_name"):
-        if trigger.input_template:
-            initial_input = _render_template_to_object(trigger.input_template, context)
-        else:
-            initial_input = context
+	if trigger.get("workflow_name"):
+		if trigger.input_template:
+			initial_input = _render_template_to_object(trigger.input_template, context)
+		else:
+			initial_input = context
 
-        frappe.enqueue(
-            method="agent_builder.native_api.workflow.engine.run_workflow",
-            queue="short",
-            timeout=300,
-            workflow_name=trigger.workflow_name,
-            initial_input=initial_input,
-        )
-        return
+		attachments = _resolve_attachments(trigger, context)
+		if attachments:
+			if isinstance(initial_input, dict):
+				initial_input.setdefault("attachments", attachments)
+			else:
+				initial_input = {"value": initial_input, "attachments": attachments}
 
-    frappe.enqueue(
-        method="agent_builder.native_api.trigger.run_triggered_agent",
-        queue="short",
-        timeout=300,
-        trigger_name=trigger_name,
-        context=context,
-    )
+		frappe.enqueue(
+			method="agent_builder.native_api.workflow.engine.run_workflow",
+			queue="short",
+			timeout=300,
+			workflow_name=trigger.workflow_name,
+			initial_input=initial_input,
+		)
+		return
+
+	frappe.enqueue(
+		method="agent_builder.native_api.trigger.run_triggered_agent",
+		queue="short",
+		timeout=300,
+		trigger_name=trigger_name,
+		context=context,
+	)
 
 
 def run_triggered_agent(trigger_name: str, context: dict):
-    trigger = frappe.get_doc("Agent Trigger", trigger_name)
+	trigger = frappe.get_doc("Agent Trigger", trigger_name)
 
-    if trigger.input_template:
-        rendered_message = _render_template_to_string(trigger.input_template, context)
-    else:
-        rendered_message = frappe.as_json(context, indent=2)
+	if trigger.input_template:
+		rendered_message = _render_template_to_string(trigger.input_template, context)
+	else:
+		rendered_message = frappe.as_json(context, indent=2)
 
-    provenance = SessionProvenance(
-        trigger_type=trigger.trigger_type,
-        trigger_source=trigger.doctype_name if trigger.trigger_type == "DocType Event" else trigger_name,
-        trigger_ref=_extract_ref(context),
-    )
+	provenance = SessionProvenance(
+		trigger_type=trigger.trigger_type,
+		trigger_source=trigger.doctype_name if trigger.trigger_type == "DocType Event" else trigger_name,
+		trigger_ref=_extract_ref(context),
+	)
 
-    skill_injection = None
-    if trigger.agent_name:
-        skill = frappe.get_doc("Skill", trigger.agent_name)
-        if not skill.is_agent:
-            frappe.log_error(f"Agent Trigger '{trigger_name}' -> Skill '{skill.name}' is not marked is_agent")
-            return
-        if not skill.is_enabled:
-            frappe.log_error(f"Agent Trigger '{trigger_name}' -> Skill '{skill.name}' is disabled")
-            return
-        skill_injection = skill.content
+	skill_injection = None
+	if trigger.agent_name:
+		skill = frappe.get_doc("Skill", trigger.agent_name)
+		if not skill.is_agent:
+			frappe.log_error(f"Agent Trigger '{trigger_name}' -> Skill '{skill.name}' is not marked is_agent")
+			return
+		if not skill.is_enabled:
+			frappe.log_error(f"Agent Trigger '{trigger_name}' -> Skill '{skill.name}' is disabled")
+			return
+		skill_injection = skill.content
 
-    result = run_headless_agent(
-        agent_name=None,
-        input_message=rendered_message,
-        provenance=provenance,
-        user=trigger.run_as_user or "Administrator",
-        skill_injection=skill_injection,
-    )
+	notify_progress(
+		user=trigger.run_as_user or "Administrator",
+		message=f"Agent Trigger '{trigger.trigger_name}' is running…",
+	)
 
-    if result.ended_reason == "Completed":
-        notify_run_complete(
-            user=trigger.run_as_user or "Administrator",
-            subject=f"Agent Trigger '{trigger.trigger_name}' completed",
-            message=result.response,
-            success=True,
-        )
-    else:
-        frappe.log_error(f"Triggered agent '{trigger_name}' ended with: {result.ended_reason}")
-        notify_run_complete(
-            user=trigger.run_as_user or "Administrator",
-            subject=f"Agent Trigger '{trigger.trigger_name}' failed",
-            message=f"Run ended with: {result.ended_reason}",
-            success=False,
-        )
+	result = run_headless_agent(
+		agent_name=None,
+		input_message=rendered_message,
+		provenance=provenance,
+		user=trigger.run_as_user or "Administrator",
+		skill_injection=skill_injection,
+		attachments=_resolve_attachments(trigger, context),
+	)
 
-
+	if result.ended_reason == "Completed":
+		notify_run_complete(
+			user=trigger.run_as_user or "Administrator",
+			subject=f"Agent Trigger '{trigger.trigger_name}' completed",
+			message=result.response,
+			success=True,
+		)
+	else:
+		frappe.log_error(f"Triggered agent '{trigger_name}' ended with: {result.ended_reason}")
+		notify_run_complete(
+			user=trigger.run_as_user or "Administrator",
+			subject=f"Agent Trigger '{trigger.trigger_name}' failed",
+			message=f"Run ended with: {result.ended_reason}",
+			success=False,
+		)
 # =========================================================================
 # Webhook entrypoint
 # =========================================================================
