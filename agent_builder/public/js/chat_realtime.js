@@ -78,7 +78,36 @@ window.ChatRealtime = (function () {
             _cbs.onStatusChange && _cbs.onStatusChange('Error', false);
             _cbs.onError        && _cbs.onError(data);
         });
+
+        // --- Headless runs (Agent Trigger / Workflow) ---------------------
+        // These are user-scoped, not session-scoped — they represent a
+        // background job that isn't tied to whatever chat session this tab
+        // happens to have open, so they intentionally skip _accepts().
+
+        frappe.realtime.on('agent_builder_progress', (data) => {
+            if (!data) return;
+            if (_cbs.onProgress) {
+                _cbs.onProgress(data);
+            } else {
+                frappe.show_alert({ message: data.message, indicator: 'blue' }, 4);
+            }
+        });
+
+        frappe.realtime.on('agent_builder_run_complete', (data) => {
+            if (!data) return;
+            if (_cbs.onRunComplete) {
+                _cbs.onRunComplete(data);
+            } else {
+                frappe.msgprint({
+                    title: data.title,
+                    message: data.message,
+                    indicator: data.indicator,
+                });
+            }
+        });
     }
+    frappe.realtime.on('agent_builder_progress', (d) => console.log('PROGRESS', d));
+frappe.realtime.on('agent_builder_run_complete', (d) => console.log('COMPLETE', d));
 
     return { init, setActiveSession, expectNewSession };
 })();

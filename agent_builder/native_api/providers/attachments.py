@@ -137,3 +137,68 @@ def build_content_parts(
 
 	parts.insert(0, {"type": "text", "text": body_text})
 	return parts
+
+
+
+def _resolve_attachments(trigger, context: dict) -> list[dict] | None:
+	"""Build [{"file_name","file_url","mime_type"}, ...] for a trigger firing.
+
+	Auto-detects Attach/Attach Image fields via doctype meta when context
+	has a "doc" (DocType Event triggers) — works whether or not
+	input_template even mentions the field. Falls back to
+	trigger.attachment_fields (comma-separated names) for Webhook
+	triggers, where context IS the raw payload and there's no doctype
+	meta to introspect.
+	"""
+	doc_ctx = context.get("doc") if isinstance(context, dict) else None
+	if isinstance(doc_ctx, dict):
+		auto = extract_doc_attachments(doc_ctx)
+		if auto is not None:
+			return auto
+
+	field_names = [f.strip() for f in (trigger.get("attachment_fields") or "").split(",") if f.strip()]
+	if not field_names or not isinstance(context, dict):
+		return None
+
+	source = doc_ctx if isinstance(doc_ctx, dict) else context
+	attachments = []
+	for fname in field_names:
+		file_url = source.get(fname)
+		if file_url:
+			attachments.append({
+				"file_name": file_url.rsplit("/", 1)[-1],
+				"file_url": file_url,
+				"mime_type": None,
+			})
+	return attachments or None
+
+def extract_doc_attachments(doc: dict) -> list[dict] | None:
+	"""Find every Attach/Attach Image field with a value on `doc`, using
+	the doctype's own meta as the source of truth. Pure function of a doc
+	dict — no assumptions about where that dict came from (a trigger
+	firing, a frappe_get_doc tool call mid-workflow, a loop iteration,
+	etc.), so it's safe to call repeatedly at any point in a run.
+
+	mime_type is left None — build_content_parts already falls back to
+	_guess_mime(file_name), so resolving it twice here would just be a
+	second thing to keep in sync.
+	"""
+	if not isinstance(doc, dict) or not doc.get("doctype"):
+		return None
+	try:
+		meta = frappe.get_meta(doc["doctype"])
+	except Exception:
+		return None
+
+	attachments = []
+	for field in meta.fields:
+		if field.fieldtype not in ("Attach", "Attach Image"):
+			continue
+		file_url = doc.get(field.fieldname)
+		if file_url:
+			attachments.append({
+				"file_name": file_url.rsplit("/", 1)[-1],
+				"file_url": file_url,
+				"mime_type": None,
+			})
+	return attachments or None

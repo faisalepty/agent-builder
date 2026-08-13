@@ -35,7 +35,7 @@ import frappe
 from simpleeval import EvalWithCompoundTypes
 
 from agent_builder.native_api.agent.setup import get_tool_registry
-from agent_builder.native_api.tools.clarify_approval_tools.notify import notify_run_complete
+from agent_builder.native_api.tools.clarify_approval_tools.notify import notify_run_complete, notify_progress
 from agent_builder.native_api.tools.executor import ToolExecutor
 
 REF = re.compile(r"\{\{output(\.([\w.]+))?\}\}")
@@ -288,6 +288,10 @@ async def _run_workflow_async(
 
     executor = ToolExecutor(get_tool_registry())
     run_as_user = wf.get("run_as_user") or "Administrator"
+    notify_progress(
+        user=run_as_user,
+        message=f"Workflow '{workflow_name}' is running…",
+    )
 
     if resume_run:
         run_doc = frappe.get_doc("Agent Workflow Run", resume_run)
