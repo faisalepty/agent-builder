@@ -10,7 +10,7 @@ dynamic = ["version"]
 dependencies = [
     # "frappe~=15.0.0" # Installed and managed by bench.
     "simpleeval>=0.9.13",
-    "openai"
+    "openai>=1.2.0"
 ]
 
 [build-system]
