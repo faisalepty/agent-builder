@@ -389,17 +389,19 @@ def _sync_trigger_steps(workflow_name, steps):
     implicit, no separate 'agent_trigger' reference field needed, and
     no separate picker/save UI on the node).
 
-    Also syncs a real `Scheduled Job Type` record for any Scheduled-type
-    trigger (see sync_scheduled_job_type in trigger.py — the same helper
-    used by the standalone Trigger tab's create_trigger above), and
-    cleans up Agent Trigger + Scheduled Job Type records for trigger
-    steps removed from the canvas since the last save.
+    Scheduled-type triggers no longer get a per-trigger `Scheduled Job
+    Type` record — see run_due_scheduled_triggers in trigger.py, which
+    polls all enabled Scheduled triggers from one static job instead
+    (core Frappe can't pass per-record arguments into a scheduled job's
+    callback, so one job per trigger silently could never work). The
+    stale-cleanup below still deletes any leftover `agent_trigger::*`
+    Scheduled Job Type rows from the old per-trigger design if found.
 
     Returns {step_id: webhook_token} for any Webhook-type triggers,
     so the frontend can display the server-generated token without a
     second round trip.
     """
-    from agent_builder.native_api.trigger import invalidate_trigger_cache, sync_scheduled_job_type
+    from agent_builder.native_api.trigger import invalidate_trigger_cache
 
     current_trigger_ids = {step["id"] for step in steps if step.get("type") == "trigger"}
     existing_trigger_ids = frappe.get_all(
@@ -437,7 +439,6 @@ def _sync_trigger_steps(workflow_name, steps):
             doc = frappe.get_doc({"doctype": "Agent Trigger", **fields})
 
         doc.save(ignore_permissions=True)
-        sync_scheduled_job_type(doc)
 
         if doc.trigger_type == "Webhook":
             webhook_tokens[trigger_docname] = doc.webhook_token
@@ -597,8 +598,8 @@ def _build_trigger_fields(data):
         "run_as_user": data.get("run_as_user") or "Administrator",
         # Clear fields not relevant to the new type/target on every save,
         # so switching e.g. Scheduled -> Webhook doesn't leave a stale
-        # cron_expression lying around that sync_scheduled_job_type or a
-        # future edit could accidentally pick back up.
+        # cron_expression lying around that run_due_scheduled_triggers or
+        # a future edit could accidentally pick back up.
         "agent_name": None,
         "workflow_name": None,
         "doctype_name": None,
@@ -653,8 +654,9 @@ def create_trigger(trigger_data):
     """Create a standalone Agent Trigger — this is the Trigger tab's entry
     point (agent_builder.js: createTrigger), separate from the canvas's
     1:1 trigger-step sync (_sync_trigger_steps above). Both write the same
-    Agent Trigger schema and both go through sync_scheduled_job_type, so
-    a Scheduled trigger fires the same way regardless of which UI made it.
+    Agent Trigger schema, so a Scheduled trigger fires the same way (via
+    trigger.py's run_due_scheduled_triggers polling job) regardless of
+    which UI made it.
 
     trigger_data (from the frontend dialog):
       {
@@ -678,8 +680,7 @@ def create_trigger(trigger_data):
     doc = frappe.get_doc({"doctype": "Agent Trigger", **fields})
     doc.insert()
 
-    from agent_builder.native_api.trigger import invalidate_trigger_cache, sync_scheduled_job_type
-    sync_scheduled_job_type(doc)
+    from agent_builder.native_api.trigger import invalidate_trigger_cache
     invalidate_trigger_cache()
 
     frappe.db.commit()
@@ -689,8 +690,10 @@ def create_trigger(trigger_data):
 @frappe.whitelist()
 def update_trigger(trigger_name, trigger_data):
     """Edit an existing standalone Agent Trigger — same field set/
-    validation as create_trigger, but updates in place and re-syncs the
-    Scheduled Job Type so a changed cron/frequency actually takes effect.
+    validation as create_trigger, but updates in place. A changed cron/
+    frequency takes effect on the next run_due_scheduled_triggers tick
+    automatically since that job reads Agent Trigger fresh each time —
+    no separate re-sync step needed.
     trigger_name itself isn't editable here (it's the doc's autoname key).
     """
     data = json.loads(trigger_data) if isinstance(trigger_data, str) else trigger_data
@@ -700,8 +703,7 @@ def update_trigger(trigger_name, trigger_data):
     doc.update(fields)
     doc.save(ignore_permissions=True)
 
-    from agent_builder.native_api.trigger import invalidate_trigger_cache, sync_scheduled_job_type
-    sync_scheduled_job_type(doc)
+    from agent_builder.native_api.trigger import invalidate_trigger_cache
     invalidate_trigger_cache()
 
     frappe.db.commit()
@@ -715,10 +717,10 @@ def toggle_trigger(trigger_name, enabled):
     doc.is_enabled = is_enabled
     doc.save(ignore_permissions=True)
 
-    # Disabling must stop the Scheduled Job Type too, or Frappe's
-    # scheduler keeps firing it regardless of is_enabled.
-    from agent_builder.native_api.trigger import invalidate_trigger_cache, sync_scheduled_job_type
-    sync_scheduled_job_type(doc)
+    # Disabling a Scheduled trigger is enough on its own now —
+    # run_due_scheduled_triggers filters on is_enabled=1 every tick, so
+    # there's no separate Scheduled Job Type to stop in sync here.
+    from agent_builder.native_api.trigger import invalidate_trigger_cache
     invalidate_trigger_cache()
 
     frappe.db.commit()
@@ -726,6 +728,10 @@ def toggle_trigger(trigger_name, enabled):
 
 @frappe.whitelist()
 def delete_trigger(trigger_name):
+    # Leftover cleanup only — no code creates agent_trigger::* Scheduled
+    # Job Type rows anymore, but this is harmless (no-op) if none exist,
+    # and clears out any still-orphaned row from the old per-trigger
+    # design if this trigger predates the switch to run_due_scheduled_triggers.
     frappe.db.delete("Scheduled Job Type", {"name": f"agent_trigger::{trigger_name}"})
     frappe.delete_doc("Agent Trigger", trigger_name)
 
