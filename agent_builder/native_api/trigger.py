@@ -294,75 +294,109 @@ def handle_doctype_event(doc, event):
 
 
 # =========================================================================
-# Scheduled Job Type sync
+# Scheduled trigger polling
 # =========================================================================
-# No hooks.py wiring needed at all — this is the same mechanism Server
-# Script uses for its "Scheduler Event" script_type: each Scheduled Agent
-# Trigger owns a real `Scheduled Job Type` record, and Frappe's own
-# scheduler daemon (frappe/utils/scheduler.py: enqueue_events(), on its
-# normal tick — default every 4 min, configurable via
-# scheduler_tick_interval) picks it up, checks it against croniter and
-# last_execution itself, and enqueues it when due.
+# REQUIRES a one-time manual addition to hooks.py:
 #
-# Called from BOTH places an Agent Trigger gets written from:
-#   - agent_builder.py: _sync_trigger_steps  (canvas trigger node)
-#   - agent_builder.py: create_trigger / toggle_trigger  (standalone tab)
-# so a Scheduled trigger behaves identically no matter which UI made it.
-# Agent Trigger has no custom controller, so this isn't a doctype hook —
-# it's just called explicitly at every one of those write sites.
+#   scheduler_events = {
+#       "cron": {
+#           "*/5 * * * *": ["agent_builder.native_api.trigger.run_due_scheduled_triggers"]
+#       }
+#   }
+#
+# then `bench migrate` (scheduler_events changes need a migrate, not just
+# a restart, to register with the Scheduled Job Type table) — adjust the
+# "*/5" polling interval to whatever the finest granularity any of your
+# Scheduled triggers need (e.g. "* * * * *" for 1-minute cron triggers;
+# every 5 min is plenty for Hourly/Daily/etc-frequency triggers).
+#
+# Why ONE polling job instead of one Scheduled Job Type per trigger (the
+# previous design): core Frappe's Scheduled Job Type.execute() always
+# calls frappe.get_attr(self.method)() with ZERO arguments — there is no
+# supported way to pass a per-record argument (like which Agent Trigger
+# this row belongs to) through to the callback. This is a known, still-
+# open gap in core (frappe/frappe#15700, "Scheduled Job Type should
+# support Arguments", filed 2022). A previous version of this file wrote
+# trigger_name into an `arguments` field expecting it to come back as a
+# kwarg — it never does; core silently ignores that field. Every fire
+# failed with "run_scheduled_trigger_job() missing 1 required positional
+# argument: 'trigger_name'" because of this.
+#
+# So instead of trying to get core to track N independent schedules, this
+# single job (itself a completely static, argument-free Scheduled Job
+# Type — the one pattern core DOES support) polls every enabled Scheduled
+# Agent Trigger on each tick and decides due-ness itself, using
+# last_triggered_at the same way it always did. If you still have old
+# `agent_trigger::*` Scheduled Job Type records from the previous design,
+# delete them — they're dead weight now, nothing creates or reads them.
 
 
-def sync_scheduled_job_type(trigger_doc):
-    job_name = f"agent_trigger::{trigger_doc.name}"
-    exists = frappe.db.exists("Scheduled Job Type", job_name)
-
-    if trigger_doc.trigger_type != "Scheduled" or not trigger_doc.is_enabled:
-        if exists:
-            frappe.db.delete("Scheduled Job Type", job_name)
+def run_due_scheduled_triggers():
+    """The scheduler_events entrypoint. No arguments — see module note
+    above for why. Iterates every enabled Scheduled trigger and fires the
+    ones that are due, updating last_triggered_at as it goes."""
+    triggers = frappe.get_all(
+        "Agent Trigger",
+        filters={"trigger_type": "Scheduled", "is_enabled": 1},
+        fields=["name", "event_frequency", "cron_expression", "last_triggered_at"],
+    )
+    if not triggers:
         return
 
-    event_frequency = trigger_doc.get("event_frequency") or "Daily"
-    is_cron = event_frequency == "Cron"
-    # "X Long" just routes to the long-running worker queue in Server
-    # Script — the underlying Scheduled Job Type frequency is still the
-    # base value ("Daily", "Weekly", etc). NOTE: verify the actual field
-    # Scheduled Job Type uses for queue selection on your Frappe version
-    # (bench console: frappe.get_meta("Scheduled Job Type").fields) before
-    # relying on the `job.queue = "long"` line below — I'm not fully
-    # certain that's the right field name/API for your version.
-    is_long = event_frequency.endswith(" Long")
-    base_frequency = event_frequency.replace(" Long", "") if is_long else event_frequency
+    now = now_datetime()
+    for t in triggers:
+        try:
+            if not _is_scheduled_trigger_due(t, now):
+                continue
+        except Exception:
+            frappe.log_error(f"Agent Trigger '{t.name}': failed to evaluate due-ness")
+            continue
 
-    if is_cron and not trigger_doc.cron_expression:
-        if exists:
-            frappe.db.delete("Scheduled Job Type", job_name)
-        return
+        frappe.db.set_value("Agent Trigger", t.name, "last_triggered_at", now, update_modified=False)
+        frappe.db.commit()
+        fire_trigger(t.name, {})
 
-    if exists:
-        job = frappe.get_doc("Scheduled Job Type", job_name)
-    else:
-        job = frappe.new_doc("Scheduled Job Type")
-        job.set("__newname", job_name)  # key the job by our own name, not autoname
 
-    job.method = "agent_builder.native_api.trigger.run_scheduled_trigger_job"
-    job.arguments = frappe.as_json({"trigger_name": trigger_doc.name})
-    job.stopped = 0
+_FREQUENCY_INTERVALS = {
+    "Hourly": timedelta(hours=1),
+    "Hourly Long": timedelta(hours=1),
+    "Daily": timedelta(days=1),
+    "Daily Long": timedelta(days=1),
+    "Weekly": timedelta(weeks=1),
+    "Weekly Long": timedelta(weeks=1),
+    "Monthly": timedelta(days=30),
+    "Monthly Long": timedelta(days=30),
+    "Yearly": timedelta(days=365),
+}
 
-    if is_cron:
-        job.frequency = "Cron"
-        job.cron_format = trigger_doc.cron_expression
-    else:
-        job.frequency = base_frequency
-        job.cron_format = None
-        if is_long and hasattr(job, "queue"):
-            job.queue = "long"
 
-    job.save(ignore_permissions=True)
+def _is_scheduled_trigger_due(trigger_row, now) -> bool:
+    """First fire is always due (last_triggered_at is unset) — matches
+    the old per-Scheduled-Job-Type behaviour where a freshly-created job
+    fires on its first eligible tick rather than waiting a full interval."""
+    last = get_datetime(trigger_row.last_triggered_at) if trigger_row.last_triggered_at else None
+
+    if trigger_row.event_frequency == "Cron":
+        if not trigger_row.cron_expression:
+            return False
+        from croniter import croniter
+        from datetime import datetime as _datetime
+
+        base = last or (now - timedelta(minutes=1))
+        next_run = croniter(trigger_row.cron_expression, base).get_next(_datetime)
+        return next_run <= now
+
+    if last is None:
+        return True
+    interval = _FREQUENCY_INTERVALS.get(trigger_row.event_frequency, timedelta(days=1))
+    return now - last >= interval
 
 
 def run_scheduled_trigger_job(trigger_name: str, **kwargs):
-    """The `method` every synced Scheduled Job Type points to. Frappe
-    passes the job's `arguments` JSON through as kwargs."""
+    """Kept only for manual/console use (e.g. force-firing a specific
+    trigger to test it, bypassing due-ness entirely) — nothing in the
+    scheduler path calls this anymore. See run_due_scheduled_triggers
+    above for the actual polling entrypoint."""
     if not frappe.db.get_value("Agent Trigger", trigger_name, "is_enabled"):
         return
     frappe.db.set_value("Agent Trigger", trigger_name, "last_triggered_at", now_datetime(), update_modified=False)

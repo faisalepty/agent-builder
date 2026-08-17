@@ -228,6 +228,12 @@ scheduler_events = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
+scheduler_events = {
+      "cron": { 
+         "*/1 * * * *": ["agent_builder.native_api.trigger.run_due_scheduled_triggers"]
+      }
+  }
+
 doc_events = {
     "*": {
         "before_insert": "agent_builder.native_api.trigger.handle_doctype_event",
