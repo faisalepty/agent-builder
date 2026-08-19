@@ -308,7 +308,7 @@ def get_agent_skills():
     return frappe.get_all(
         "Skill",
         filters={"is_agent": 1, "is_enabled": 1},
-        fields=["name", "description"],
+        fields=["name_", "description"],
         order_by="name asc",
     )
 
