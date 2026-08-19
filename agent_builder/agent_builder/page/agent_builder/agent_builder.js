@@ -227,8 +227,10 @@ class AgentManagement {
         }
 
         const $grid = $('<div class="am-card-grid"></div>').appendTo(this.$body);
+        console.log(agents)
         
         agents.forEach((a) => {
+            
             const $card = $(`
                 <div class="am-card" data-id="${a.name}">
                     <div class="am-card-head">
