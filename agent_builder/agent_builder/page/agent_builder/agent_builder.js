@@ -227,8 +227,6 @@ class AgentManagement {
         }
 
         const $grid = $('<div class="am-card-grid"></div>').appendTo(this.$body);
-        console.log(agents)
-        
         agents.forEach((a) => {
             
             const $card = $(`
@@ -236,7 +234,7 @@ class AgentManagement {
                     <div class="am-card-head">
                         <div class="am-card-icon am-icon-agent"><i class="fa fa-user-secret"></i></div>
                         <div class="am-card-info">
-                            <div class="am-card-title">${frappe.utils.escape_html(a.name_)}</div>
+                            <div class="am-card-title">${frappe.utils.escape_html(a.name_ ?? a.name)}</div>
                         </div>
                     </div>
                     <div class="am-card-body">
