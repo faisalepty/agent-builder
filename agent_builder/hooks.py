@@ -142,16 +142,6 @@ app_license = "mit"
 
 # Scheduled Tasks
 # ---------------
-
-scheduler_events = {
-	"hourly": [
-		"agent_builder.tasks.analyze_pending_anomalies",
-	],
-	"daily": [
-		"agent_builder.tasks.promote_ready_drafts",
-	],
-}
-
 # Testing
 # -------
 
@@ -261,14 +251,3 @@ app_include_js = [
 	"/assets/agent_builder/js/chat_ui.js",
 ]
 app_include_css = ["/assets/agent_builder/css/Chat_Ui.css"]
-
-doc_events = {
-    "*": {
-        "after_insert": "agent_builder.native_api.trigger.handle_doctype_event",
-        "on_update": "agent_builder.native_api.trigger.handle_doctype_event",
-        "on_submit": "agent_builder.native_api.trigger.handle_doctype_event",
-        "on_cancel": "agent_builder.native_api.trigger.handle_doctype_event",
-        "on_trash": "agent_builder.native_api.trigger.handle_doctype_event",
-    }
-}
-
