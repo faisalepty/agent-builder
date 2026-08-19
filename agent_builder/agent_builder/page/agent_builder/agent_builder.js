@@ -67,7 +67,7 @@ class AgentManagement {
             frappe.call(`${MODULE_PATH}.get_triggers`),
             frappe.db.get_list('Skill', {
                 filters: { is_agent: 0 },
-                fields: ['name', 'description', 'is_enabled', 'modified'],
+                fields: ['name_', 'description', 'is_enabled', 'modified'],
                 limit: 100
             }),
             frappe.call(`${MODULE_PATH}.get_tool_groups`)
@@ -273,11 +273,11 @@ class AgentManagement {
             const statusText = s.is_enabled ? 'Active' : 'Disabled';
 
             const $card = $(`
-                <div class="am-card" data-id="${s.name}">
+                <div class="am-card" data-id="${s.name_}">
                     <div class="am-card-head">
                         <div class="am-card-icon am-icon-skill"><i class="fa fa-puzzle-piece"></i></div>
                         <div class="am-card-info">
-                            <div class="am-card-title">${frappe.utils.escape_html(s.name)}</div>
+                            <div class="am-card-title">${frappe.utils.escape_html(s.name_)}</div>
                             <span class="indicator-pill ${statusColor} am-card-status">${statusText}</span>
                         </div>
                         <div class="am-card-menu">
