@@ -245,9 +245,10 @@ fixtures = [
      {"dt": "Role", "filters": [["name", "=", "Omnis User"]]}
 ]
 app_include_js = [
-	"/assets/agent_builder/js/chat_list.js",
-	"/assets/agent_builder/js/chat_messages.js",
-	"/assets/agent_builder/js/chat_realtime.js",
-	"/assets/agent_builder/js/chat_ui.js",
+    "/assets/agent_builder/js/chat_list.js",
+    "/assets/agent_builder/js/chat_messages.js",
+    "/assets/agent_builder/js/chat_realtime.js",
+    "/assets/agent_builder/js/chat_ui.js",
+    "/assets/agent_builder/js/agent_notifications.js"
 ]
 app_include_css = ["/assets/agent_builder/css/Chat_Ui.css"]

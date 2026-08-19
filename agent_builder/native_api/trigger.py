@@ -24,7 +24,14 @@ from frappe.utils import get_datetime, now_datetime
 from frappe.utils.safe_exec import get_safe_globals
 
 
-from agent_builder.native_api.tools.clarify_approval_tools.notify import notify_run_complete, notify_progress
+from agent_builder.native_api.tools.clarify_approval_tools.notify import (
+    add_agent_comment,
+    dedupe_users,
+    excerpt_text,
+    notify_run_complete,
+    notify_run_started,
+    system_managers,
+)
 from agent_builder.native_api.agent.runner import SessionProvenance, run_headless_agent
 from agent_builder.native_api.providers.attachments import _resolve_attachments
 
@@ -38,111 +45,126 @@ logger = logging.getLogger(__name__)
 
 @frappe.whitelist()
 def fire_trigger(trigger_name: str, context: dict):
-	"""Enqueue a headless agent (or workflow) run for the given Agent Trigger.
+    """Enqueue a headless agent (or workflow) run for the given Agent Trigger.
 
-	context: whatever data the trigger needs to render input_template /
-	evaluate condition — e.g. {"doc": doc.as_dict()} for a DocType Event.
+    context: whatever data the trigger needs to render input_template /
+    evaluate condition — e.g. {"doc": doc.as_dict()} for a DocType Event.
+    handle_doctype_event additionally injects "acting_user" (the session
+    user at fire time — the worker has no request session to read it
+    from later) and "event" (the doc event name). Both keys are harmless
+    extras for templates/conditions and are consumed by the notification
+    helpers.
 
-	If workflow_name is set, this fires the workflow directly with
-	`context` (plus any resolved attachments merged in) as its
-	initial_input — no agent involved, no input_template rendering (a
-	workflow's Trigger step is declarative-only and doesn't consume
-	input_template the way an agent's first user turn does).
-	agent_name is unused in that case even if also set; a trigger with
-	both fields set fires the workflow, not the agent.
-	"""
-	trigger = frappe.get_cached_doc("Agent Trigger", trigger_name)
-	if not trigger.is_enabled:
-		return
+    If workflow_name is set, this fires the workflow directly with
+    `context` (plus any resolved attachments merged in) as its
+    initial_input — no agent involved, no input_template rendering (a
+    workflow's Trigger step is declarative-only and doesn't consume
+    input_template the way an agent's first user turn does).
+    agent_name is unused in that case even if also set; a trigger with
+    both fields set fires the workflow, not the agent.
+    """
+    trigger = frappe.get_cached_doc("Agent Trigger", trigger_name)
+    if not trigger.is_enabled:
+        return
 
-	if trigger.condition and not _evaluate_condition(trigger.condition, context):
-		return
+    if trigger.condition and not _evaluate_condition(trigger.condition, context):
+        return
 
-	if trigger.get("workflow_name"):
-		if trigger.input_template:
-			initial_input = _render_template_to_object(trigger.input_template, context)
-		else:
-			initial_input = context
+    doctype, docname = _doc_info(context)
 
-		attachments = _resolve_attachments(trigger, context)
-		if attachments:
-			if isinstance(initial_input, dict):
-				initial_input.setdefault("attachments", attachments)
-			else:
-				initial_input = {"value": initial_input, "attachments": attachments}
+    # ── Start signal ─────────────────────────────────────────────────
+    # Sent in the SAME request as the user's save (DocType Event path),
+    # so the causal link — "I submitted this → an agent is now working
+    # on it" — is instant. Only fires for human-caused runs: scheduled,
+    # webhook, and console callers pass no acting_user, and system users
+    # (Administrator/Guest) are dropped by dedupe inside the helper.
+    # Covers BOTH branches below (workflow and agent).
+    acting_user = context.get("acting_user") if isinstance(context, dict) else None
+    if acting_user:
+        label = f"'{trigger.trigger_name}' queued"
+        if docname:
+            label += f" for {docname}"
+        notify_run_started([acting_user], label, doctype=doctype, docname=docname)
 
-		frappe.enqueue(
-			method="agent_builder.native_api.workflow.engine.run_workflow",
-			queue="short",
-			timeout=300,
-			workflow_name=trigger.workflow_name,
-			initial_input=initial_input,
-		)
-		return
+    if trigger.get("workflow_name"):
+        if trigger.input_template:
+            initial_input = _render_template_to_object(trigger.input_template, context)
+        else:
+            initial_input = context
 
-	frappe.enqueue(
-		method="agent_builder.native_api.trigger.run_triggered_agent",
-		queue="short",
-		timeout=300,
-		trigger_name=trigger_name,
-		context=context,
-	)
+        attachments = _resolve_attachments(trigger, context)
+        if attachments:
+            if isinstance(initial_input, dict):
+                initial_input.setdefault("attachments", attachments)
+            else:
+                initial_input = {"value": initial_input, "attachments": attachments}
+
+        frappe.enqueue(
+            method="agent_builder.native_api.workflow.engine.run_workflow",
+            queue="short",
+            timeout=300,
+            workflow_name=trigger.workflow_name,
+            initial_input=initial_input,
+        )
+        return
+
+    frappe.enqueue(
+        method="agent_builder.native_api.trigger.run_triggered_agent",
+        queue="short",
+        timeout=300,
+        trigger_name=trigger_name,
+        context=context,
+    )
+
+
 
 
 def run_triggered_agent(trigger_name: str, context: dict):
-	trigger = frappe.get_doc("Agent Trigger", trigger_name)
+    """Background Job: run the trigger's agent end-to-end, then notify.
 
-	if trigger.input_template:
-		rendered_message = _render_template_to_string(trigger.input_template, context)
-	else:
-		rendered_message = frappe.as_json(context, indent=2)
+    Notification model (see notify.py for channel rationale):
+      - START toast was already sent in fire_trigger, inside the user's
+        own request — nothing to do here at run start. (The old
+        worker-side "is running…" ping is removed: it arrived seconds
+        after the fire-time toast, adding noise, not information.)
+      - OUTCOME is persistent: a Notification Log row (bell) per
+        recipient linking to this run's Agent session, plus a timeline
+        Comment on the triggering document for anyone who opens it later.
+    """
+    trigger = frappe.get_doc("Agent Trigger", trigger_name)
 
-	provenance = SessionProvenance(
-		trigger_type=trigger.trigger_type,
-		trigger_source=trigger.doctype_name if trigger.trigger_type == "DocType Event" else trigger_name,
-		trigger_ref=_extract_ref(context),
-	)
+    if trigger.input_template:
+        rendered_message = _render_template_to_string(trigger.input_template, context)
+    else:
+        rendered_message = frappe.as_json(context, indent=2)
 
-	skill_injection = None
-	if trigger.agent_name:
-		skill = frappe.get_doc("Skill", trigger.agent_name)
-		if not skill.is_agent:
-			frappe.log_error(f"Agent Trigger '{trigger_name}' -> Skill '{skill.name}' is not marked is_agent")
-			return
-		if not skill.is_enabled:
-			frappe.log_error(f"Agent Trigger '{trigger_name}' -> Skill '{skill.name}' is disabled")
-			return
-		skill_injection = skill.content
+    provenance = SessionProvenance(
+        trigger_type=trigger.trigger_type,
+        trigger_source=trigger.doctype_name if trigger.trigger_type == "DocType Event" else trigger_name,
+        trigger_ref=_extract_ref(context),
+    )
 
-	notify_progress(
-		user=trigger.run_as_user or "Administrator",
-		message=f"Agent Trigger '{trigger.trigger_name}' is running…",
-	)
+    skill_injection = None
+    if trigger.agent_name:
+        skill = frappe.get_doc("Skill", trigger.agent_name)
+        if not skill.is_agent:
+            frappe.log_error(f"Agent Trigger '{trigger_name}' -> Skill '{skill.name}' is not marked is_agent")
+            return
+        if not skill.is_enabled:
+            frappe.log_error(f"Agent Trigger '{trigger_name}' -> Skill '{skill.name}' is disabled")
+            return
+        skill_injection = skill.content
 
-	result = run_headless_agent(
-		agent_name=None,
-		input_message=rendered_message,
-		provenance=provenance,
-		user=trigger.run_as_user or "Administrator",
-		skill_injection=skill_injection,
-		attachments=_resolve_attachments(trigger, context),
-	)
+    result = run_headless_agent(
+        agent_name=None,
+        input_message=rendered_message,
+        provenance=provenance,
+        user=trigger.run_as_user or "Administrator",
+        skill_injection=skill_injection,
+        attachments=_resolve_attachments(trigger, context),
+    )
 
-	if result.ended_reason == "Completed":
-		notify_run_complete(
-			user=trigger.run_as_user or "Administrator",
-			subject=f"Agent Trigger '{trigger.trigger_name}' completed",
-			message=result.response,
-			success=True,
-		)
-	else:
-		frappe.log_error(f"Triggered agent '{trigger_name}' ended with: {result.ended_reason}")
-		notify_run_complete(
-			user=trigger.run_as_user or "Administrator",
-			subject=f"Agent Trigger '{trigger.trigger_name}' failed",
-			message=f"Run ended with: {result.ended_reason}",
-			success=False,
-		)
+    _notify_run_outcome(trigger, context, result)
 # =========================================================================
 # Webhook entrypoint
 # =========================================================================
@@ -292,6 +314,35 @@ def handle_doctype_event(doc, event):
     for trigger_name in matches:
         fire_trigger(trigger_name, {"doc": doc.as_dict()})
 
+def handle_doctype_event(doc, event):
+    # Wired to doc_events["*"], so this fires on every doctype's insert —
+    # including internal doctype-sync inserts that bench migrate itself
+    # performs while importing other doctypes' JSON definitions. At that
+    # point in the migrate sequence Agent Trigger's own table may not
+    # exist yet, so skip entirely during migrate/install rather than
+    # querying a table that might not be there.
+    if frappe.flags.in_migrate or frappe.flags.in_install:
+        return
+    if doc.doctype in _DOCTYPE_EVENT_DENYLIST:
+        return
+    if not frappe.db.table_exists("Agent Trigger"):
+        return
+
+    # Cheap in-memory dict lookup, not a query, on the hot path.
+    matches = _get_doctype_event_trigger_map().get((doc.doctype, event))
+    if not matches:
+        return
+
+    for trigger_name in matches:
+        fire_trigger(
+            trigger_name,
+            {
+                "doc": doc.as_dict(),
+                "acting_user": frappe.session.user,
+                "event": event,
+            },
+        )
+
 
 # =========================================================================
 # Scheduled trigger polling
@@ -424,6 +475,92 @@ def run_scheduled_trigger_job(trigger_name: str, **kwargs):
 # delegate task text in engine.py — if engine.py doesn't already have
 # equivalent logic, it should import and reuse these helpers so the
 # behaviour is identical across triggers and steps.
+
+def _doc_info(context: dict) -> tuple:
+    """(doctype, docname) of the triggering document, or (None, None)
+    for scheduled/webhook/manual contexts that carry no doc."""
+    doc_ctx = context.get("doc") if isinstance(context, dict) else None
+    if isinstance(doc_ctx, dict):
+        return doc_ctx.get("doctype"), doc_ctx.get("name")
+    return None, None
+
+
+def _notify_recipients(trigger, context: dict) -> list:
+    """Who gets the OUTCOME notification: the user who performed the
+    acting action (captured at fire time — inside the worker there is
+    no request session to read it from), plus the trigger's run_as_user
+    if set. Deduped; system accounts dropped."""
+    users = []
+    if isinstance(context, dict) and context.get("acting_user"):
+        users.append(context["acting_user"])
+    if trigger.get("run_as_user"):
+        users.append(trigger.run_as_user)
+    return dedupe_users(users)
+
+def _notify_run_outcome(trigger, context: dict, result):
+    """Persistent outcome signals for a finished triggered run.
+ 
+    Bell notification goes to the user who performed the triggering
+    action (captured at fire time) plus run_as_user if set. If nobody
+    qualifies AND the run failed (unattended scheduled/webhook trigger
+    with no run_as_user), fall back to System Managers so a failure is
+    never silent — successful unattended runs notify no one.
+ 
+    Doc comment goes on the triggering document, skipped for delete
+    events (the doc may already be gone) and for non-doc contexts.
+    Every channel here fails soft: a notification problem must never
+    affect the run record that was already persisted.
+    """
+    success = result.ended_reason == "Completed"
+    if not success:
+        frappe.log_error(f"Triggered agent '{trigger.name}' ended with: {result.ended_reason}")
+ 
+    doctype, docname = _doc_info(context)
+    verb = "completed" if success else f"failed ({result.ended_reason})"
+    subject = f"Agent '{trigger.trigger_name}' {verb}"
+    if docname:
+        subject += f" — {docname}"
+ 
+    body = excerpt_text(result.response) if success else f"Run ended with: {result.ended_reason}"
+ 
+    # Prefer linking the bell notification to the triggering document
+    # itself (e.g. the BBS Schedule that fired this run) when the trigger
+    # is doc-bound — that's what the user actually wants to open. Only
+    # fall back to the Agent session when there's no doc context at all
+    # (Scheduled/Webhook triggers with no doctype_name/docname), since
+    # otherwise there'd be nothing sensible to link to.
+    if trigger.get("doctype_name") and docname:
+        link_doctype = trigger.doctype_name
+        link_name = docname
+    else:
+        link_doctype = "Agent session"
+        link_name = result.session_id
+ 
+    recipients = _notify_recipients(trigger, context)
+    if not recipients and not success:
+        recipients = system_managers()
+ 
+    for user in recipients:
+        notify_run_complete(
+            user=user,
+            subject=subject,
+            message=result.response if success else body,
+            success=success,
+            link_doctype=link_doctype,
+            link_name=link_name,
+        )
+ 
+    # Contextual record: timeline comment on the doc that caused the
+    # run. Comment is in _DOCTYPE_EVENT_DENYLIST, so this can never
+    # re-fire a DocType Event trigger (no notification loops).
+    event = context.get("event") if isinstance(context, dict) else None
+    if doctype and docname and event not in ("on_trash", "after_delete"):
+        add_agent_comment(
+            doctype,
+            docname,
+            f"**🤖 {trigger.trigger_name} {verb}**\n\n{body}\n\n"
+            f"[View run](/app/agent-session/{result.session_id})",
+        )
 
 
 def _render_template_to_object(template: str, context: dict):
