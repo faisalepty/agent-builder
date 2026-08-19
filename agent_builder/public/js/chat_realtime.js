@@ -106,8 +106,5 @@ window.ChatRealtime = (function () {
             }
         });
     }
-    frappe.realtime.on('agent_builder_progress', (d) => console.log('PROGRESS', d));
-frappe.realtime.on('agent_builder_run_complete', (d) => console.log('COMPLETE', d));
-
     return { init, setActiveSession, expectNewSession };
 })();
