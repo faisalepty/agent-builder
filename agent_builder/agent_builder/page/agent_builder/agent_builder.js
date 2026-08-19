@@ -230,11 +230,11 @@ class AgentManagement {
         
         agents.forEach((a) => {
             const $card = $(`
-                <div class="am-card" data-id="${a.name}">
+                <div class="am-card" data-id="${a.name_}">
                     <div class="am-card-head">
                         <div class="am-card-icon am-icon-agent"><i class="fa fa-user-secret"></i></div>
                         <div class="am-card-info">
-                            <div class="am-card-title">${frappe.utils.escape_html(a.name)}</div>
+                            <div class="am-card-title">${frappe.utils.escape_html(a.name_)}</div>
                         </div>
                     </div>
                     <div class="am-card-body">
