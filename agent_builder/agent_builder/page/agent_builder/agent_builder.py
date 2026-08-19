@@ -305,12 +305,6 @@ def delete_orphaned_tools(doctype: str):
 @frappe.whitelist()
 def get_agent_skills():
     """Skills marked is_agent=1 — the picker list for delegate_task steps."""
-    frappe.log_error(frappe.get_all(
-        "Skill",
-        filters={"is_agent": 1, "is_enabled": 1},
-        fields=["name", "name_", "description"],
-        order_by="name asc",
-    ))
     return frappe.get_all(
         "Skill",
         filters={"is_agent": 1, "is_enabled": 1},
