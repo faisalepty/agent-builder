@@ -1115,9 +1115,42 @@ window.ChatMessages = (function () {
         }
     }
 
+    // ── Inline record citations ─────────────────────────────────────
+    // The agent is instructed (system prompt) to cite ERP records it looked
+    // up mid-sentence using ordinary markdown links with an `erp://` scheme,
+    // e.g. "...invoice [SINV-0004](erp://Sales Invoice/SINV-0004) is overdue".
+    // We don't post-process the DOM for this — we hook marked's own link
+    // renderer once, so it happens inline wherever _md/_mdStreaming runs,
+    // during streaming and on the final render, with zero extra passes.
+    var _markedPatched = false;
+    function _patchMarkedForRecordLinks() {
+        if (_markedPatched || !window.marked) return;
+        _markedPatched = true;
+
+        var renderer = new marked.Renderer();
+        var _defaultLink = renderer.link.bind(renderer);
+
+        renderer.link = function (href, title, text) {
+            var m = /^erp:\/\/([^/]+)\/(.+)$/.exec(href || '');
+            if (!m) return _defaultLink(href, title, text);
+
+            var doctype = decodeURIComponent(m[1]);
+            var name = decodeURIComponent(m[2]);
+            var url = '/app/' + (window.frappe && frappe.router ? frappe.router.slug(doctype) : doctype.toLowerCase().replace(/\s+/g, '-')) + '/' + encodeURIComponent(name);
+
+            return '<a class="ab-cite-chip" href="' + url + '" target="_blank" rel="noopener" title="' + _escapeHtml(doctype + ' · ' + name) + '">' +
+                '<span class="ab-cite-chip-dt">' + _escapeHtml(doctype) + '</span>' +
+                '<span class="ab-cite-chip-label">' + text + '</span>' +
+            '</a>';
+        };
+
+        marked.setOptions({ renderer: renderer });
+    }
+
     function _md(text) {
         if (!text) return '';
         if (window.marked) {
+            _patchMarkedForRecordLinks();
             return marked.parse(text, { breaks: true, gfm: true });
         }
         return _escapeHtml(text).replace(/\n/g, '<br>');

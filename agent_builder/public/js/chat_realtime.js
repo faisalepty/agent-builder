@@ -79,6 +79,16 @@ window.ChatRealtime = (function () {
             _cbs.onError        && _cbs.onError(data);
         });
 
+        // Fired when request_clarification pauses the turn to ask the
+        // user a genuine question. Session-scoped like everything above —
+        // belongs to one tab's active chat, not the whole user room.
+        frappe.realtime.on('agent_clarification_request', (data) => {
+            if (!data) return;
+            if (!_accepts(data)) return;
+            _cbs.onStatusChange          && _cbs.onStatusChange('Waiting for your answer…', true);
+            _cbs.onClarificationRequest  && _cbs.onClarificationRequest(data);
+        });
+
         // --- Headless runs (Agent Trigger / Workflow) ---------------------
         // These are user-scoped, not session-scoped — they represent a
         // background job that isn't tied to whatever chat session this tab

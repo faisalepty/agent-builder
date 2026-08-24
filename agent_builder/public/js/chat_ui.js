@@ -54,6 +54,8 @@
         terminal:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="6 9 10 12 6 15"/><line x1="12" y1="15" x2="16" y2="15"/></svg>`,
         launcherChat: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 14.5a2.5 2.5 0 0 1-2.5 2.5H6.5L2 21.5V5a2.5 2.5 0 0 1 2.5-2.5h14A2.5 2.5 0 0 1 21 5z"/><circle cx="8" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="10" r="1" fill="currentColor" stroke="none"/></svg>`,
         cpu:          `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="10" y="10" width="4" height="4"/><line x1="10" y1="2" x2="10" y2="6"/><line x1="14" y1="2" x2="14" y2="6"/><line x1="10" y1="18" x2="10" y2="22"/><line x1="14" y1="18" x2="14" y2="22"/><line x1="18" y1="10" x2="22" y2="10"/><line x1="18" y1="14" x2="22" y2="14"/><line x1="2" y1="10" x2="6" y2="10"/><line x1="2" y1="14" x2="6" y2="14"/></svg>`,
+        cornerDownLeft: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg>`,
+        pencil:       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>`,
     };
     ICONS.plus = ICONS.newchat;
 
@@ -120,12 +122,15 @@
                 </div>
 
                 <div id="ab-conv-view">
+                    <div id="ab-context-bar" style="display:none;"></div>
                     <div id="ab-conv-body">
                         <div id="ab-messages"></div>
                     </div>
                     <button id="ab-scroll-btn">${ICONS.down} Jump to latest</button>
                     <div id="ab-input-area">
                         <div id="ab-input-box">
+                            <div id="ab-clarify-panel" style="display:none;"></div>
+
                             <div id="ab-attachments-row"></div>
 
                             <div id="ab-input-wrap">
@@ -273,6 +278,155 @@
     // Staged file attachments
     let _pendingFiles = [];
 
+    // ── Context pinning ─────────────────────────────────────────────
+    // When the copilot is opened from a Frappe form, we capture that
+    // record once and pin it as a visible, clearable chip above the
+    // conversation. It's sent with the request so the agent grounds its
+    // answer to the right document instead of guessing from prose alone.
+    let _pinnedContext = null; // { doctype, name, label }
+
+    function _captureLaunchContext() {
+        if (!(window.frappe && frappe.get_route)) return null;
+        try {
+            const r = frappe.get_route();
+            if (r && r[0] === 'Form' && r[1] && r[2]) {
+                return { doctype: r[1], name: r[2], label: r[1] + ' \u00b7 ' + r[2] };
+            }
+        } catch (e) { /* not on a form route */ }
+        return null;
+    }
+
+    function _renderContextBar() {
+        const $bar = $('#ab-context-bar');
+        if (!_pinnedContext) { $bar.hide().empty(); return; }
+        $bar.html(
+            `<span class="ab-context-bar-icon">${ICONS.fileText || ''}</span>` +
+            `<span class="ab-context-bar-label">Grounded to <strong>${escapeHtml(_pinnedContext.label)}</strong></span>` +
+            `<button type="button" id="ab-context-clear" title="Stop grounding to this record">${ICONS.close}</button>`
+        ).show();
+    }
+
+    function _pinLaunchContextIfAny() {
+        const ctx = _captureLaunchContext();
+        if (ctx) { _pinnedContext = ctx; _renderContextBar(); }
+    }
+
+    $(document).on('click', '#ab-context-clear', function () {
+        _pinnedContext = null;
+        _renderContextBar();
+    });
+
+    // ── Clarification panel ─────────────────────────────────────────
+    // Lives inside #ab-input-box itself (its first child), not the
+    // message timeline — it renders as the top section of the same
+    // rounded composer box the textarea/toolbar already form, the same
+    // way #ab-input-toolbar completes that box's bottom. This is
+    // deliberately NOT inside the collapsible thinking/tool-call
+    // timeline: that section defaults to closed for most users, and a
+    // question the agent is actively blocked on needs to be seen, not
+    // discovered by expanding a debug panel.
+    let _pendingClarification = null; // { id, options: [str,...] }
+    let _clarifyHighlight = 0;
+
+    function _clarifyOptionRowHtml(opt, index, highlighted) {
+        return '<div class="ab-clarify-option' + (highlighted ? ' ab-clarify-option-hl' : '') + '" data-index="' + index + '" data-answer="' + escapeHtml(opt) + '" tabindex="0" role="option">' +
+            '<span class="ab-clarify-num">' + (index + 1) + '</span>' +
+            '<span class="ab-clarify-opt-label">' + escapeHtml(opt) + '</span>' +
+            (highlighted ? '<span class="ab-clarify-enter-hint">' + ICONS.cornerDownLeft + '</span>' : '') +
+        '</div>';
+    }
+
+    function _renderClarifyPanel() {
+        const $panel = $('#ab-clarify-panel');
+        if (!_pendingClarification) { $panel.hide().empty(); $('#ab-input-box').removeClass('ab-has-clarify'); return; }
+
+        const c = _pendingClarification;
+        const optionsHtml = c.options.map((opt, i) => _clarifyOptionRowHtml(opt, i, i === _clarifyHighlight)).join('');
+
+        $panel.html(
+            '<div class="ab-clarify-head">' +
+                '<span class="ab-clarify-question">' + escapeHtml(c.question) + '</span>' +
+                '<button type="button" id="ab-clarify-dismiss" title="Skip this question">' + ICONS.close + '</button>' +
+            '</div>' +
+            (c.options.length ? '<div class="ab-clarify-options" role="listbox">' + optionsHtml + '</div>' : '') +
+            '<div class="ab-clarify-freetext-row">' +
+                '<span class="ab-clarify-pencil">' + ICONS.pencil + '</span>' +
+                '<input type="text" id="ab-clarify-freetext" placeholder="Something else" autocomplete="off">' +
+                '<button type="button" id="ab-clarify-skip">Skip</button>' +
+            '</div>'
+        );
+        $panel.show();
+        $('#ab-input-box').addClass('ab-has-clarify');
+        $('#ab-input').attr('placeholder', 'Or reply directly…');
+    }
+
+    function _startClarification(data) {
+        _pendingClarification = {
+            id: data.clarification_id,
+            question: data.question || 'Can you clarify?',
+            options: (data.options || []).slice(0, 5),
+        };
+        _clarifyHighlight = 0;
+        clearThinkingWatchdog(); // a pause waiting on the user, not the agent going idle
+        _renderClarifyPanel();
+    }
+
+    function _resolveClarification(answer) {
+        answer = (answer || '').trim();
+        if (!answer || !_pendingClarification) return;
+
+        const clarificationId = _pendingClarification.id;
+        _pendingClarification = null;
+        _renderClarifyPanel();
+        $('#ab-input').attr('placeholder', 'Ask APS Copilot anything…');
+
+        setStatus('Continuing…', true);
+        frappe.call({
+            method: 'agent_builder.native_api.verify.respond_clarification',
+            args: { chat_id: currentChatId, clarification_id: clarificationId, answer },
+            error: () => setStatus('Could not send your answer — try again', false, true),
+        });
+    }
+
+    $(document).on('click', '.ab-clarify-option', function () {
+        _resolveClarification($(this).data('answer'));
+    });
+    $(document).on('click', '#ab-clarify-skip', function () {
+        const $input = $('#ab-clarify-freetext');
+        _resolveClarification($input.val().trim() || 'Not sure — please use your best judgment.');
+    });
+    $(document).on('click', '#ab-clarify-dismiss', function () {
+        _resolveClarification('Not sure — please use your best judgment.');
+    });
+    $(document).on('keydown', '#ab-clarify-freetext', function (e) {
+        if (e.key === 'Enter') _resolveClarification($(this).val());
+    });
+
+    // Number-key shortcuts (matching the visible option badges) and
+    // arrow/Enter navigation — active only while a clarification is
+    // pending and focus isn't inside a text field that needs those keys
+    // for itself.
+    $(document).on('keydown', function (e) {
+        if (!_pendingClarification || !_pendingClarification.options.length) return;
+        const activeTag = (document.activeElement && document.activeElement.tagName) || '';
+        if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
+
+        const n = _pendingClarification.options.length;
+        if (e.key >= '1' && e.key <= String(n)) {
+            _resolveClarification(_pendingClarification.options[Number(e.key) - 1]);
+        } else if (e.key === 'ArrowDown') {
+            _clarifyHighlight = (_clarifyHighlight + 1) % n;
+            _renderClarifyPanel();
+            e.preventDefault();
+        } else if (e.key === 'ArrowUp') {
+            _clarifyHighlight = (_clarifyHighlight - 1 + n) % n;
+            _renderClarifyPanel();
+            e.preventDefault();
+        } else if (e.key === 'Enter') {
+            _resolveClarification(_pendingClarification.options[_clarifyHighlight]);
+        }
+    });
+
     // Portal overlays to <body>
     (function portalOverlays() {
         const flyout = document.getElementById('ab-skill-panel');
@@ -288,6 +442,12 @@
         onReasoning: (delta) => { resetThinkingWatchdog(); ChatMessages.onReasoning(delta); },
         onToolStart: (data) => { resetThinkingWatchdog(); ChatMessages.onToolStart(data); },
         onToolDone: (data) => { resetThinkingWatchdog(); ChatMessages.onToolDone(data); },
+        onClarificationRequest: (data) => {
+            // Pending clarification is a deliberate pause, not the agent
+            // going idle — _startClarification already clears the
+            // watchdog itself.
+            _startClarification(data);
+        },
         onStatusChange: (text, thinking) => { resetThinkingWatchdog(); setStatus(text, thinking); },
         onDone: (data) => {
             clearThinkingWatchdog();
@@ -334,6 +494,12 @@
         currentChatId = chatId;
         _currentJobId = null;
         _stopRequestedBeforeId = false;
+        // Existing chats already have their own grounding from when they
+        // were created — don't stamp today's form context onto them.
+        _pinnedContext = null;
+        _renderContextBar();
+        _pendingClarification = null;
+        _renderClarifyPanel();
         ChatRealtime.setActiveSession(chatId);
         ChatList.setActive(chatId);
         _pendingFiles = [];
@@ -356,6 +522,12 @@
         ChatMessages.clear();
         showConv('New Chat');
         renderWelcomeScreen();
+        // Re-evaluate context on every explicit "new chat" — the user may
+        // have navigated to a different record since the window opened.
+        _pinnedContext = _captureLaunchContext();
+        _renderContextBar();
+        _pendingClarification = null;
+        _renderClarifyPanel();
         $('#ab-input').val('').css('height', 'auto');
         _updateInputHighlight();
         closeSlashMenu();
@@ -500,6 +672,11 @@
         $('#ab-window').addClass('open');
         $('#ab-launcher-wrap').addClass('ab-launcher-hidden');
         $('#ab-launcher-bubbles').removeClass('visible');
+        // Only auto-pin on a fresh launch (no chat open yet, nothing pinned
+        // already) — reopening the same window later shouldn't silently
+        // re-ground an in-progress conversation to whatever form is behind it.
+        if (!_pinnedContext && currentChatId === null) _pinLaunchContextIfAny();
+        _renderContextBar();
         if (currentView === 'list') ChatList.load();
         else if (currentChatId) $('#ab-input').focus();
     }
@@ -1315,6 +1492,8 @@
                 attachments: JSON.stringify(attachments || []),
                 model: _selectedModel || undefined,
                 reasoning_effort: _selectedEffort || undefined,
+                context_doctype: (isFirstMessage && _pinnedContext) ? _pinnedContext.doctype : undefined,
+                context_name: (isFirstMessage && _pinnedContext) ? _pinnedContext.name : undefined,
             },
             callback(r) {
                 if (r.message && r.message.chat_id) {
@@ -1371,6 +1550,19 @@
 
     function sendMessage() {
         const msg = $('#ab-input').val().trim();
+
+        // A pending clarification takes over the main composer's Enter/Send
+        // path too — "Or reply directly…" in the placeholder means exactly
+        // that, so typing here and hitting send answers the question
+        // instead of starting a new, unrelated turn.
+        if (_pendingClarification) {
+            if (!msg) return;
+            $('#ab-input').val('').css('height', 'auto');
+            _updateInputHighlight();
+            _resolveClarification(msg);
+            return;
+        }
+
         if ((!msg && !_pendingFiles.length) || isThinking) return;
 
         // Defensive re-check at the actual send point, not just where

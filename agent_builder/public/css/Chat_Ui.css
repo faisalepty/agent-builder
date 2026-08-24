@@ -1221,3 +1221,193 @@ body.ab-artifact-fullscreen-active { overflow: hidden; }
 [data-theme="dark"] .ab-empty-new-chat-btn {
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 }
+/* ── v5.2: inline record citations, context pinning, clarify card ── */
+
+/* Inline citation chips — rendered by marked's link override wherever the
+   agent references a fetched ERP record, sitting inline with the prose
+   rather than as a separate block underneath it. */
+.ab-cite-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 1px 8px 1px 7px;
+    margin: 0 1px;
+    border-radius: 999px;
+    background: var(--control-bg);
+    border: 1px solid var(--border-color);
+    font-size: 0.92em;
+    line-height: 1.6;
+    text-decoration: none;
+    color: var(--text-color);
+    white-space: nowrap;
+    vertical-align: baseline;
+    transition: border-color .12s, color .12s;
+}
+.ab-cite-chip:hover { border-color: var(--primary); color: var(--primary); }
+.ab-cite-chip-dt {
+    font-size: 0.82em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: .02em;
+}
+[data-theme="dark"] .ab-cite-chip { background: color-mix(in srgb, var(--control-bg) 90%, white 4%); }
+
+/* Context bar — pinned above the conversation, persists regardless of
+   scroll position, shows what record this chat is grounded to. */
+#ab-context-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px;
+    border-bottom: 1px solid var(--border-color);
+    background: color-mix(in srgb, var(--control-bg) 55%, transparent);
+    font-size: 12px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+.ab-context-bar-icon { display: inline-flex; width: 14px; height: 14px; opacity: .7; flex-shrink: 0; }
+.ab-context-bar-icon svg { width: 100%; height: 100%; }
+.ab-context-bar-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ab-context-bar-label strong { color: var(--text-color); font-weight: 600; }
+#ab-context-clear {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; padding: 0; flex-shrink: 0;
+    border: none; background: transparent; color: var(--text-muted);
+    cursor: pointer; border-radius: 4px;
+}
+#ab-context-clear svg { width: 12px; height: 12px; }
+#ab-context-clear:hover { background: var(--control-bg); color: var(--text-color); }
+
+/* Clarification panel — lives INSIDE #ab-input-box as its first section,
+   the same way #ab-input-toolbar forms the box's bottom section (see
+   that rule's comment). This is deliberately composer-merged, not a
+   message-timeline card: a question the agent is actively blocked on
+   needs to be seen immediately, not discovered by opening a collapsed
+   thinking/tool-call panel most users leave closed.
+
+   #ab-input-box keeps its own 20px radius; this panel supplies the
+   matching *top* corners (19px = 20px minus the 1px border inset, same
+   arithmetic the toolbar uses for its bottom corners) since box has no
+   overflow:hidden (popovers need to escape its bounds — see that rule).
+   ab-has-clarify further squares off the textarea section immediately
+   below, so the whole thing reads as one continuous shape: panel → input →
+   toolbar, not three separate boxes stacked. */
+#ab-clarify-panel {
+    border-radius: 19px 19px 0 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+    background: color-mix(in srgb, var(--primary) 5%, transparent);
+    padding: 14px 16px 12px;
+}
+[data-theme="dark"] #ab-clarify-panel {
+    background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+#ab-input-box.ab-has-clarify #ab-input-wrap { border-radius: 0; }
+
+.ab-clarify-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+.ab-clarify-question {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-color);
+    line-height: 1.4;
+}
+#ab-clarify-dismiss {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; flex-shrink: 0; margin-top: -1px;
+    border: none; background: transparent; color: var(--text-muted);
+    cursor: pointer; border-radius: 5px;
+}
+#ab-clarify-dismiss svg { width: 13px; height: 13px; }
+#ab-clarify-dismiss:hover { background: var(--control-bg); color: var(--text-color); }
+
+.ab-clarify-options {
+    display: flex;
+    flex-direction: column;
+    margin-top: 10px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+    background: var(--bg-color);
+}
+.ab-clarify-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    cursor: pointer;
+    transition: background .1s;
+    border-top: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent);
+}
+.ab-clarify-option:first-child { border-top: none; }
+.ab-clarify-option:hover,
+.ab-clarify-option-hl {
+    background: color-mix(in srgb, var(--primary) 9%, var(--bg-color));
+}
+.ab-clarify-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; flex-shrink: 0;
+    border-radius: 6px;
+    background: var(--control-bg);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 700;
+}
+.ab-clarify-option-hl .ab-clarify-num {
+    background: var(--primary);
+    color: #fff;
+}
+.ab-clarify-opt-label {
+    flex: 1;
+    min-width: 0;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-color);
+}
+.ab-clarify-enter-hint {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 15px; height: 15px; flex-shrink: 0;
+    color: var(--text-muted);
+}
+.ab-clarify-enter-hint svg { width: 100%; height: 100%; }
+
+.ab-clarify-freetext-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 7px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-color);
+}
+.ab-clarify-pencil {
+    display: inline-flex; width: 13px; height: 13px; flex-shrink: 0;
+    color: var(--text-muted);
+}
+.ab-clarify-pencil svg { width: 100%; height: 100%; }
+#ab-clarify-freetext {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-color);
+    font-size: 12.5px;
+    outline: none;
+}
+#ab-clarify-freetext::placeholder { color: var(--text-muted); }
+#ab-clarify-skip {
+    flex-shrink: 0;
+    padding: 4px 11px;
+    border-radius: 7px;
+    border: 1px solid var(--border-color);
+    background: var(--control-bg);
+    color: var(--text-muted);
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+}
+#ab-clarify-skip:hover { color: var(--text-color); border-color: var(--text-muted); }
