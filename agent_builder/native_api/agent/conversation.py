@@ -1,4 +1,5 @@
 # omnis_hermes/agent/conversation.py
+import contextvars
 import hashlib
 import json
 import logging
@@ -32,12 +33,66 @@ SESSION_DOCTYPE = "Agent session"
 _STOP_FLAG_PREFIX = "agent_stop:"
 _STOP_FLAG_TTL = 600  # seconds — well beyond any realistic single-turn runtime
 
+# Task-scoped (not thread-scoped) session id, readable by any tool running
+# within the current async call stack — including tools launched via
+# asyncio.gather, which copy the context at task-creation time. Unlike
+# frappe.local (keyed by OS thread/greenlet identity, which RQ/gevent
+# workers can reuse or tear down out of step with the async call stack),
+# ContextVar is the correct primitive for this and fails safe: a tool
+# reading it outside any run() call just gets the default. Lives here
+# rather than in agent.py because tools (delegate_task, request_clarification)
+# need to read it too, and conversation.py is a leaf relative to agent.py —
+# agent.py already imports from here, never the reverse, so this can't
+# create a cycle the way importing it from agent.py did.
+current_session_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+	"current_session_id", default=""
+)
+
+# Same propagation mechanism as current_session_id, for the same reason.
+# Set right before awaiting a child run (in delegate_task) so a session's
+# own depth is correct immediately, with no DB lag, and — like
+# current_session_id — is copied into any child task the coroutine spawns.
+current_delegate_depth: contextvars.ContextVar[int] = contextvars.ContextVar(
+	"current_delegate_depth", default=0
+)
+
 
 class StoppedByUser(Exception):
 	"""Raised inside Agent.run()'s loop when a user-initiated stop is
 	detected via Conversation.is_stop_requested()."""
 
 	pass
+
+
+class ClarificationPending(Exception):
+	"""Raised inside Agent.run()'s loop when request_clarification has
+	paused the turn to ask the user a question.
+
+	An orderly pause, not an interruption to clean up after — the run
+	exits the same way (caught in Agent.run(), swallowed into a RunResult
+	by runner._run_agent_loop, surfaced to verify.process_agent_chat), but
+	nothing is cancelled: exactly one tool call is left in
+	"awaiting_clarification" status, and the frontend already has what it
+	needs (request_clarification published agent_clarification_request
+	before returning). The turn resumes via
+	Conversation.resolve_clarification() + verify.resume_agent_chat(),
+	not via a new user message.
+	"""
+
+	def __init__(self, clarification_id: str, tool_call_id: str):
+		self.clarification_id = clarification_id
+		self.tool_call_id = tool_call_id
+		super().__init__(f"Awaiting clarification {clarification_id}")
+
+
+# Sentinel key a tool's result carries to signal "pause this turn" — read
+# by Agent._execute_tool_calls_parallel in agent.py, written by
+# request_clarification.py. A plain string marker, not a raised exception:
+# tool dispatch is a stateless request/response call by convention (see
+# workflow_tools/human_approval.py's module docstring), so the actual
+# pause/unwind happens one level up, in agent.py. Kept next to
+# ClarificationPending since the two are two halves of the same contract.
+CLARIFICATION_PENDING_KEY = "__chat_clarification_pending__"
 
 
 class ChainBrokenError(Exception):
@@ -664,7 +719,33 @@ class Conversation:
 		}
 		payload["error" if is_error else "result"] = content[:500] if is_error else str(content)[:500]
 		self._publish_event(payload)
+		if not is_error and isinstance(content, str):
+			try:
+				parsed = frappe.parse_json(content)
+				if isinstance(parsed, dict) and parsed.get("attachments"):
+					# 1. Pull the attachments list
+					attachments = parsed.get("attachments", [])
+					
+					# Only inject if it's a non-empty list
+					if isinstance(attachments, list) and len(attachments) > 0:
+						# 2. Use the tool's custom message, or default to a generic one
+						inject_text = parsed.get(
+							"inject_message", 
+							f"The tool '{name}' returned the following file(s) for your review:"
+						)
+						
+						# 3. Append a synthetic user message with the files attached.
+						# add_user_message stores them, and get_messages() will 
+						# automatically call build_content_parts() for the LLM request.
+						self.add_user_message(
+							text=inject_text,
+							attachments=attachments
+						)
+			except Exception:
+				pass
 		self._checkpoint()
+
+		
 
 	# ── Terminal events ──────────────────────────────────
 
@@ -791,6 +872,98 @@ class Conversation:
 		"""Cooperative check — call at loop boundaries (before a new LLM
 		turn, before dispatching a tool call), not per-token."""
 		return bool(get_redis_conn().get(f"{_STOP_FLAG_PREFIX}{self.session_id}"))
+
+	# ── Clarification control (Claude-clarify-style pause) ────────
+
+	# Resume context needs to survive from process_agent_chat's enqueue-time
+	# args to whenever the user answers — anywhere from seconds to many
+	# minutes later, well after that job has exited. Same tradeoff as the
+	# stop flag: Redis with a generous TTL rather than new doctype fields,
+	# in its own key namespace so it never collides with _STOP_FLAG_PREFIX.
+	_CLARIFY_RESUME_CTX_PREFIX = "agent_clarify_ctx:"
+	_CLARIFY_RESUME_CTX_TTL = 1800  # 30 min — a human answering a question, not a network hiccup
+
+	@staticmethod
+	def stash_resume_context(session_id: str, agent_name: str | None, model_override: str | None, reasoning_effort: str | None):
+		get_redis_conn().set(
+			f"{Conversation._CLARIFY_RESUME_CTX_PREFIX}{session_id}",
+			json.dumps(
+				{
+					"agent_name": agent_name,
+					"model_override": model_override,
+					"reasoning_effort": reasoning_effort,
+				}
+			),
+			ex=Conversation._CLARIFY_RESUME_CTX_TTL,
+		)
+
+	@staticmethod
+	def pop_resume_context(session_id: str) -> dict:
+		key = f"{Conversation._CLARIFY_RESUME_CTX_PREFIX}{session_id}"
+		conn = get_redis_conn()
+		raw = conn.get(key)
+		conn.delete(key)
+		if not raw:
+			return {"agent_name": None, "model_override": None, "reasoning_effort": None}
+		try:
+			return json.loads(raw)
+		except Exception:
+			return {"agent_name": None, "model_override": None, "reasoning_effort": None}
+
+	def pause_for_clarification(self, tool_call_id: str, clarification_id: str):
+		"""Called from Agent._execute_tool_calls_parallel when a tool result
+		carries request_clarification's CLARIFICATION_PENDING_KEY marker.
+
+		Leaves the tool_call row in "awaiting_clarification" — deliberately
+		NOT calling add_tool_result, since there's no answer yet. Persists
+		immediately (not just at the end-of-run save()) so the paused state
+		is visible in the DB even though the run is about to unwind via a
+		raised exception rather than returning normally.
+
+		NOTE: "awaiting_clarification" is a new Agent Tool Call.status
+		option (alongside pending/running/success/error/cancelled) — add
+		it to that Select field's options before deploying this. Also add
+		a `clarification_id` Data field to Agent Tool Call — used here and
+		in resolve_clarification() to find the paused row.
+		"""
+		self._flush_reasoning()
+		for tc in self.doc.tool_calls:
+			if tc.call_id == tool_call_id:
+				tc.status = "awaiting_clarification"
+				tc.clarification_id = clarification_id
+				tc.completed_at = None
+				break
+		self._checkpoint()
+		raise ClarificationPending(clarification_id, tool_call_id)
+
+	@staticmethod
+	def resolve_clarification(session_id: str, clarification_id: str, answer: str) -> dict:
+		"""Finalize a paused request_clarification tool call once the user
+		has answered. Called from verify.respond_clarification, BEFORE the
+		resume job is enqueued — the resumed run needs this tool result
+		already in place when it rebuilds messages via get_messages().
+
+		Returns {"found": True} on success, or {"found": False} if this
+		clarification was already answered (e.g. a double-submit) or
+		doesn't exist — callers should treat that as a no-op, not an
+		error, since it's a legitimate race rather than a bug.
+		"""
+		answer = (answer or "").strip()
+		if not answer:
+			frappe.throw("A non-empty answer is required")
+
+		conversation = Conversation(session_id=session_id)
+		target = None
+		for tc in conversation.doc.tool_calls:
+			if getattr(tc, "clarification_id", None) == clarification_id:
+				target = tc
+				break
+
+		if target is None or target.status != "awaiting_clarification":
+			return {"found": False}
+
+		conversation.add_tool_result(target.call_id, target.tool_name, f"User answered: {answer}")
+		return {"found": True}
 
 	def cancel_pending_tool_calls(self, reason: str = "Cancelled by user before execution.") -> int:
 		"""Give any still-"pending" tool_calls a terminal status instead of

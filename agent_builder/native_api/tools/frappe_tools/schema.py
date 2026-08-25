@@ -600,8 +600,180 @@ FRAPPE_QUERY = {
                     "{\"type\": \"order_by\", \"field\": \"total_sales\", \"direction\": \"desc\"}, "
                     "{\"type\": \"limit\", \"value\": 10}]"
                 ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "description": "The type of query operation.",
+                            "enum": [
+                                "source",
+                                "filter",
+                                "filter_group",
+                                "join",
+                                "select",
+                                "summarize",
+                                "order_by",
+                                "limit",
+                            ],
+                        },
+                        "doctype": {
+                            "type": "string",
+                            "description": "Frappe DocType name.",
+                        },
+                        "field": {
+                            "type": "string",
+                            "description": "Fieldname or qualified Doctype.fieldname.",
+                        },
+                        "operator": {
+                            "type": "string",
+                            "description": "Filter comparison operator.",
+                            "enum": [
+                                "=",
+                                "!=",
+                                ">",
+                                "<",
+                                ">=",
+                                "<=",
+                                "in",
+                                "not_in",
+                                "like",
+                                "not_like",
+                                "between",
+                                "is_set",
+                                "is_not_set",
+                            ],
+                        },
+                        "value": {
+                            "type": "string",
+                            "description": (
+                                "Filter value. For 'in', 'not_in', and 'between', "
+                                "the runtime may also accept a list value."
+                            ),
+                        },
+                        "logic": {
+                            "type": "string",
+                            "description": "Logical operator for a filter group.",
+                            "enum": ["and", "or"],
+                        },
+                        "filters": {
+                            "type": "array",
+                            "description": "Filter conditions in a filter group.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "field": {
+                                        "type": "string",
+                                    },
+                                    "operator": {
+                                        "type": "string",
+                                        "enum": [
+                                            "=",
+                                            "!=",
+                                            ">",
+                                            "<",
+                                            ">=",
+                                            "<=",
+                                            "in",
+                                            "not_in",
+                                            "like",
+                                            "not_like",
+                                            "between",
+                                            "is_set",
+                                            "is_not_set",
+                                        ],
+                                    },
+                                    "value": {
+                                        "type": "string",
+                                    },
+                                },
+                                "required": [
+                                    "field",
+                                    "operator",
+                                ],
+                            },
+                        },
+                        "join_type": {
+                            "type": "string",
+                            "description": "Type of SQL join.",
+                            "enum": ["left", "inner"],
+                        },
+                        "left_field": {
+                            "type": "string",
+                            "description": "Field on the source DocType.",
+                        },
+                        "right_field": {
+                            "type": "string",
+                            "description": "Field on the joined DocType.",
+                        },
+                        "select": {
+                            "type": "array",
+                            "description": "Fields to return from the joined DocType.",
+                            "items": {
+                                "type": "string",
+                            },
+                        },
+                        "fields": {
+                            "type": "array",
+                            "description": "Fields to return from the source DocType.",
+                            "items": {
+                                "type": "string",
+                            },
+                        },
+                        "group_by": {
+                            "type": "array",
+                            "description": "Fields to group results by.",
+                            "items": {
+                                "type": "string",
+                            },
+                        },
+                        "measures": {
+                            "type": "array",
+                            "description": "Aggregate measures.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "field": {
+                                        "type": "string",
+                                    },
+                                    "function": {
+                                        "type": "string",
+                                        "enum": [
+                                            "sum",
+                                            "count",
+                                            "avg",
+                                            "min",
+                                            "max",
+                                        ],
+                                    },
+                                    "as": {
+                                        "type": "string",
+                                    },
+                                },
+                                "required": [
+                                    "field",
+                                    "function",
+                                ],
+                            },
+                        },
+                        "direction": {
+                            "type": "string",
+                            "description": "Sort direction.",
+                            "enum": ["asc", "desc"],
+                        },
+                        "value_limit": {
+                            "type": "integer",
+                            "description": "Maximum number of rows to return. Maximum 1000.",
+                        },
+                    },
+                    "required": [
+                        "type",
+                    ],
+                },
             },
         },
-        "required": ["operations"],
+        "required": [
+            "operations",
+        ],
     },
 }

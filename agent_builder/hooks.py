@@ -268,6 +268,6 @@ app_include_js = [
     "/assets/agent_builder/js/chat_messages.js",
     "/assets/agent_builder/js/chat_realtime.js",
     "/assets/agent_builder/js/chat_ui.js",
-    "/assets/agent_builder/js/agent_notifications.js"
+    # "/assets/agent_builder/js/agent_notifications.js"
 ]
 app_include_css = ["/assets/agent_builder/css/Chat_Ui.css"]
