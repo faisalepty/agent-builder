@@ -589,7 +589,7 @@ window.ChatMessages = (function () {
 
         var stepId = _nextId();
         var meta = _toolMeta(data.tool, data.args);
-        _currentThinkingSteps.push({ id: stepId, startTime: Date.now(), status: 'running', doneLabel: meta.done });
+        _currentThinkingSteps.push({ id: stepId, call_id: data.call_id, startTime: Date.now(), status: 'running', doneLabel: meta.done });
 
         var _stepArgsHtml = _prettyArgs(meta.args);
         var _noArgs = !_stepArgsHtml || _stepArgsHtml === _escapeHtml('No arguments');
@@ -617,7 +617,16 @@ window.ChatMessages = (function () {
     }
 
     function onToolDone(data) {
-        var step = _currentThinkingSteps.find(function (s) { return s.status === 'running'; });
+        // Matched by call_id, not "whichever step is currently running" —
+        // that positional guess breaks the moment a tool_done arrives out
+        // of strict start/done pairing order, which request_clarification
+        // does by design: its tool_done fires from a separate request
+        // (respond_clarification) that can race against resume_agent_chat's
+        // own onToolStart for whatever the model does next. Falls back to
+        // the old heuristic only if an event genuinely has no call_id.
+        var step = (data && data.call_id)
+            ? _currentThinkingSteps.find(function (s) { return s.call_id === data.call_id && s.status === 'running'; })
+            : _currentThinkingSteps.find(function (s) { return s.status === 'running'; });
         if (!step) return;
         var isError = !!(data && (data.error || data.success === false));
 

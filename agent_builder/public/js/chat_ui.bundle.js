@@ -367,7 +367,11 @@
             options: (data.options || []).slice(0, 5),
         };
         _clarifyHighlight = 0;
-        clearThinkingWatchdog(); // a pause waiting on the user, not the agent going idle
+        // A pause waiting on the user, not the agent going idle — re-enable
+        // the composer (setInputState(false) also clears the watchdog) so
+        // "Or reply directly…" is actually typeable, not still disabled
+        // from the turn that led here.
+        setInputState(false);
         _renderClarifyPanel();
     }
 
@@ -381,10 +385,17 @@
         $('#ab-input').attr('placeholder', 'Ask APS Copilot anything…');
 
         setStatus('Continuing…', true);
+        setInputState(true); // disable composer + re-arm the watchdog — if
+        // resume_agent_chat never responds (crashed job, dropped realtime
+        // event), this is what surfaces a timeout instead of hanging with
+        // no feedback, same as any other in-flight turn.
         frappe.call({
             method: 'agent_builder.native_api.verify.respond_clarification',
             args: { chat_id: currentChatId, clarification_id: clarificationId, answer },
-            error: () => setStatus('Could not send your answer — try again', false, true),
+            error: () => {
+                setInputState(false);
+                setStatus('Could not send your answer — try again', false, true);
+            },
         });
     }
 
