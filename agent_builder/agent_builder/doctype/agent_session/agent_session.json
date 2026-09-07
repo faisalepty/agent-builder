@@ -125,7 +125,7 @@
    "fieldname": "ended_reason",
    "fieldtype": "Select",
    "label": "Ended Reason",
-   "options": "\nCompleted\nMaxTurnsError\nLoopDetected\nError\nAbandoned\nEndedByUser"
+   "options": "\nCompleted\nMaxTurnsError\nLoopDetected\nAwaitingClarification\nError\nAbandoned\nEndedByUser"
   },
   {
    "description": "Slash-command skill name if the session started with one, for adoption reporting",
@@ -207,8 +207,8 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-07-25 08:38:06.269519",
- "modified_by": "Administrator",
+ "modified": "2026-08-25 14:40:36.226121",
+ "modified_by": "faisalimali1@gmail.com",
  "module": "Agent Builder",
  "name": "Agent session",
  "naming_rule": "Random",
