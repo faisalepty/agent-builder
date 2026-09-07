@@ -425,11 +425,39 @@ class Conversation:
 		hard kill) safe — everything up to the last completed step is
 		already in the DB, so only the currently in-flight step is ever at
 		risk of being lost, not the whole session.
+
+		Retries once on TimestampMismatchError. This isn't from concurrent
+		tool calls in the same batch (agent.py's _execute_tool_calls_parallel
+		already guarantees only one writer touches this doc at a time within
+		a turn) — it's Agent.run()'s own finally block unconditionally
+		enqueuing a background analyze_session job on every run, paused or
+		not. A clarify pause finishes almost instantly (no LLM generation
+		wait), so this run's own save can land in a tight enough window to
+		collide with a still-running analyze_session job from a moment
+		earlier writing to the same row. On conflict: reload the row fresh
+		(picking up whatever the other writer changed — analysis/anomaly
+		fields, not conversation content), reapply just what THIS object is
+		authoritative for (messages/tool_calls plus the summary counters
+		below), and save once more. A second failure is genuinely unusual
+		and is allowed to raise rather than retry indefinitely.
 		"""
 		self.doc.last_active = now_datetime()
 		self.doc.message_count = len(self.doc.messages)
 		self.doc.tool_call_count = len(self.doc.tool_calls)
-		self.doc.save(ignore_permissions=True)
+
+		try:
+			self.doc.save(ignore_permissions=True)
+		except frappe.exceptions.TimestampMismatchError:
+			frappe.db.rollback()
+			fresh = frappe.get_doc(self.doc.doctype, self.doc.name)
+			fresh.last_active = self.doc.last_active
+			fresh.message_count = self.doc.message_count
+			fresh.tool_call_count = self.doc.tool_call_count
+			fresh.set("messages", self.doc.messages)
+			fresh.set("tool_calls", self.doc.tool_calls)
+			fresh.save(ignore_permissions=True)
+			self.doc = fresh
+
 		frappe.db.commit()
 
 	def add_system_message(self, text, skill_name: str | None = None):

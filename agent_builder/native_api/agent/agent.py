@@ -290,6 +290,7 @@ class Agent:
 		returns multiple independent tool calls (e.g., fetching data from
 		multiple sources simultaneously).
 		"""
+		pending_pause: dict[str, str] = {}  # holds at most one — first pause wins
 
 		async def execute_single_tool(tc: Any, flag_as_strike: bool) -> None:
 			"""Execute a single tool call with proper event emission."""
@@ -308,19 +309,43 @@ class Agent:
 			elapsed_ms = int((time.monotonic() - t0) * 1000)
 
 			# request_clarification doesn't return a normal result — it
-			# returns a pause marker (see request_clarification.py). Detect
-			# it here rather than inside the tool itself: tool dispatch is
-			# a stateless request/response call by convention (see
-			# workflow_tools/human_approval.py's docstring), so the actual
-			# state transition + control-flow unwind belongs at this
-			# level, same as how engine.py owns that for workflow steps.
+			# returns a pause marker (see request_clarification.py).
+			# Detect it here rather than inside the tool itself: tool
+			# dispatch is a stateless request/response call by convention
+			# (see workflow_tools/human_approval.py's docstring), so the
+			# actual state transition belongs at this level.
+			#
+			# Deliberately NOT raised here. gather() re-raises the moment
+			# any one task raises, without waiting for the others — so if
+			# request_clarification (no DB I/O before its own write) wins
+			# the race against a slower sibling tool call still mid-flight
+			# in this same batch, that sibling would still be holding a
+			# reference to this same conversation.doc and could still be
+			# mid-add_tool_result()/save() after we've already moved on.
+			# Two writers, same document, overlapping — that's exactly
+			# what produces a TimestampMismatchError. Recording the pause
+			# and only raising after every task in this gather has
+			# actually finished (see below) guarantees nothing else is
+			# still writing to conversation.doc when we act on it.
 			pause = self._detect_clarification_pause(result)
 			if pause:
-				conversation.pause_for_clarification(
-					tool_call_id=tc.id, clarification_id=pause["clarification_id"]
-				)
-				# pause_for_clarification always raises ClarificationPending —
-				# this line is unreachable, but keeps intent explicit.
+				if "clarification_id" in pending_pause:
+					# A second clarification in the same batch — only one
+					# pause can be acted on per turn. Resolve this one as
+					# an ordinary (skipped) result instead of leaving its
+					# tool_call row stuck in "running" forever with
+					# nothing ever calling add_tool_result on it.
+					conversation.add_tool_result(
+						tc.id,
+						name,
+						"Skipped: another clarification is already pending this turn. "
+						"Ask this question again after the first one is answered.",
+						elapsed_ms=elapsed_ms,
+						was_loop_strike=False,
+					)
+					return
+				pending_pause["clarification_id"] = pause["clarification_id"]
+				pending_pause["tool_call_id"] = tc.id
 				return
 
 			# Add result to conversation. Only the fingerprinted call (index 0,
@@ -330,11 +355,24 @@ class Agent:
 				tc.id, name, result, elapsed_ms=elapsed_ms, was_loop_strike=flag_as_strike
 			)
 
-		# Execute all tool calls concurrently
-		# gather() will run them in parallel and wait for all to complete
+		# Execute all tool calls concurrently — gather() with its default
+		# return_exceptions=False is safe here specifically because
+		# nothing inside execute_single_tool raises anymore for the pause
+		# case; it always returns normally, so gather always waits for
+		# every task before this line continues.
 		await asyncio.gather(
 			*[execute_single_tool(tc, is_loop_strike and idx == 0) for idx, tc in enumerate(tool_calls)]
 		)
+
+		if pending_pause:
+			# Safe now: every tool call in this batch — including any
+			# slower sibling of the one that paused — has already
+			# finished its own add_tool_result()/save(). This is the only
+			# writer left standing.
+			conversation.pause_for_clarification(
+				tool_call_id=pending_pause["tool_call_id"],
+				clarification_id=pending_pause["clarification_id"],
+			)
 
 	@staticmethod
 	def _detect_clarification_pause(result: Any) -> dict | None:
