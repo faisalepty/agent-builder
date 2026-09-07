@@ -18,7 +18,8 @@
   "completed_at",
   "elapsed_ms",
   "retry_count",
-  "was_loop_strike"
+  "was_loop_strike",
+  "clarification_id"
  ],
  "fields": [
   {
@@ -52,7 +53,7 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "\npending\nrunning\nsuccess\ncancelled\nerror",
+   "options": "\npending\nrunning\nsuccess\ncancelled\nawaiting_clarification\nerror",
    "read_only": 1
   },
   {
@@ -100,14 +101,19 @@
    "fieldname": "was_loop_strike",
    "fieldtype": "Check",
    "label": "Was Loop Strike"
+  },
+  {
+   "fieldname": "clarification_id",
+   "fieldtype": "Data",
+   "label": "Clarification Id"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-08-12 09:51:09.828711",
- "modified_by": "Administrator",
+ "modified": "2026-08-25 14:53:00.061350",
+ "modified_by": "faisalimali1@gmail.com",
  "module": "Agent Builder",
  "name": "Agent Tool Call",
  "owner": "Administrator",
