@@ -49,7 +49,7 @@ def dedupe_users(users) -> list:
     start toast shouldn't fire for system-driven saves either."""
     seen, out = set(), []
     for u in users or []:
-        if u and u not in ("Guest", "Administrator") and u not in seen:
+        if u and u not in ("Guest") and u not in seen:
             seen.add(u)
             out.append(u)
     return out
