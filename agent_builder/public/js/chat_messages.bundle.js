@@ -564,7 +564,7 @@ window.ChatMessages = (function () {
 
         var stepId = _nextId();
         var meta = _toolMeta(data.tool, data.args);
-        _currentThinkingSteps.push({ id: stepId, startTime: Date.now(), status: 'running', doneLabel: meta.done });
+        _currentThinkingSteps.push({ id: stepId, call_id: data.call_id, startTime: Date.now(), status: 'running', doneLabel: meta.done });
 
         var _stepArgsHtml = _prettyArgs(meta.args);
         var _noArgs = !_stepArgsHtml || _stepArgsHtml === _escapeHtml('No arguments');
@@ -592,7 +592,16 @@ window.ChatMessages = (function () {
     }
 
     function onToolDone(data) {
-        var step = _currentThinkingSteps.find(function (s) { return s.status === 'running'; });
+        // Matched by call_id, not "whichever step is currently running" —
+        // that positional guess breaks the moment a tool_done arrives out
+        // of strict start/done pairing order, which request_clarification
+        // does by design: its tool_done fires from a separate request
+        // (respond_clarification) that can race against resume_agent_chat's
+        // own onToolStart for whatever the model does next. Falls back to
+        // the old heuristic only if an event genuinely has no call_id.
+        var step = (data && data.call_id)
+            ? _currentThinkingSteps.find(function (s) { return s.call_id === data.call_id && s.status === 'running'; })
+            : _currentThinkingSteps.find(function (s) { return s.status === 'running'; });
         if (!step) return;
         var isError = !!(data && (data.error || data.success === false));
 
@@ -1086,9 +1095,42 @@ window.ChatMessages = (function () {
         }
     }
 
+    // ── Inline record citations ─────────────────────────────────────
+    // The agent is instructed (system prompt) to cite ERP records it looked
+    // up mid-sentence using ordinary markdown links with an `erp://` scheme,
+    // e.g. "...invoice [SINV-0004](erp://Sales Invoice/SINV-0004) is overdue".
+    // We don't post-process the DOM for this — we hook marked's own link
+    // renderer once, so it happens inline wherever _md/_mdStreaming runs,
+    // during streaming and on the final render, with zero extra passes.
+    var _markedPatched = false;
+    function _patchMarkedForRecordLinks() {
+        if (_markedPatched || !window.marked) return;
+        _markedPatched = true;
+
+        var renderer = new marked.Renderer();
+        var _defaultLink = renderer.link.bind(renderer);
+
+        renderer.link = function (href, title, text) {
+            var m = /^erp:\/\/([^/]+)\/(.+)$/.exec(href || '');
+            if (!m) return _defaultLink(href, title, text);
+
+            var doctype = decodeURIComponent(m[1]);
+            var name = decodeURIComponent(m[2]);
+            var url = '/app/' + (window.frappe && frappe.router ? frappe.router.slug(doctype) : doctype.toLowerCase().replace(/\s+/g, '-')) + '/' + encodeURIComponent(name);
+
+            return '<a class="ab-cite-chip" href="' + url + '" target="_blank" rel="noopener" title="' + _escapeHtml(doctype + ' · ' + name) + '">' +
+                '<span class="ab-cite-chip-dt">' + _escapeHtml(doctype) + '</span>' +
+                '<span class="ab-cite-chip-label">' + text + '</span>' +
+            '</a>';
+        };
+
+        marked.setOptions({ renderer: renderer });
+    }
+
     function _md(text) {
         if (!text) return '';
         if (window.marked) {
+            _patchMarkedForRecordLinks();
             return marked.parse(text, { breaks: true, gfm: true });
         }
         return _escapeHtml(text).replace(/\n/g, '<br>');

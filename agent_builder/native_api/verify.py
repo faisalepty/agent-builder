@@ -6,7 +6,11 @@ import frappe
 
 from agent_builder.native_api.agent.agent import MaxTurnsError
 from agent_builder.native_api.agent.conversation import Conversation, StoppedByUser
-from agent_builder.native_api.agent.runner import SessionProvenance, run_headless_agent_streaming
+from agent_builder.native_api.agent.runner import (
+	SessionProvenance,
+	run_agent_conversation,
+	run_headless_agent_streaming,
+)
 
 _SKILL_CMD_RE = re.compile(r"(?:^|\s)/([a-zA-Z][a-zA-Z0-9-]*)")
 
@@ -25,7 +29,6 @@ def _extract_skill_commands(message: str):
 	for m in _SKILL_CMD_RE.finditer(message):
 		slugs.append(m.group(1).lower())
 
-	# Strip the slash commands from the visible message
 	cleaned = _SKILL_CMD_RE.sub("", message)
 	cleaned = re.sub(r" {2,}", " ", cleaned).strip()
 
@@ -35,9 +38,7 @@ def _extract_skill_commands(message: str):
 def _load_invoked_skills(skill_slugs: list):
 	"""Load full content for skills matching the given slugs.
 
-	Queries all enabled Skills, slugifies each name_, and matches against
-	the requested slugs. Returns (found_skills, not_found_slugs).
-
+	Returns (found_skills, not_found_slugs).
 	found_skills: [{slug, label, content, description}, ...]
 	not_found_slugs: ["some-slug", ...]
 	"""
@@ -96,7 +97,7 @@ def _build_skill_injection(skills: list):
 			sections.append(skill["content"])
 		else:
 			sections.append("_(No content defined for this skill. Use the `skill_view` tool if available.)_")
-		sections.append("")  # blank-line separator
+		sections.append("")
 
 	return "\n".join(sections)
 
@@ -143,7 +144,6 @@ def get_messages(chat_id, limit=50, start=0):
 
 	message_ids = [r.message_id for r in rows if r.message_id]
 
-	# Group tool calls by the assistant message that requested them.
 	tool_calls_by_parent = {}
 	if message_ids:
 		tc_rows = frappe.get_list(
@@ -171,22 +171,13 @@ def get_messages(chat_id, limit=50, start=0):
 				{
 					"tool": tc.tool_name,
 					"args": _safe_json(tc.arguments),
-					"status": tc.status,  # "pending" | "running" | "success" | "error"
+					"status": tc.status,
 					"elapsed_ms": tc.elapsed_ms,
 					"result": tc.result,
 					"error": tc.error,
 				}
 			)
 
-	# Walk rows in write order and pair each reasoning row with the very
-	# next assistant row — that's the order Conversation writes them in
-	# (_flush_reasoning() runs right before add_assistant_message()'s
-	# append, and again before each emit_tool_start()).
-	#
-	# Caveat: if a reasoning row lands as the very last row of a page and
-	# its assistant row falls on the next page, this pairing breaks across
-	# the page boundary. Only matters once conversations exceed `limit`
-	# messages — fine for now, flag if you start paginating mid-turn.
 	messages = []
 	pending_reasoning = None
 
@@ -216,12 +207,6 @@ def get_messages(chat_id, limit=50, start=0):
 				}
 			)
 
-		# Any other role (e.g. a legacy "tool" row from before the
-		# migration) is intentionally skipped — the new schema never
-		# produces a standalone tool-result message; results live on the
-		# tool call row itself and are attached to their parent assistant
-		# message above.
-
 	return {"messages": messages, "title": title}
 
 
@@ -247,21 +232,7 @@ _MODEL_OPTIONS_CACHE_KEY = "agent_builder:model_options"
 
 @frappe.whitelist()
 def get_model_options():
-	"""Model catalog for the chat widget's model/reasoning picker.
-
-	Scoped to whichever provider is currently configured on Agent Setup
-	(a model_override only makes sense for a model the active provider —
-	or an OpenRouter passthrough — can actually serve, so there's no
-	point showing models from other providers). Returns active
-	(is_active=1) Model Pricing rows with pricing + capability fields,
-	plus the site's current defaults so the widget can show what "Auto"
-	(no override) actually resolves to.
-
-	Cached for 5 minutes per site: this list changes rarely (a handful of
-	manual Model Pricing edits at most) but the chat widget may call it
-	every time it opens, across many users — caching avoids a DB round
-	trip per widget open for data that's effectively static.
-	"""
+	"""Model catalog for the chat widget's model/reasoning picker."""
 	cached = frappe.cache().get_value(_MODEL_OPTIONS_CACHE_KEY)
 	if cached is not None:
 		return cached
@@ -269,8 +240,6 @@ def get_model_options():
 	provider = frappe.db.get_single_value("Agent Setup", "provider")
 	default_model = frappe.db.get_single_value("Agent Setup", "model")
 
-	# reasoning_effort is an optional field — Agent Setup may not have it
-	# (see agent_setup.json history); guard rather than assume.
 	setup_meta = frappe.get_meta("Agent Setup")
 	default_effort = (
 		frappe.db.get_single_value("Agent Setup", "reasoning_effort")
@@ -307,32 +276,16 @@ def get_model_options():
 
 
 def clear_model_options_cache():
-	"""Call from doc_events (Model Pricing / Agent Setup on_update/on_trash
-	in hooks.py) so a manual edit is reflected immediately instead of
-	waiting out the 5-minute TTL. E.g. in hooks.py:
-
-	    doc_events = {
-	        "Model Pricing": {"on_update": "...clear_model_options_cache", "on_trash": "...clear_model_options_cache"},
-	        "Agent Setup": {"on_update": "...clear_model_options_cache"},
-	    }
-	"""
 	frappe.cache().delete_value(_MODEL_OPTIONS_CACHE_KEY)
 
 
 @frappe.whitelist()
 def get_skills():
-	"""Return all skills available to the agent for the frontend.
-
-	Reads from the new Skill schema (name_, description) and returns a
-	slugified name for routing and a clean label for display.
-	"""
+	"""Return all skills available to the agent for the frontend."""
 	try:
 		native_skills = frappe.get_all(
 			"Skill",
-			fields=[
-				"name_",  # display name (Data, hidden, unique)
-				"description",
-			],
+			fields=["name_", "description"],
 			filters={"is_enabled": True},
 			order_by="name_ asc",
 		)
@@ -388,20 +341,7 @@ def get_chats():
 
 @frappe.whitelist()
 def chat(message, chat_id=None, attachments=None, agent_name=None, model=None, reasoning_effort=None):
-	"""API Endpoint: Queues the message for background processing.
-
-	agent_name: optional name of an Agent Definition (Agent Builder) to run
-	this turn with, instead of the default Omnis agent. The chat widget
-	doesn't need to pass this — omit it and behavior is unchanged.
-	model: optional explicit model id for this turn only (e.g. a model
-	    picker in the chat widget), overriding the Agent Definition's own
-	    model, which itself overrides the Agent Setup default. Omit for
-	    unchanged behavior.
-	reasoning_effort: optional explicit reasoning effort for this turn
-	    only — this is the "enable thinking" toggle. Pass "none" to
-	    explicitly disable reasoning for this turn even if Agent Setup
-	    has an effort configured; omit to use the Agent Setup default.
-	"""
+	"""API Endpoint: Queues the message for background processing."""
 	user = frappe.session.user
 	attachments = frappe.parse_json(attachments) if attachments else []
 
@@ -424,8 +364,6 @@ def chat(message, chat_id=None, attachments=None, agent_name=None, model=None, r
 		reasoning_effort=reasoning_effort,
 	)
 
-	# frappe.enqueue returns the RQ Job object (None in `now=True` sync-test
-	# mode, since there's nothing to cancel by then anyway).
 	job_id = getattr(job, "id", None)
 
 	return {"status": "queued", "chat_id": chat_id, "job_id": job_id}
@@ -434,22 +372,7 @@ def chat(message, chat_id=None, attachments=None, agent_name=None, model=None, r
 @frappe.whitelist()
 def stop_chat(chat_id, job_id=None):
 	"""Signal the running background job for this chat to stop — and stop
-	it *now*, not "whenever the loop next checks a flag".
-
-	Conversation.request_stop does two things: sets the cooperative Redis
-	flag (kept as a fallback for jobs still queued rather than executing),
-	and — the part that actually gives an immediate stop — hard-kills the
-	RQ work-horse via job_id, the same mechanism as Desk's RQ Job "Stop
-	Job" button.
-
-	Because that kill can land mid-turn (mid-LLM-call, mid-tool-call),
-	the killed process's own `finally: conversation.save(...)` in
-	Agent.run() may never execute. So this endpoint does that cleanup
-	itself, synchronously, right here — the session is marked ended and
-	any tool_calls left "pending"/"running" are marked "cancelled" before
-	this call returns, rather than depending on a process that was just
-	killed to tidy up after itself.
-	"""
+	it *now*, not "whenever the loop next checks a flag"."""
 	if not chat_id:
 		frappe.throw("chat_id required")
 
@@ -466,25 +389,122 @@ def stop_chat(chat_id, job_id=None):
 		)
 		conversation.save(ended_reason="EndedByUser")
 	except Exception:
-		# Don't let bookkeeping failure stop the stop — the job kill above
-		# already fired, which is the part the user actually needed.
 		frappe.log_error("stop_chat cleanup failed", frappe.get_traceback())
 
 	frappe.db.commit()
 	return {"status": "stopping"}
 
 
-def _safe_error_message(e: Exception) -> str:
-	"""Short, safe-to-display error summary for the chat widget.
+@frappe.whitelist()
+def respond_clarification(chat_id, clarification_id, answer, job_id=None):
+	"""User answered a request_clarification card in the chat widget.
+	Finalizes that paused tool call, then resumes the run as a new
+	background job — the original job that paused has already exited
+	(see agent.py's ClarificationPending), so this isn't a wakeup, it's a
+	fresh job that picks the conversation up where it left off.
 
-	Always includes the exception type and a truncated message — enough
-	to tell "rate limited" from "unknown model" from "a tool crashed"
-	apart without asking the user to screenshot a blank "something went
-	wrong" and guess. Capped short and intentionally NOT the full
-	traceback (that only ever goes to frappe.log_error, via
-	frappe.get_traceback(), never to the frontend) so nothing like a
-	file path or internal detail leaks into the UI.
+	answer: the user's answer — either the exact text of an option they
+	tapped, or whatever they typed, depending on what request_clarification
+	offered. Passed through verbatim as the tool's result; the model reads
+	it and continues, same as it would read any other tool output.
+
+	job_id is accepted for symmetry with stop_chat but unused here — there
+	is no in-flight job to reference; kept so the frontend can pass the
+	same _currentJobId it already tracks without special-casing this call.
 	"""
+	if not chat_id or not clarification_id or not answer:
+		frappe.throw("chat_id, clarification_id and answer are required")
+
+	user = frappe.db.get_value("Agent session", chat_id, "user")
+	if user != frappe.session.user:
+		frappe.throw("Not authorised", frappe.PermissionError)
+
+	result = Conversation.resolve_clarification(chat_id, clarification_id, answer)
+	if not result.get("found"):
+		# Already answered (double-submit) or stale — not an error, just a
+		# no-op. The frontend already disables the card on first answer,
+		# so this is a defensive backstop, not the expected path.
+		return {"status": "already_resolved"}
+
+	resume_ctx = Conversation.pop_resume_context(chat_id)
+
+	job = frappe.enqueue(
+		method="agent_builder.native_api.verify.resume_agent_chat",
+		queue="short",
+		timeout=300,
+		now=frappe.flags.in_test,
+		chat_id=chat_id,
+		user=user,
+		agent_name=resume_ctx.get("agent_name"),
+		model_override=resume_ctx.get("model_override"),
+		reasoning_effort=resume_ctx.get("reasoning_effort"),
+	)
+
+	return {"status": "resuming", "job_id": getattr(job, "id", None)}
+
+
+def resume_agent_chat(chat_id, user, agent_name=None, model_override=None, reasoning_effort=None):
+	"""Background Job: continues a conversation paused by ClarificationPending.
+
+	Deliberately does NOT call add_user_message — the "new" input here is
+	the tool result Conversation.resolve_clarification already appended to
+	the paused tool_call row. Everything else (skill re-injection, message
+	cleanup) doesn't apply on a resume: this is the same turn continuing,
+	not a new one.
+	"""
+	conversation = None
+
+	try:
+		conversation = Conversation(session_id=chat_id, user=user)
+
+		result = run_agent_conversation(
+			conversation,
+			agent_name=agent_name or None,
+			stream_callbacks=True,
+			on_token=conversation.emit_token,
+			on_reasoning=conversation.emit_reasoning,
+			model_override=model_override,
+			reasoning_effort=reasoning_effort,
+		)
+
+		frappe.db.commit()
+
+		if result.ended_reason == "AwaitingClarification":
+			# Chained clarification (the agent's next move raises another
+			# genuine question) — the new request_clarification call has
+			# already published its own agent_clarification_request and
+			# stashed a fresh resume context for whenever that one, too,
+			# is answered. Nothing further to emit here.
+			return
+
+		conversation.emit_done(result.response)
+
+	except MaxTurnsError as e:
+		frappe.db.rollback()
+		frappe.log_error(title="Agent Max Turns (resume)", message=frappe.get_traceback())
+		if conversation:
+			conversation.emit_error(f"The agent ran too many turns without finishing ({e}).")
+
+	except StoppedByUser:
+		frappe.db.rollback()
+		if conversation:
+			conversation.emit_done("")
+
+	except Exception as e:
+		frappe.db.rollback()
+		error_text = _safe_error_message(e)
+		try:
+			frappe.log_error(title="Agent Chat Resume Error", message=frappe.get_traceback())
+		except Exception:
+			logging.getLogger(__name__).exception(
+				"frappe.log_error failed while handling resume_agent_chat error"
+			)
+		if conversation:
+			conversation.emit_error(error_text)
+
+
+def _safe_error_message(e: Exception) -> str:
+	"""Short, safe-to-display error summary for the chat widget."""
 	msg = str(e).strip()
 	if len(msg) > 300:
 		msg = msg[:300] + "…"
@@ -501,23 +521,7 @@ def process_agent_chat(
     model_override=None,
     reasoning_effort=None,
 ):
-    """Background Job: Executes the agent loop.
-
-    agent_name: name of an Agent Definition to run this session's turn
-    with. None -> the default Omnis agent (unchanged behavior).
-
-    model_override / reasoning_effort: per-turn overrides forwarded from
-    the chat() endpoint's model/reasoning_effort params — see chat()'s
-    docstring and Agent.__init__ for precedence and the "none" tri-state.
-
-    Deliberately one big try/except around the ENTIRE body, not just the
-    agent run: this is a background job (frappe.enqueue), so any
-    exception here — including one raised while just building the
-    Conversation or rendering skill text, before the agent even starts —
-    needs to (a) always be logged via frappe.log_error with the full
-    traceback, and (b) always reach the frontend as *something*
-    meaningful, not silently vanish into the job queue.
-    """
+    """Background Job: Executes the agent loop."""
 
     conversation = None
 
@@ -528,24 +532,16 @@ def process_agent_chat(
             else None
         )
 
-        # ── Extract slash-command skill invocations ──────────────────────
         skill_slugs, cleaned_message = _extract_skill_commands(message)
         invoked_skills, not_found = _load_invoked_skills(skill_slugs)
 
-        # Use the cleaned message unless the slash command consumed the
-        # entire message (e.g. "/summarize"), in which case preserve the
-        # original message.
         agent_message = cleaned_message if cleaned_message else message
 
-        # Tell the model which requested skills could not be found.
         if not_found:
             missing = ", ".join(f"/{slug}" for slug in not_found)
             agent_message = (
                 f"{agent_message}\n\n[Skills not found: {missing}]"
             )
-
-        # Attachments are passed separately and converted into multimodal
-        # content by Conversation.get_messages().
 
         skill_injection = None
         if invoked_skills:
@@ -556,6 +552,13 @@ def process_agent_chat(
             trigger_source="Chat",
             trigger_ref=chat_id,
         )
+
+        # Stashed unconditionally, before the run — cheap, and needed the
+        # moment a ClarificationPending is raised further down. Written
+        # here rather than only on the pause path so the model/effort
+        # picked for *this* turn is exactly what resumes it later, not
+        # whatever happens to be the site default by then.
+        Conversation.stash_resume_context(chat_id, agent_name, model_override, reasoning_effort)
 
         result = run_headless_agent_streaming(
             agent_name=agent_name or "",
@@ -573,7 +576,12 @@ def process_agent_chat(
 
         frappe.db.commit()
 
-        if conversation:
+        if result.ended_reason == "AwaitingClarification":
+            # request_clarification already published agent_clarification_request
+            # directly to the frontend before this run unwound — nothing
+            # to emit here. See ClarificationPending's docstring.
+            pass
+        elif conversation:
             conversation.emit_done(result.response)
 
     except MaxTurnsError as e:

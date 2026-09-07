@@ -537,6 +537,12 @@ def _notify_run_outcome(trigger, context: dict, result):
         link_name = result.session_id
  
     recipients = _notify_recipients(trigger, context)
+    # TEMP DEBUG — remove once bell/toast are confirmed working again.
+    frappe.log_error(
+        f"agent_builder DEBUG: acting_user={context.get('acting_user')!r} "
+        f"run_as_user={trigger.get('run_as_user')!r} recipients={recipients!r}",
+        "agent_builder recipients debug",
+    )
     if not recipients and not success:
         recipients = system_managers()
  

@@ -13,7 +13,7 @@ from typing import Any, Optional
 import frappe
 
 from agent_builder.native_api.agent.agent import Agent, MaxTurnsError, StoppedByUser
-from agent_builder.native_api.agent.conversation import ChainBrokenError, Conversation
+from agent_builder.native_api.agent.conversation import ChainBrokenError, ClarificationPending, Conversation
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +78,15 @@ async def _run_agent_loop(
 	except StoppedByUser:
 		frappe.log_error("Agent stopped by user")
 		ended_reason = "EndedByUser"
+		response = ""
+
+	except ClarificationPending:
+		# Deliberate, expected pause — not an error and not worth a log
+		# entry (unlike the other branches here, which all represent
+		# something going wrong). request_clarification already published
+		# agent_clarification_request to the frontend; the run resumes
+		# later via verify.resume_agent_chat, not from here.
+		ended_reason = "AwaitingClarification"
 		response = ""
 
 	except ChainBrokenError as e:

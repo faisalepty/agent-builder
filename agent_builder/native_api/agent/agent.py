@@ -1,6 +1,5 @@
 # agent_builder/native_api/agent/agent.py
 import asyncio
-import contextvars
 import json
 import logging
 import random
@@ -10,7 +9,14 @@ from typing import Any, List, Optional, Tuple
 
 import frappe
 
-from agent_builder.native_api.agent.conversation import Conversation, StoppedByUser
+from agent_builder.native_api.agent.conversation import (
+	CLARIFICATION_PENDING_KEY,
+	ClarificationPending,
+	Conversation,
+	StoppedByUser,
+	current_delegate_depth,
+	current_session_id,
+)
 from agent_builder.native_api.agent.setup import (
 	get_agent_definition,
 	get_agent_system_prompt,
@@ -23,30 +29,18 @@ from agent_builder.native_api.tools.executor import ToolExecutor
 
 logger = logging.getLogger(__name__)
 
-# Task-scoped (not thread-scoped) session id, readable by any tool running
-# within this async call stack — including tools launched via
-# asyncio.gather, which copy the context at task-creation time. Unlike
-# frappe.local (keyed by OS thread/greenlet identity, which RQ/gevent
-# workers can reuse or tear down out of step with the async call stack),
-# ContextVar is the correct primitive for this and fails safe: a tool
-# reading it outside any run() call just gets the default.
-current_session_id: contextvars.ContextVar[str] = contextvars.ContextVar(
-	"current_session_id", default=""
-)
-
-# Same propagation mechanism as current_session_id, for the same reason.
-# delegate_task previously re-read delegate_depth from the DB, but a
-# session's delegate_depth row is only stamped *after* that session's run
-# finishes (by whoever delegated to it) — so while a session is still
-# running and itself calls delegate_task, its own row always reads the
-# pre-run default. Every session in a chain saw depth=0 for itself, so
-# MAX_DELEGATE_DEPTH was never actually enforced. A ContextVar set right
-# before awaiting a child run (in delegate_task) is correct immediately,
-# with no DB lag, and — like current_session_id — is copied into any
-# child task the coroutine spawns.
-current_delegate_depth: contextvars.ContextVar[int] = contextvars.ContextVar(
-	"current_delegate_depth", default=0
-)
+# current_session_id / current_delegate_depth / CLARIFICATION_PENDING_KEY
+# live in conversation.py, not here — this module used to define the two
+# ContextVars directly, but agent.py needing CLARIFICATION_PENDING_KEY from
+# the tool module while the tool module needed current_session_id from
+# here is a circular import. conversation.py is already a one-way
+# dependency of this file (agent.py imports Conversation/StoppedByUser
+# from it, never the reverse), so putting shared, tool-visible state there
+# instead adds nothing new to the dependency graph — no extra module
+# needed. Re-exported at this module's top level via the import above, so
+# `from agent.agent import current_session_id` still works for any
+# existing tool that imports it that way (e.g. delegate_task) — nothing
+# else needs to change.
 
 
 class MaxTurnsError(Exception):
@@ -237,6 +231,14 @@ class Agent:
 
 		except MaxTurnsError:
 			raise
+		except ClarificationPending:
+			# Orderly pause, not an interruption — nothing to cancel or
+			# clean up. Exactly one tool_call was already left in
+			# "awaiting_clarification" by pause_for_clarification() before
+			# this was raised. Just record why the run ended and let the
+			# frontend's already-rendered question card do its job.
+			ended_reason = "AwaitingClarification"
+			raise
 		except StoppedByUser:
 			# The tool_calls for the turn that was in flight (if any) were
 			# already checkpointed as "pending" by add_assistant_message
@@ -288,6 +290,7 @@ class Agent:
 		returns multiple independent tool calls (e.g., fetching data from
 		multiple sources simultaneously).
 		"""
+		pending_pause: dict[str, str] = {}  # holds at most one — first pause wins
 
 		async def execute_single_tool(tc: Any, flag_as_strike: bool) -> None:
 			"""Execute a single tool call with proper event emission."""
@@ -305,6 +308,46 @@ class Agent:
 			result = await self.executor._dispatch(name, tc.function.arguments)
 			elapsed_ms = int((time.monotonic() - t0) * 1000)
 
+			# request_clarification doesn't return a normal result — it
+			# returns a pause marker (see request_clarification.py).
+			# Detect it here rather than inside the tool itself: tool
+			# dispatch is a stateless request/response call by convention
+			# (see workflow_tools/human_approval.py's docstring), so the
+			# actual state transition belongs at this level.
+			#
+			# Deliberately NOT raised here. gather() re-raises the moment
+			# any one task raises, without waiting for the others — so if
+			# request_clarification (no DB I/O before its own write) wins
+			# the race against a slower sibling tool call still mid-flight
+			# in this same batch, that sibling would still be holding a
+			# reference to this same conversation.doc and could still be
+			# mid-add_tool_result()/save() after we've already moved on.
+			# Two writers, same document, overlapping — that's exactly
+			# what produces a TimestampMismatchError. Recording the pause
+			# and only raising after every task in this gather has
+			# actually finished (see below) guarantees nothing else is
+			# still writing to conversation.doc when we act on it.
+			pause = self._detect_clarification_pause(result)
+			if pause:
+				if "clarification_id" in pending_pause:
+					# A second clarification in the same batch — only one
+					# pause can be acted on per turn. Resolve this one as
+					# an ordinary (skipped) result instead of leaving its
+					# tool_call row stuck in "running" forever with
+					# nothing ever calling add_tool_result on it.
+					conversation.add_tool_result(
+						tc.id,
+						name,
+						"Skipped: another clarification is already pending this turn. "
+						"Ask this question again after the first one is answered.",
+						elapsed_ms=elapsed_ms,
+						was_loop_strike=False,
+					)
+					return
+				pending_pause["clarification_id"] = pause["clarification_id"]
+				pending_pause["tool_call_id"] = tc.id
+				return
+
 			# Add result to conversation. Only the fingerprinted call (index 0,
 			# the one run.py's loop-detection actually matched against
 			# last_fp) is marked was_loop_strike=True.
@@ -312,11 +355,45 @@ class Agent:
 				tc.id, name, result, elapsed_ms=elapsed_ms, was_loop_strike=flag_as_strike
 			)
 
-		# Execute all tool calls concurrently
-		# gather() will run them in parallel and wait for all to complete
+		# Execute all tool calls concurrently — gather() with its default
+		# return_exceptions=False is safe here specifically because
+		# nothing inside execute_single_tool raises anymore for the pause
+		# case; it always returns normally, so gather always waits for
+		# every task before this line continues.
 		await asyncio.gather(
 			*[execute_single_tool(tc, is_loop_strike and idx == 0) for idx, tc in enumerate(tool_calls)]
 		)
+
+		if pending_pause:
+			# Safe now: every tool call in this batch — including any
+			# slower sibling of the one that paused — has already
+			# finished its own add_tool_result()/save(). This is the only
+			# writer left standing.
+			conversation.pause_for_clarification(
+				tool_call_id=pending_pause["tool_call_id"],
+				clarification_id=pending_pause["clarification_id"],
+			)
+
+	@staticmethod
+	def _detect_clarification_pause(result: Any) -> dict | None:
+		"""result is whatever executor._dispatch returned — normally a
+		plain string, but request_clarification returns a JSON string
+		carrying CLARIFICATION_PENDING_KEY. Anything that isn't exactly
+		that shape (including ordinary tool output that merely happens to
+		look JSON-ish) is treated as a normal result — only an exact,
+		well-formed marker triggers the pause.
+		"""
+		if not isinstance(result, str) or not result.startswith("{"):
+			return None
+		try:
+			parsed = json.loads(result)
+		except Exception:
+			return None
+		if not isinstance(parsed, dict) or not parsed.get(CLARIFICATION_PENDING_KEY):
+			return None
+		if not parsed.get("clarification_id"):
+			return None
+		return parsed
 
 	async def _retry_llm(self, messages, tools, on_token=None, on_reasoning=None):
 		last_err = None
